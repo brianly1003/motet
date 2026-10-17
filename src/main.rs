@@ -1,9 +1,10 @@
 //! meetnote: record system audio + mic (ScreenCaptureKit), transcribe locally
 //! (whisper.cpp), summarize locally (Ollama). Works for any meeting app.
 //!
-//!   meetnote               record until Enter, then transcribe + summarize
-//!   meetnote <audio-file>  transcribe + summarize an existing recording
-//!   meetnote x.mic.wav x.system.wav   redo a recording, with Me/Them labels
+//!   meetnote record                       record until Enter, then transcribe + summarize
+//!   meetnote run --file call.m4a          transcribe + summarize an existing recording
+//!   meetnote run --file x.mic.wav --file x.system.wav   redo a recording, with Me/Them labels
+//!   (`meetnote` alone still records, and `meetnote <files>` still works like `run`.)
 //!
 //! Env (or `./.env`, `~/.config/meetnote/.env`): WHISPER_MODEL (path to ggml model), OLLAMA_MODEL,
 //!      WHISPER_VAD_MODEL (optional, silero ggml; strongly recommended for Me/Them order),
@@ -20,8 +21,40 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+use clap::{Parser, Subcommand};
+
+/// Local meeting notes: record a call, transcribe it, summarize it. Nothing leaves the Mac.
+#[derive(Parser)]
+#[command(version, args_conflicts_with_subcommands = true)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+    /// Audio or video files to process (same as `run --file`)
+    files: Vec<String>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Record system audio and your mic until Enter, then write the notes (the default)
+    Record,
+    /// Transcribe and summarize existing recordings
+    Run {
+        /// An audio or video file; pass x.mic.wav and x.system.wav together for Me/Them labels
+        #[arg(short, long = "file", required = true)]
+        file: Vec<String>,
+    },
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let inputs: Vec<String> = std::env::args().skip(1).collect();
+    let cli = Cli::parse();
+    let inputs = match cli.command {
+        Some(Command::Run { file }) => file,
+        Some(Command::Record) => Vec::new(),
+        None => cli.files,
+    };
+    if let Some(missing) = inputs.iter().find(|f| !Path::new(f).exists()) {
+        return Err(format!("no such file: {missing}").into());
+    }
     let base = match inputs.first() {
         Some(f) => {
             let stem = Path::new(f)
