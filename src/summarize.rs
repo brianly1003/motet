@@ -5,6 +5,8 @@ use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use crate::config;
+
 const PROMPT: &str = "You write meeting notes from a call transcript. \"Me\" is the user and \"Them\" is \
 everyone else on the call; when the transcript says people's names, use the names. \
 Write the notes in the language most of the transcript is in. Output Markdown only, in this order:\n\
@@ -20,7 +22,7 @@ Do not invent facts, owners or dates. Leave out small talk and anything unrelate
 
 /// Summarizes the transcript with `OLLAMA_MODEL` and writes `<base>.md` (summary + transcript).
 pub(crate) fn notes(base: &str, transcript: &str) -> Result<(), Box<dyn Error>> {
-    let llm = std::env::var("OLLAMA_MODEL").map_err(|_| "set OLLAMA_MODEL (see `ollama list`)")?;
+    let llm = config::var("OLLAMA_MODEL").ok_or("set OLLAMA_MODEL (see `ollama list`)")?;
     println!("Summarizing with {llm}...");
     // whole transcript in one prompt; chunk + merge if meetings outgrow the model context.
     let summary = ask(&llm, &format!("{PROMPT}{transcript}"))?;

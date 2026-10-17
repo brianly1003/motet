@@ -5,6 +5,8 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use crate::config;
+
 /// Who a track belongs to, from its file name.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Speaker {
@@ -54,8 +56,7 @@ fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
 pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
     // Transcribe each track on its own: mic = "Me", system audio = "Them". Merge by timestamp.
     // tracks are aligned by start time only (ms-level skew); fine for transcripts.
-    let model =
-        std::env::var("WHISPER_MODEL").map_err(|_| "set WHISPER_MODEL to a ggml model path")?;
+    let model = config::var("WHISPER_MODEL").ok_or("set WHISPER_MODEL to a ggml model path")?;
     let mut segments = vec![];
     for src in sources {
         let speaker = Speaker::from_path(src);
@@ -83,7 +84,7 @@ pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
         ]);
         // VAD gives real segment start times (else leading silence is folded in) and
         // stops hallucinated lines in the long silent stretches of each track.
-        if let Ok(vad) = std::env::var("WHISPER_VAD_MODEL") {
+        if let Some(vad) = config::var("WHISPER_VAD_MODEL") {
             whisper.args(["--vad", "-vm", &vad]);
         }
         run(&mut whisper)?;
