@@ -82,6 +82,10 @@ pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
         whisper.args([
             "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
         ]);
+        // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
+        // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
+        // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
+        whisper.args(["-bs", "1", "-bo", "1"]);
         // VAD gives real segment start times (else leading silence is folded in) and
         // stops hallucinated lines in the long silent stretches of each track.
         if let Some(vad) = config::var("WHISPER_VAD_MODEL") {
