@@ -64,9 +64,7 @@ pub(crate) fn notes(base: &str, transcript: &str) -> Result<(), Box<dyn Error>> 
         println!("Merging {} part summaries...", parts.len());
         ask(&llm, &format!("{MERGE}{}", partials.join("\n\n---\n\n")))?
     };
-    // A Markdown image loads its URL when the notes are viewed, so a model talked into writing
-    // one could send text off the Mac; as a plain link nothing loads unless clicked.
-    let summary = summary.replace("![", "[");
+    let (summary, transcript) = (defang(&summary), defang(transcript));
     let notes = format!(
         "{summary}\n\n<details><summary>Transcript</summary>\n\n{transcript}\n</details>\n"
     );
@@ -134,10 +132,24 @@ fn installed(list: &str, llm: &str) -> bool {
     } else {
         format!("{llm}:latest")
     };
+    // Cloud models (`*-cloud`, SIZE "-") are listed too but run on ollama.com: never local.
     list.lines()
         .skip(1)
-        .filter_map(|line| line.split_whitespace().next())
-        .any(|name| name == want)
+        .filter_map(|line| {
+            let mut cols = line.split_whitespace();
+            Some((cols.next()?, cols.nth(1)?))
+        })
+        .any(|(name, size)| name == want && size != "-" && !name.ends_with("cloud"))
+}
+
+/// Markdown viewers load images and render HTML, so a model talked into writing either could
+/// send text off the Mac. Escape every tag and turn every image into a plain link.
+fn defang(text: &str) -> String {
+    let mut out = text.replace('<', "&lt;");
+    while out.contains("![") {
+        out = out.replace("![", "[");
+    }
+    out
 }
 
 /// Keeps only the model's answer: drops leaked reasoning and a ```markdown fence.
@@ -164,6 +176,23 @@ mod tests {
         assert!(!installed(list, "qwen3"));
         assert!(!installed(list, "evil/model:1"));
         assert!(!installed(list, "NAME"));
+    }
+
+    #[test]
+    fn installed_refuses_cloud_models() {
+        let list =
+            "NAME ID SIZE MODIFIED\ngpt-oss:120b-cloud 1a - 2 days ago\nqwen3:cloud 2b 1 GB now\n";
+        assert!(!installed(list, "gpt-oss:120b-cloud"));
+        assert!(!installed(list, "qwen3:cloud"));
+    }
+
+    #[test]
+    fn defang_removes_images_and_html() {
+        assert_eq!(
+            defang("!![a](u) ![b][r] <img src=x>"),
+            "[a](u) [b][r] &lt;img src=x>"
+        );
+        assert_eq!(defang("plain [link](u)"), "plain [link](u)");
     }
 
     #[test]
