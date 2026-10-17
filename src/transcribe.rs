@@ -76,7 +76,7 @@ pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
             "1",
             &wav16,
         ]))?;
-        println!("Transcribing {src}...");
+        println!("Transcribing {src} with {model}...");
         let mut whisper = Command::new("whisper-cli");
         whisper.args([
             "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
