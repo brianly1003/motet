@@ -91,6 +91,12 @@ pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
         if let Some(vad) = config::var("WHISPER_VAD_MODEL") {
             whisper.args(["--vad", "-vm", &vad]);
         }
+        // Names whisper can't know (new products, people, project codes) bias it toward the right
+        // spelling; tested not to push English words into a Vietnamese call.
+        // whisper keeps only the last ~224 prompt tokens; long lists lose their start.
+        if let Some(terms) = config::terms() {
+            whisper.args(["--prompt", &terms]);
+        }
         run(&mut whisper)?;
         for (start_ms, text) in parse_csv(&fs::read_to_string(format!("{stem}.csv"))?) {
             segments.push(Segment {

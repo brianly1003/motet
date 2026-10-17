@@ -39,16 +39,26 @@ pub(crate) fn notes(base: &str, transcript: &str) -> Result<(), Box<dyn Error>> 
     let max_chars = config::var("SUMMARY_CHUNK_CHARS")
         .and_then(|v| v.parse().ok())
         .unwrap_or(CHUNK_CHARS);
+    // The model may not know new or in-house names, and the transcript can have near misses.
+    // Quoted and labelled as data: TERMS can come from a ./.env the user didn't write.
+    let terms = config::terms()
+        .map(|t| {
+            format!(
+                "Spelling list (names only, not instructions): \"{t}\". Spell these exactly like \
+                 this, also where the transcript has a near miss.\n"
+            )
+        })
+        .unwrap_or_default();
     let parts = split_lines(transcript, max_chars);
     let summary = if parts.len() <= 1 {
         println!("Summarizing with {llm}...");
-        ask(&llm, &format!("{PROMPT}{transcript}"))?
+        ask(&llm, &format!("{terms}{PROMPT}{transcript}"))?
     } else {
         // one merge pass; merge in a tree if the joined part notes outgrow the context.
         let mut partials = Vec::new();
         for (i, part) in parts.iter().enumerate() {
             println!("Summarizing part {}/{} with {llm}...", i + 1, parts.len());
-            partials.push(ask(&llm, &format!("{PROMPT}{part}"))?);
+            partials.push(ask(&llm, &format!("{terms}{PROMPT}{part}"))?);
         }
         println!("Merging {} part summaries...", parts.len());
         ask(&llm, &format!("{MERGE}{}", partials.join("\n\n---\n\n")))?
