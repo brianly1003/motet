@@ -7,7 +7,8 @@
 //!
 //! Env (or `./.env`, `~/.config/meetnote/.env`): WHISPER_MODEL (path to ggml model), OLLAMA_MODEL,
 //!      WHISPER_VAD_MODEL (optional, silero ggml; strongly recommended for Me/Them order),
-//!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary).
+//!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
+//!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts).
 
 mod capture;
 mod config;
