@@ -14,7 +14,7 @@ fn local_host_and_empty_vad_survive_conflicting_shell_settings() {
     ));
     fs::create_dir(&dir).unwrap();
     for (name, script) in [
-        ("ffmpeg", "#!/bin/sh\nexit 0\n"),
+        ("ffmpeg", "#!/bin/sh\nexit 99\n"),
         (
             "whisper-cli",
             "#!/bin/sh\nprintf '%s\n' \"$@\" > whisper-args\nprintf '0,1000,\" Say \"\"go\"\"\"\n' > call.csv\n",
@@ -28,7 +28,18 @@ fn local_host_and_empty_vad_survive_conflicting_shell_settings() {
         fs::write(&path, script).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    fs::write(dir.join("call.wav"), b"synthetic input").unwrap();
+    let mut wav = hound::WavWriter::create(
+        dir.join("call.wav"),
+        hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        },
+    )
+    .unwrap();
+    wav.write_sample(0_i16).unwrap();
+    wav.finalize().unwrap();
     for (vad, expected) in [
         ("WHISPER_VAD_MODEL=\n", None),
         ("", None),

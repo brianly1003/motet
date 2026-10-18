@@ -1,11 +1,11 @@
-//! Transcribe stage: each track through ffmpeg (16 kHz mono) and whisper-cli, merged by time.
+//! Transcribe stage: each track through Rust decoding (16 kHz mono) and whisper-cli, merged by time.
 
 use std::error::Error;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::config;
+use crate::{config, decode};
 
 /// Who a track belongs to, from its file name.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -65,18 +65,7 @@ pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
             .to_string_lossy()
             .into_owned();
         let wav16 = format!("{stem}.16k.wav");
-        run(Command::new("ffmpeg").args([
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            src,
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            &wav16,
-        ]))?;
+        decode::to_wav(Path::new(src), Path::new(&wav16))?;
         println!("Transcribing {src} with {model}...");
         let mut whisper = Command::new("whisper-cli");
         whisper.args([

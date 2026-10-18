@@ -1,3 +1,4 @@
+#![cfg(target_os = "macos")]
 //! CLI stop source: Enter requests cancellation without putting stdin in the core.
 
 use meetnote_core::{capture, events::Stop};

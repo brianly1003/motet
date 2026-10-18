@@ -10,3 +10,6 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 meetnote-core = { path = "../meetnote-core" }
+
+[dev-dependencies]
+hound = "3"

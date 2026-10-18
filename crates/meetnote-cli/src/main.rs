@@ -11,7 +11,15 @@
 //!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
 //!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts).
 
+#[cfg(target_os = "macos")]
 mod record;
+
+#[cfg(not(target_os = "macos"))]
+mod record {
+    pub fn record(_: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        Err("recording is not available on this platform yet; use run --file".into())
+    }
+}
 
 use meetnote_core::{config, correct, summarize, transcribe};
 
