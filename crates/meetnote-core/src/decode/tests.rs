@@ -11,6 +11,22 @@ fn directory() -> std::path::PathBuf {
 }
 
 #[test]
+fn only_unsupported_formats_fall_back_to_ffmpeg() {
+    use symphonia::core::errors::Error as Media;
+    let boxed = |e: Media| -> Box<dyn Error> { Box::new(e) };
+    assert!(unsupported(
+        boxed(Media::Unsupported("core (codec): opus")).as_ref()
+    ));
+    assert!(!unsupported(
+        boxed(Media::DecodeError("bad frame")).as_ref()
+    ));
+    let io: Box<dyn Error> = Box::new(std::io::Error::other("disk"));
+    assert!(!unsupported(io.as_ref()));
+    let text: Box<dyn Error> = "no audio track".into();
+    assert!(!unsupported(text.as_ref()));
+}
+
+#[test]
 fn rates_preserve_duration_impulse_position_and_tail() {
     let dir = directory();
     for rate in [8000, 16000, 44100, 48000] {

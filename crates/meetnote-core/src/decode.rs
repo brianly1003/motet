@@ -1,7 +1,14 @@
 //! Streaming audio decode and delay-compensated resampling to 16 kHz mono WAV.
 
 use rubato::{FftFixedIn, Resampler};
-use std::{error::Error, fs::File, io::BufWriter, path::Path};
+use std::{
+    error::Error,
+    ffi::OsString,
+    fs::File,
+    io::{BufWriter, ErrorKind},
+    path::Path,
+    process::{Command, Stdio},
+};
 use symphonia::core::{
     formats::{TrackType, probe::Hint},
     io::MediaSourceStream,
@@ -11,7 +18,11 @@ type Writer = hound::WavWriter<BufWriter<File>>;
 
 /// Decode one audio track without loading the entire recording into memory.
 pub(crate) fn to_wav(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
-    convert(source, destination).map_err(|e| {
+    let result = match convert(source, destination) {
+        Err(e) if unsupported(e.as_ref()) => ffmpeg(source, destination, e.as_ref()),
+        other => other,
+    };
+    result.map_err(|e| {
         format!(
             "cannot decode {}: {e}; check the file's audio format and output folder",
             source.display()
@@ -93,6 +104,56 @@ fn convert(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
     mono.finish(&mut writer)?;
     writer.finalize()?;
     Ok(())
+}
+
+/// Symphonia has no Opus decoder and no WebM/Matroska reader. Only those "unsupported" cases fall
+/// back; damaged files still fail here instead of being retried somewhere else.
+fn unsupported(error: &(dyn Error + 'static)) -> bool {
+    matches!(
+        error.downcast_ref::<symphonia::core::errors::Error>(),
+        Some(symphonia::core::errors::Error::Unsupported(_))
+    )
+}
+
+// Opus/WebM imports use the user's own ffmpeg; the desktop app bundles no ffmpeg.
+// If those imports become common, add an Opus decoder instead (docs/decisions/audio-decoding.md).
+fn ffmpeg(source: &Path, destination: &Path, why: &dyn Error) -> Result<(), Box<dyn Error>> {
+    // `file:` and the protocol whitelist keep ffmpeg on local files: a playlist or a name that
+    // looks like a URL can't make it fetch anything. Mono f32 can't clip; ffmpeg's stereo
+    // downmix is 3 dB louder than ours, which whisper doesn't mind.
+    let local = |path: &Path| {
+        let mut arg = OsString::from("file:");
+        arg.push(path.as_os_str());
+        arg
+    };
+    let status = Command::new("ffmpeg")
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+        .args(["-protocol_whitelist", "file", "-y", "-i"])
+        .arg(local(source))
+        .args([
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_f32le",
+            "-f",
+            "wav",
+        ])
+        .arg(local(destination))
+        .stdin(Stdio::null())
+        .status();
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("{why}; ffmpeg could not read it either ({status})").into()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Err(format!(
+            "{why}; this format (for example Opus or WebM) needs ffmpeg: install it \
+             (brew install ffmpeg) or convert the file to WAV, M4A or MP3"
+        )
+        .into()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 struct Mono {
