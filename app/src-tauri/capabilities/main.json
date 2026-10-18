@@ -1,1 +1,13 @@
-{"identifier":"main","description":"Local meeting window events only; file selection stays in Rust.","windows":["main"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}
+{
+  "identifier": "main",
+  "description": "Local meeting window events only; file selection stays in Rust.",
+  "windows": [
+    "main",
+    "companion"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging"
+  ]
+}

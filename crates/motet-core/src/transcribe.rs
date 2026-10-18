@@ -67,51 +67,67 @@ fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
 
 /// Transcribes each track on its own and merges the lines into one `[mm:ss] Me: …` transcript.
 pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
+    transcript_parts(&[(sources.to_vec(), 0)], false)
+}
+
+/// Desktop recording parts use elapsed recording time, excluding the Stop/Resume pause.
+/// Quiet mode prevents whisper from printing private transcript text to desktop logs.
+pub fn transcript_parts(
+    parts: &[(Vec<String>, u64)],
+    quiet: bool,
+) -> Result<String, Box<dyn Error>> {
     // Transcribe each track on its own: mic = "Me", system audio = "Them". Merge by timestamp.
     // tracks are aligned by start time only (ms-level skew); fine for transcripts.
     let model = config::var("WHISPER_MODEL").ok_or("set WHISPER_MODEL to a ggml model path")?;
     let mut segments = vec![];
-    for src in sources {
-        let speaker = Speaker::from_path(src);
-        let stem = Path::new(src)
-            .with_extension("")
-            .to_string_lossy()
-            .into_owned();
-        let wav16 = format!("{stem}.16k.wav");
-        decode::to_wav(Path::new(src), Path::new(&wav16))?;
-        println!("Transcribing {src} with {model}...");
-        let mut whisper = Command::new("whisper-cli");
-        whisper.args([
-            "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
-        ]);
-        // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
-        // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
-        // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
-        whisper.args(["-bs", "1", "-bo", "1"]);
-        // VAD gives real segment start times (else leading silence is folded in) and
-        // stops hallucinated lines in the long silent stretches of each track.
-        if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
-            whisper.args(["--vad", "-vm", &vad]);
-        }
-        // Names whisper can't know (new products, people, project codes) bias it toward the right
-        // spelling; tested not to push English words into a Vietnamese call.
-        // whisper keeps only the last ~224 prompt tokens; long lists lose their start.
-        if let Some(terms) = config::terms() {
-            whisper.args(["--prompt", &terms]);
-        }
-        run(&mut whisper)?;
-        let rows = parse_csv(&fs::read_to_string(format!("{stem}.csv"))?);
-        let speakers = if speaker == Speaker::Me {
-            vec![speaker; rows.len()]
-        } else {
-            voices(src, Path::new(&wav16), speaker, &rows)
-        };
-        for ((start_ms, _, text), speaker) in rows.into_iter().zip(speakers) {
-            segments.push(Segment {
-                start_ms,
-                speaker,
-                text,
-            });
+    for (sources, offset_ms) in parts {
+        for src in sources {
+            let speaker = Speaker::from_path(src);
+            let stem = Path::new(src)
+                .with_extension("")
+                .to_string_lossy()
+                .into_owned();
+            let wav16 = format!("{stem}.16k.wav");
+            decode::to_wav(Path::new(src), Path::new(&wav16))?;
+            println!("Transcribing {src} with {model}...");
+            let mut whisper = Command::new("whisper-cli");
+            whisper.args([
+                "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
+            ]);
+            // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
+            // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
+            // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
+            whisper.args(["-bs", "1", "-bo", "1"]);
+            // VAD gives real segment start times (else leading silence is folded in) and
+            // stops hallucinated lines in the long silent stretches of each track.
+            if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
+                whisper.args(["--vad", "-vm", &vad]);
+            }
+            // Names whisper can't know (new products, people, project codes) bias it toward the right
+            // spelling; tested not to push English words into a Vietnamese call.
+            // whisper keeps only the last ~224 prompt tokens; long lists lose their start.
+            if let Some(terms) = config::terms() {
+                whisper.args(["--prompt", &terms]);
+            }
+            if quiet {
+                whisper
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
+            }
+            run(&mut whisper)?;
+            let rows = parse_csv(&fs::read_to_string(format!("{stem}.csv"))?);
+            let speakers = if speaker == Speaker::Me {
+                vec![speaker; rows.len()]
+            } else {
+                voices(src, Path::new(&wav16), speaker, &rows)
+            };
+            for ((start_ms, _, text), speaker) in rows.into_iter().zip(speakers) {
+                segments.push(Segment {
+                    start_ms: start_ms.saturating_add(*offset_ms),
+                    speaker,
+                    text,
+                });
+            }
         }
     }
     Ok(merge(segments))

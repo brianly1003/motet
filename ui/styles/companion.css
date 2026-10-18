@@ -1,0 +1,20 @@
+/* Pill/Dot geometry and controls from the approved mockup; native window supplies placement. */
+html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: transparent; overflow: hidden; }
+.pill { display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; width: 420px; height: 46px; }
+.pillbar { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; height: 44px; }
+.pill .t { font: 500 14px var(--font-data); font-variant-numeric: tabular-nums; min-width: 50px; font-feature-settings: "tnum"; cursor: grab; }
+.pillmsg { font-size: 12.5px; color: var(--ink-2); flex: 1; line-height: 1.2; }
+.pill .primary, .pill .quiet { padding: 3px 9px; font-size: 12px; border-radius: 7px; flex-shrink: 0; }
+.pill .stop { display: inline-flex; align-items: center; min-width: 62px; min-height: 30px; justify-content: center; border: 1px solid var(--rec); background: var(--rec); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 500; }
+.chev { border: 0; background: transparent; width: 26px; height: 30px; border-radius: 7px; color: var(--ink-2); }
+.chev:hover { background: var(--surface-2); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rec); display: inline-block; flex: none; }
+.dot.stopped { background: var(--ink-3); }
+.dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .4; } }
+.pill[data-size="dot"] { width: 40px; height: 40px; border-radius: 50%; }
+.pill .dotbtn { display: grid; place-items: center; width: 38px; height: 38px; border: 0; background: transparent; border-radius: 50%; }
+.pill .dotbtn .dot { width: 12px; height: 12px; }
+.pill button:focus-visible { outline-offset: -3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (prefers-reduced-motion: reduce) { .dot.pulse { animation: none; } }

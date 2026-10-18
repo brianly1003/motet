@@ -259,6 +259,7 @@ pub enum Command {
     UndoNever {
         app_id: String,
     },
+    SetCompanionSize(CompanionSize),
     RequestQuit,
     Quit {
         stop_and_save: bool,

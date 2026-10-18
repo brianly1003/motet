@@ -809,3 +809,32 @@ fn expiry_that_exits_cannot_start_another_recording() {
             .any(|effect| matches!(effect, Effect::StartCapture { .. }))
     );
 }
+
+#[test]
+fn companion_sizes_follow_recording_stop_quit_and_deadline() {
+    let s = start(fresh(), false);
+    let (s, effects) = step(s, 25_000, Command::SetCompanionSize(CompanionSize::Dot));
+    assert_eq!(s.app.companion.size, CompanionSize::Dot);
+    assert!(s.app.companion.visible);
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Emit(Event::StateChanged(_))))
+    );
+    let (s, _) = step(s, 26_000, Command::StopRecording);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    let (s, _) = step(s, 27_000, Command::SetCompanionSize(CompanionSize::Dot));
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    let (s, _) = step(s, 36_000, Command::Tick);
+    assert!(!s.app.companion.visible);
+    let (s, _) = step(s, 36_001, Command::RequestQuit);
+    assert!(s.app.companion.visible);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+
+    let s = start(fresh(), false);
+    let (s, _) = step(s, 1, Command::SetCompanionSize(CompanionSize::Sidecar));
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    let (s, _) = step(s, 2, Command::SetCompanionSize(CompanionSize::Dot));
+    let (s, _) = step(s, 3, Command::RequestQuit);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+}

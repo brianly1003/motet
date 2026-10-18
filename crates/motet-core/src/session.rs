@@ -446,6 +446,12 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 session.resume(&input.since, &mut effects);
             }
         }
+        Command::SetCompanionSize(size)
+            if session.app.state == SessionState::Recording
+                && matches!(size, CompanionSize::Pill | CompanionSize::Dot) =>
+        {
+            session.app.companion.size = size;
+        }
         Command::RequestQuit => match session.app.state {
             SessionState::Recording
             | SessionState::Stopped { .. }
@@ -594,6 +600,9 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
         SessionState::Recording | SessionState::Stopped { .. } => true,
         SessionState::Finishing { .. } => session.app.quit_pending,
     };
+    if !matches!(session.app.state, SessionState::Recording) || session.app.quit_pending {
+        session.app.companion.size = CompanionSize::Pill;
+    }
     session.problems.sort_by_key(|p| priority(&p.problem));
     session.app.problem = session.problems.first().cloned();
     session.app.more_problems = session.problems.len().saturating_sub(1) as u32;

@@ -83,7 +83,7 @@ fn is_id(id: &str) -> bool {
     !id.is_empty() && id.bytes().all(|v| v.is_ascii_digit())
 }
 
-fn summary(root: &Path, id: &str) -> Result<MeetingSummary, String> {
+pub fn summary(root: &Path, id: &str) -> Result<MeetingSummary, String> {
     let dir = folder(root, id)?;
     let summary: MeetingSummary = serde_json::from_str(&text(&dir.join("meeting.json"))?)
         .map_err(|e| format!("Cannot read meeting {id}: {e}"))?;
@@ -109,7 +109,10 @@ fn unreadable(id: &str) -> MeetingSummary {
 pub fn recover_interrupted(root: &Path) -> Result<usize, String> {
     let mut recovered = 0;
     for mut meeting in list(root)? {
-        if meeting.status == "Finishing" {
+        if matches!(
+            meeting.status.as_str(),
+            "Finishing" | "Recording" | "Stopped"
+        ) {
             meeting.status = "NeedsAttention".into();
             save(root, &meeting)?;
             recovered += 1;
@@ -189,8 +192,10 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let copied = dir.join(format!("source.{extension}"));
         fs::copy(source, &copied)?;
-        let transcript =
-            motet_core::transcribe::transcript(&[copied.to_string_lossy().into_owned()])?;
+        let transcript = motet_core::transcribe::transcript_parts(
+            &[(vec![copied.to_string_lossy().into_owned()], 0)],
+            true,
+        )?;
         fs::write(dir.join("transcript.txt"), &transcript)?;
         let notes_input = match motet_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
             Some(model) => {
@@ -363,5 +368,6 @@ mod tests {
     fn export_bindings() {
         let config = ts_rs::Config::default().with_out_dir("../../ui/lib/bindings");
         Meeting::export_all(&config).unwrap();
+        motet_core::events::Event::export_all(&config).unwrap();
     }
 }

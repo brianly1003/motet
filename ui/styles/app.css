@@ -81,3 +81,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 @keyframes working { to { transform: translateX(190%); } }
 @media (prefers-reduced-motion: reduce) { .progress:after { animation: none; } }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+.session-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.session-banner time { font-family: var(--font-mono); margin-left: 8px; }
+.session-banner.is-recording { border-left-color: var(--rec); }

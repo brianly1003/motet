@@ -1,4 +1,13 @@
 export const strings = {
+  companion: "Motet companion", showControls: "Recording. Show controls", shrink: "Shrink to Dot",
+  pillStop: "Stop", pillStopped: "Stopped · notes start in", seconds: "s", recordingShort: "Recording",
+  permissionBody: "Allow notifications for recording reminders and completed notes. Recording controls stay visible even with Focus on.",
+  allowNotifications: "Allow notifications", notificationsDenied: "Notifications are off. Turn them on in System Settings > Notifications > Motet.",
+
+  recording: "Recording microphone and system audio", stopped: "Recording stopped. Resume within 10 seconds.",
+  transcribing: "Transcribing your recording", stop: "Stop recording", resume: "Resume",
+  quitQuestion: "Stop recording and save the notes before quitting?", stopAndSave: "Stop and save",
+  keepRecording: "Keep recording", stayOpen: "Keep Motet open",
   app: "Motet", privacy: "On this computer", meetings: "Meetings", meeting: "meeting", import: "Import a recording…",
   dismiss: "Dismiss",
   search: "Search meetings", emptyTitle: "Your first meeting will appear here.",

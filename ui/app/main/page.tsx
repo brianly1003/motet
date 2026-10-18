@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import NotificationPermission from "@/components/NotificationPermission";
+import SessionControls from "@/components/SessionControls";
 import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
 import { displayTranscript, renderNotes } from "@/lib/md";
@@ -28,7 +30,7 @@ export default function Main(){
     if(!available){setLoading(false);return;}
     let active=true;const cleanups:Array<()=>void>=[];
     const subscribe=async(name:string,callback:()=>void)=>{const off=await ipc.subscribe(name,callback);if(active)cleanups.push(off);else off();};
-    Promise.all([refresh(),subscribe("motet://library-changed",()=>{void refresh();}),subscribe("motet://quit-pending",()=>setQuitPending(true))])
+    Promise.all([ipc.onOpenMeeting(id=>{if(active){setQuery("");void select(id);}}).then(off=>{if(active)cleanups.push(off);else off();}),refresh(),subscribe("motet://library-changed",()=>{void refresh();}),subscribe("motet://quit-pending",()=>setQuitPending(true))])
       .catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;selection.current++;cleanups.forEach(off=>off());};
   },[]);
@@ -45,6 +47,7 @@ export default function Main(){
       <div className="privacy"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3"/></svg>{s.privacy} · {meetings.length} {meetings.length===1?s.meeting:s.meetings.toLowerCase()}</div>
     </aside>
     <section className="workspace" aria-busy={loading||busy}>
+      <NotificationPermission/><SessionControls/>
       {error&&<div className="banner" role="alert"><strong>{s.error}</strong><p>{error}</p><button className="quiet" onClick={()=>setError("")}>{s.dismiss}</button></div>}
       {quitPending&&<div className="banner" role="status">{s.quitPending}</div>}
       {busy?<div className="empty processing" role="status"><Duet/><h1>{s.processing}</h1><p>{s.processingBody}</p><div className="progress"/></div>:loading?<div className="empty" role="status"><p>{s.loading}</p></div>:selected?<article className="document">
