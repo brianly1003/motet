@@ -1,24 +1,27 @@
 //! Capture stage: system audio + mic from one ScreenCaptureKit stream, one WAV per track.
 
+use crate::events::Stop;
 use screencapturekit::prelude::*;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 type Wav = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
 
 struct Track {
     path: String,
     wav: Wav,
-    stop: mpsc::Sender<Result<(), String>>,
+    errors: mpsc::Sender<Result<(), String>>,
 }
 
 impl SCStreamOutputTrait for Track {
     fn did_output_sample_buffer(&self, buf: CMSampleBuffer, _: SCStreamOutputType) {
         if let Err(error) = self.write_buffer(buf) {
             // The receiver may already be gone while capture is stopping.
-            let _ = self.stop.send(Err(format!(
+            let _ = self.errors.send(Err(format!(
                 "cannot save {}: {error}; check free disk space and folder permissions",
                 self.path
             )));
@@ -79,8 +82,21 @@ fn write_samples<W: Write + Seek>(
     Ok(())
 }
 
-/// Records "what you hear" + "what you say" into two WAVs; returns the ones that got audio.
-pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
+fn wait_for_stop(stop: &Stop, errors: &mpsc::Receiver<Result<(), String>>) -> Result<(), String> {
+    while !stop.load(Ordering::Relaxed) {
+        match errors.recv_timeout(Duration::from_millis(50)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("capture error channel closed".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Records both tracks until `stop` is set or writing fails; returns tracks that got audio.
+pub fn record(base: &str, stop: Stop) -> Result<Vec<String>, Box<dyn Error>> {
     let display = SCShareableContent::get()?
         .displays()
         .into_iter()
@@ -101,7 +117,7 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
 
     let mut stream = SCStream::new(&filter, &config)?;
     let mut tracks = vec![];
-    let (stop, stopped) = mpsc::channel();
+    let (errors, stopped) = mpsc::channel();
     for (suffix, kind) in [
         ("system", SCStreamOutputType::Audio),
         ("mic", SCStreamOutputType::Microphone),
@@ -112,7 +128,7 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
             Track {
                 path: path.clone(),
                 wav: wav.clone(),
-                stop: stop.clone(),
+                errors: errors.clone(),
             },
             kind,
         )?;
@@ -121,16 +137,7 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
 
     stream.start_capture()?;
     println!("Recording system audio + mic. Press Enter to stop.");
-    // shortcut: the stdin reader lives until Enter or CLI exit; replace with session commands in M1.
-    std::thread::spawn(move || {
-        let result = std::io::stdin()
-            .read_line(&mut String::new())
-            .map(|_| ())
-            .map_err(|e| format!("cannot read the stop key: {e}"));
-        // Capture may have already stopped after an audio write error.
-        let _ = stop.send(result);
-    });
-    let mut result = stopped.recv().map_err(|e| e.to_string()).and_then(|r| r);
+    let mut result = wait_for_stop(&stop, &stopped);
     let stop_result = stream
         .stop_capture()
         .map_err(|e| format!("cannot stop capture: {e}"));
@@ -194,6 +201,16 @@ mod tests {
         fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
             self.bytes.seek(pos)
         }
+    }
+
+    #[test]
+    fn stop_signal_and_write_error_end_the_wait() {
+        let (sender, receiver) = mpsc::channel();
+        let stop = Stop::default();
+        sender.send(Err("disk full".into())).unwrap();
+        assert_eq!(wait_for_stop(&stop, &receiver), Err("disk full".into()));
+        stop.store(true, Ordering::Relaxed);
+        assert_eq!(wait_for_stop(&stop, &receiver), Ok(()));
     }
 
     #[test]

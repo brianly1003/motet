@@ -11,7 +11,9 @@
 //!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
 //!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts).
 
-use meetnote_core::{capture, config, correct, summarize, transcribe};
+mod record;
+
+use meetnote_core::{config, correct, summarize, transcribe};
 
 use std::error::Error;
 use std::fs;
@@ -70,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     let sources = if inputs.is_empty() {
-        capture::record(&base)?
+        record::record(&base)?
     } else {
         inputs
     };
