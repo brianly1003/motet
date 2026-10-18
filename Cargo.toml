@@ -1,10 +1,3 @@
-[package]
-name = "meetnote"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-dotenvy = "0.15"
-hound = "3"
-screencapturekit = { version = "11", features = ["macos_15_0"] }
+[workspace]
+members = ["crates/meetnote-core", "crates/meetnote-cli"]
+resolver = "3"

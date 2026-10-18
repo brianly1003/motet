@@ -18,7 +18,7 @@ const CHUNK_LINES: usize = 40;
 /// Corrects the transcript with `llm`, chunk by chunk. A chunk whose answer changes the line
 /// count, any `[mm:ss] Speaker:` prefix or most of the words is kept as transcribed, so a weak
 /// model can't relabel, drop, invent, translate or rewrite lines.
-pub(crate) fn transcript(llm: &str, transcript: &str) -> Result<String, Box<dyn Error>> {
+pub fn transcript(llm: &str, transcript: &str) -> Result<String, Box<dyn Error>> {
     println!("Correcting the transcript with {llm}...");
     let lines: Vec<&str> = transcript.lines().collect();
     let mut fixed = String::new();

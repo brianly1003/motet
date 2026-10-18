@@ -53,7 +53,7 @@ fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
 }
 
 /// Transcribes each track on its own and merges the lines into one `[mm:ss] Me: …` transcript.
-pub(crate) fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
+pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
     // Transcribe each track on its own: mic = "Me", system audio = "Them". Merge by timestamp.
     // tracks are aligned by start time only (ms-level skew); fine for transcripts.
     let model = config::var("WHISPER_MODEL").ok_or("set WHISPER_MODEL to a ggml model path")?;

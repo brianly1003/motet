@@ -11,11 +11,7 @@
 //!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
 //!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts).
 
-mod capture;
-mod config;
-mod correct;
-mod summarize;
-mod transcribe;
+use meetnote_core::{capture, config, correct, summarize, transcribe};
 
 use std::error::Error;
 use std::fs;
@@ -25,7 +21,7 @@ use clap::{Parser, Subcommand};
 
 /// Local meeting notes: record a call, transcribe it, summarize it. Nothing leaves the Mac.
 #[derive(Parser)]
-#[command(version, args_conflicts_with_subcommands = true)]
+#[command(name = "meetnote", version, args_conflicts_with_subcommands = true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

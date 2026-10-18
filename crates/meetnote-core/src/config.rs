@@ -51,7 +51,7 @@ fn clean_terms(raw: &str) -> Option<String> {
 
 /// A setting: `./.env` wins over `~/.config/meetnote/.env`, and both win over the shell, so a
 /// stale export in a long-running terminal can't pick the wrong model.
-pub(crate) fn var(key: &str) -> Option<String> {
+pub fn var(key: &str) -> Option<String> {
     static FILES: OnceLock<HashMap<String, String>> = OnceLock::new();
     FILES
         .get_or_init(|| {

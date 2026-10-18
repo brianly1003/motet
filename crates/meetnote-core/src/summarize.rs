@@ -34,7 +34,7 @@ const CHUNK_CHARS: usize = 24_000;
 /// Summarizes the transcript with `OLLAMA_MODEL` and writes `<base>.md` (summary + transcript).
 /// A transcript longer than `SUMMARY_CHUNK_CHARS` (default 24,000) is summarized part by part,
 /// then the partial notes are merged in one more pass.
-pub(crate) fn notes(base: &str, transcript: &str) -> Result<(), Box<dyn Error>> {
+pub fn notes(base: &str, transcript: &str) -> Result<(), Box<dyn Error>> {
     let llm = config::var("OLLAMA_MODEL").ok_or("set OLLAMA_MODEL (see `ollama list`)")?;
     let max_chars = config::var("SUMMARY_CHUNK_CHARS")
         .and_then(|v| v.parse().ok())

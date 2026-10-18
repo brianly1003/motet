@@ -58,7 +58,7 @@ impl SCStreamOutputTrait for Track {
 }
 
 /// Records "what you hear" + "what you say" into two WAVs; returns the ones that got audio.
-pub(crate) fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
+pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let display = SCShareableContent::get()?
         .displays()
         .into_iter()

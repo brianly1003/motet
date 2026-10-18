@@ -1,0 +1,9 @@
+[package]
+name = "meetnote-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenvy = "0.15"
+hound = "3"
+screencapturekit = { version = "11", features = ["macos_15_0"] }
