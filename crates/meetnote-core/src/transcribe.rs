@@ -88,7 +88,7 @@ pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
         whisper.args(["-bs", "1", "-bo", "1"]);
         // VAD gives real segment start times (else leading silence is folded in) and
         // stops hallucinated lines in the long silent stretches of each track.
-        if let Some(vad) = config::var("WHISPER_VAD_MODEL") {
+        if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
             whisper.args(["--vad", "-vm", &vad]);
         }
         // Names whisper can't know (new products, people, project codes) bias it toward the right
@@ -133,7 +133,12 @@ fn parse_csv(csv: &str) -> Vec<(u64, String)> {
         .filter_map(|line| {
             let mut cols = line.splitn(3, ',');
             let start = cols.next()?.parse().ok()?;
-            let text = cols.nth(1)?.trim().trim_matches('"').replace("\"\"", "\"");
+            let field = cols.nth(1)?.trim();
+            let text = field
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .unwrap_or(field)
+                .replace("\"\"", "\"");
             (!text.trim().is_empty()).then(|| (start, text.trim().to_string()))
         })
         .collect()
@@ -149,6 +154,14 @@ mod tests {
         assert_eq!(
             parse_csv(csv),
             [(0, "Hi, all.".into()), (2000, "He said \"go\".".into())]
+        );
+    }
+
+    #[test]
+    fn parses_quotes_at_field_edges() {
+        assert_eq!(
+            parse_csv("0,1000,\" Say \"\"go\"\"\"\n1000,2000,\"\"\"yes\"\"\"\n"),
+            [(0, "Say \"go\"".into()), (1000, "\"yes\"".into())]
         );
     }
 

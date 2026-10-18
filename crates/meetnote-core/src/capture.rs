@@ -3,25 +3,40 @@
 use screencapturekit::prelude::*;
 use std::error::Error;
 use std::fs::File;
-use std::io::BufWriter;
-use std::sync::{Arc, Mutex};
+use std::io::{BufWriter, Seek, Write};
+use std::sync::{Arc, Mutex, mpsc};
 
 type Wav = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
 
 struct Track {
     path: String,
     wav: Wav,
+    stop: mpsc::Sender<Result<(), String>>,
 }
 
 impl SCStreamOutputTrait for Track {
     fn did_output_sample_buffer(&self, buf: CMSampleBuffer, _: SCStreamOutputType) {
+        if let Err(error) = self.write_buffer(buf) {
+            // The receiver may already be gone while capture is stopping.
+            let _ = self.stop.send(Err(format!(
+                "cannot save {}: {error}; check free disk space and folder permissions",
+                self.path
+            )));
+        }
+    }
+}
+
+impl Track {
+    fn write_buffer(&self, buf: CMSampleBuffer) -> Result<(), Box<dyn Error>> {
         let frames = buf.num_samples() as usize;
         let Ok(list) = buf.audio_buffer_list() else {
-            return;
+            return Ok(());
         };
-        let Some(first) = list.get(0) else { return };
+        let Some(first) = list.get(0) else {
+            return Ok(());
+        };
         if frames == 0 {
-            return;
+            return Ok(());
         }
         let samples: Vec<f32> = first
             .data()
@@ -33,7 +48,7 @@ impl SCStreamOutputTrait for Track {
         // Non-interleaved: buffer 0 is channel 0. Interleaved: take every Nth sample.
         let stride = (samples.len() / frames).max(1);
 
-        let mut wav = self.wav.lock().unwrap();
+        let mut wav = self.wav.lock().map_err(|_| "audio writer lock poisoned")?;
         if wav.is_none() {
             let rate = buf
                 .format_description()
@@ -45,16 +60,23 @@ impl SCStreamOutputTrait for Track {
                 bits_per_sample: 32,
                 sample_format: hound::SampleFormat::Float,
             };
-            match hound::WavWriter::create(&self.path, spec) {
-                Ok(w) => *wav = Some(w),
-                Err(e) => return eprintln!("cannot create {}: {e}", self.path),
-            }
+            *wav = Some(hound::WavWriter::create(&self.path, spec)?);
         }
-        let w = wav.as_mut().unwrap();
-        for s in samples.iter().step_by(stride) {
-            let _ = w.write_sample(*s);
+        if let Some(writer) = wav.as_mut() {
+            write_samples(writer, samples.iter().step_by(stride).copied())?;
         }
+        Ok(())
     }
+}
+
+fn write_samples<W: Write + Seek>(
+    writer: &mut hound::WavWriter<W>,
+    samples: impl Iterator<Item = f32>,
+) -> Result<(), hound::Error> {
+    for sample in samples {
+        writer.write_sample(sample)?;
+    }
+    Ok(())
 }
 
 /// Records "what you hear" + "what you say" into two WAVs; returns the ones that got audio.
@@ -79,6 +101,7 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
 
     let mut stream = SCStream::new(&filter, &config)?;
     let mut tracks = vec![];
+    let (stop, stopped) = mpsc::channel();
     for (suffix, kind) in [
         ("system", SCStreamOutputType::Audio),
         ("mic", SCStreamOutputType::Microphone),
@@ -89,6 +112,7 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
             Track {
                 path: path.clone(),
                 wav: wav.clone(),
+                stop: stop.clone(),
             },
             kind,
         )?;
@@ -97,16 +121,43 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
 
     stream.start_capture()?;
     println!("Recording system audio + mic. Press Enter to stop.");
-    std::io::stdin().read_line(&mut String::new())?;
-    stream.stop_capture()?;
+    // shortcut: the stdin reader lives until Enter or CLI exit; replace with session commands in M1.
+    std::thread::spawn(move || {
+        let result = std::io::stdin()
+            .read_line(&mut String::new())
+            .map(|_| ())
+            .map_err(|e| format!("cannot read the stop key: {e}"));
+        // Capture may have already stopped after an audio write error.
+        let _ = stop.send(result);
+    });
+    let mut result = stopped.recv().map_err(|e| e.to_string()).and_then(|r| r);
+    let stop_result = stream
+        .stop_capture()
+        .map_err(|e| format!("cannot stop capture: {e}"));
+    result = result.and(stop_result);
+    for pending in stopped.try_iter() {
+        result = result.and(pending);
+    }
 
     let mut files = vec![];
     for (path, wav) in tracks {
-        if let Some(w) = wav.lock().unwrap().take() {
-            w.finalize()?;
-            files.push(path);
-        }
+        let finalized =
+            (|| -> Result<(), String> {
+                let mut wav = wav
+                    .lock()
+                    .map_err(|_| "audio writer lock poisoned".to_string())?;
+                if let Some(w) = wav.take() {
+                    w.finalize().map_err(|e| format!(
+                    "cannot finalize {path}: {e}; check free disk space and folder permissions"
+                ))?;
+                    files.push(path);
+                }
+                Ok(())
+            })();
+        // Attempt both tracks even if the first one failed; keep the first error.
+        result = result.and(finalized);
     }
+    result?;
     if files.is_empty() {
         return Err(
             "no audio captured - check Screen Recording / Microphone permission for your terminal"
@@ -114,4 +165,60 @@ pub fn record(base: &str) -> Result<Vec<String>, Box<dyn Error>> {
         );
     }
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, Cursor, SeekFrom};
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct FailingWriter {
+        bytes: Cursor<Vec<u8>>,
+        fail: Arc<AtomicBool>,
+    }
+
+    impl Write for FailingWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.fail.load(Ordering::Relaxed) {
+                return Err(io::Error::other("disk full"));
+            }
+            self.bytes.write(bytes)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Seek for FailingWriter {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.bytes.seek(pos)
+        }
+    }
+
+    #[test]
+    fn sample_write_failure_is_returned() {
+        let fail = Arc::new(AtomicBool::new(false));
+        let mut writer = hound::WavWriter::new(
+            FailingWriter {
+                bytes: Cursor::new(Vec::new()),
+                fail: fail.clone(),
+            },
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 48000,
+                bits_per_sample: 32,
+                sample_format: hound::SampleFormat::Float,
+            },
+        )
+        .unwrap();
+        write_samples(&mut writer, [0.5].into_iter()).unwrap();
+        fail.store(true, Ordering::Relaxed);
+        assert!(
+            write_samples(&mut writer, [0.5].into_iter())
+                .unwrap_err()
+                .to_string()
+                .contains("disk full")
+        );
+    }
 }

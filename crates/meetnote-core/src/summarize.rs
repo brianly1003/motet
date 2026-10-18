@@ -78,7 +78,17 @@ pub(crate) fn ask(llm: &str, prompt: &str) -> Result<String, Box<dyn Error>> {
     // `ollama run` downloads a model it doesn't have, and the name can come from a ./.env in a
     // folder you didn't write: only run models already installed, never fetch one.
     // one `ollama list` per prompt (~30 ms); cache it if prompts get many and small.
-    let list = Command::new("ollama").arg("list").output()?;
+    let list = Command::new("ollama")
+        .env("OLLAMA_HOST", "http://127.0.0.1:11434")
+        .arg("list")
+        .output()?;
+    if !list.status.success() {
+        return Err(format!(
+            "cannot list local Ollama models; start Ollama and retry: {}",
+            String::from_utf8_lossy(&list.stderr).trim()
+        )
+        .into());
+    }
     if !installed(&String::from_utf8_lossy(&list.stdout), llm) {
         return Err(format!(
             "model {llm} isn't installed; run `ollama pull {llm}` first (meetnote never downloads models)"
@@ -86,6 +96,7 @@ pub(crate) fn ask(llm: &str, prompt: &str) -> Result<String, Box<dyn Error>> {
         .into());
     }
     let mut child = Command::new("ollama")
+        .env("OLLAMA_HOST", "http://127.0.0.1:11434")
         .args([
             "run",
             llm,
