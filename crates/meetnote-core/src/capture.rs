@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 type Wav = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
 
@@ -82,11 +82,21 @@ fn write_samples<W: Write + Seek>(
     Ok(())
 }
 
-fn wait_for_stop(stop: &Stop, errors: &mpsc::Receiver<Result<(), String>>) -> Result<(), String> {
+fn wait_for_stop(
+    stop: &Stop,
+    errors: &mpsc::Receiver<Result<(), String>>,
+    mut flush: impl FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    let mut flushed = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         match errors.recv_timeout(Duration::from_millis(50)) {
             Ok(result) => return result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if flushed.elapsed() >= Duration::from_secs(5) {
+                    flush()?;
+                    flushed = Instant::now();
+                }
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return Err("capture error channel closed".into());
             }
@@ -135,9 +145,21 @@ pub fn record(base: &str, stop: Stop) -> Result<Vec<String>, Box<dyn Error>> {
         tracks.push((path, wav));
     }
 
-    stream.start_capture()?;
     println!("Recording system audio + mic. Press Enter to stop.");
-    let mut result = wait_for_stop(&stop, &stopped);
+    stream.start_capture()?;
+    let mut result = wait_for_stop(&stop, &stopped, || {
+        for (path, wav) in &tracks {
+            let mut wav = wav
+                .lock()
+                .map_err(|_| "audio writer lock poisoned".to_string())?;
+            if let Some(writer) = wav.as_mut() {
+                writer
+                    .flush()
+                    .map_err(|e| format!("cannot flush {path}: {e}; check free disk space"))?;
+            }
+        }
+        Ok(())
+    });
     let stop_result = stream
         .stop_capture()
         .map_err(|e| format!("cannot stop capture: {e}"));
@@ -208,9 +230,12 @@ mod tests {
         let (sender, receiver) = mpsc::channel();
         let stop = Stop::default();
         sender.send(Err("disk full".into())).unwrap();
-        assert_eq!(wait_for_stop(&stop, &receiver), Err("disk full".into()));
+        assert_eq!(
+            wait_for_stop(&stop, &receiver, || Ok(())),
+            Err("disk full".into())
+        );
         stop.store(true, Ordering::Relaxed);
-        assert_eq!(wait_for_stop(&stop, &receiver), Ok(()));
+        assert_eq!(wait_for_stop(&stop, &receiver, || Ok(())), Ok(()));
     }
 
     #[test]

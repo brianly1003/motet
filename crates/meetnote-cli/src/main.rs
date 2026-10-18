@@ -1,4 +1,4 @@
-//! meetnote: record system audio + mic (ScreenCaptureKit), transcribe locally
+//! meetnote: record system audio + mic (ScreenCaptureKit or WASAPI), transcribe locally
 //! (whisper.cpp), summarize locally (Ollama). Works for any meeting app.
 //!
 //!   meetnote record                       record until Enter, then transcribe + summarize
@@ -11,10 +11,10 @@
 //!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
 //!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts).
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod record;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod record {
     pub fn record(_: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         Err("recording is not available on this platform yet; use run --file".into())
@@ -29,7 +29,7 @@ use std::path::Path;
 
 use clap::{Parser, Subcommand};
 
-/// Local meeting notes: record a call, transcribe it, summarize it. Nothing leaves the Mac.
+/// Local meeting notes: record a call, transcribe it, summarize it. Nothing leaves the computer.
 #[derive(Parser)]
 #[command(name = "meetnote", version, args_conflicts_with_subcommands = true)]
 struct Cli {
