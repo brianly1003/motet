@@ -1,0 +1,49 @@
+/* Generated from docs/app/tokens.json. */
+:root {
+  --space-xs: 4px;
+  --space-s: 8px;
+  --space-m: 12px;
+  --space-l: 16px;
+  --space-xl: 24px;
+  --space-xxl: 28px;
+  --radius-chip: 6px;
+  --radius-button: 8px;
+  --radius-window: 12px;
+  --radius-sheet: 22px;
+  --radius-pill: 99px;
+  --font-doc: "Literata","Iowan Old Style","Georgia","serif";
+  --font-ui: "SF Pro Text","Segoe UI Variable","Roboto Flex","system-ui","sans-serif";
+  --font-data: "SF Pro Text","Segoe UI Variable","Roboto Flex","system-ui","sans-serif";
+  --duration-fade: 120ms;
+  --duration-thread: 200ms;
+  --duration-panel: 320ms;
+  --duration-earcon: 180ms;
+  --surface-1: #f9fbf9;
+  --surface-2: #f0f3ef;
+  --surface-3: #e7ebe5;
+  --line: #d9dcd4;
+  --ink-1: #1b1e1a;
+  --ink-2: #565c53;
+  --ink-3: #5f655b;
+  --rec: #d0372b;
+  --voice-me: #6a4fd8;
+  --voice-them: #0a6f8c;
+  --attention: #8a590b;
+  --ok: #276d43;
+  --glass: #f9fbf9;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --surface-1: #1a1d18;
+  --surface-2: #20241e;
+  --surface-3: #282d25;
+  --line: #2e332b;
+  --ink-1: #ecede7;
+  --ink-2: #a6ac9f;
+  --ink-3: #868d80;
+  --rec: #ff5b4e;
+  --voice-me: #a99bff;
+  --voice-them: #4cc4e0;
+  --attention: #e2a54a;
+  --ok: #5cc488;
+  --glass: #1a1d18;
+} }

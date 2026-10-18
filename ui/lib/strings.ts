@@ -1,0 +1,16 @@
+export const strings = {
+  app: "Motet", privacy: "On this computer", meetings: "Meetings", meeting: "meeting", import: "Import a recording…",
+  dismiss: "Dismiss",
+  search: "Search meetings", emptyTitle: "Your first meeting will appear here.",
+  emptyBody: "Import a recording to make notes from it.",
+  privateBody: "Audio, transcripts, and notes stay on this computer. No account needed.",
+  importHint: "WAV, MP3, M4A, MP4, MOV, FLAC and more",
+  processing: "Writing your meeting notes", processingBody: "Your local models are working. You can keep this window in the background.",
+  loading: "Opening your meetings…", none: "No matching meetings", transcript: "Transcript", notes: "Notes", meetingViews: "Meeting views",
+  libraryTitle: "Your meetings, on this computer.", libraryBody: "Choose a meeting in the sidebar, or import a recording.",
+  browser: "Open the desktop app to view your meetings or import a recording.",
+  error: "Something needs attention", retry: "Refresh meetings", ready: "Ready", finishing: "Writing notes", failed: "Needs attention",
+  quitPending: "Motet will quit after the current meeting finishes.",
+  sourceNote: "Generated notes can miss details. Check important decisions against the transcript.",
+  noNotes: "This meeting has no notes yet. The source recording and any completed transcript remain on this computer.",
+};

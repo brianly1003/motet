@@ -1,0 +1,29 @@
+{
+  "name": "motet-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev --hostname 127.0.0.1",
+    "build": "node scripts/tokens.mjs && node scripts/check-boundaries.mjs && NEXT_TELEMETRY_DISABLED=1 next build --webpack",
+    "typecheck": "tsc --noEmit",
+    "desktop": "cd ../app/src-tauri && ../../ui/node_modules/.bin/tauri dev",
+    "desktop:build": "cd ../app/src-tauri && ../../ui/node_modules/.bin/tauri build --no-bundle",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "next": "^16",
+    "react": "^19",
+    "react-dom": "^19",
+    "@tauri-apps/api": "^2",
+    "markdown-it": "^14"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/markdown-it": "^14",
+    "@tauri-apps/cli": "^2"
+  },
+  "type": "module"
+}

@@ -1,3 +1,4 @@
 [workspace]
-members = ["crates/meetnote-core", "crates/meetnote-cli"]
+members = ["crates/motet-core", "crates/motet-cli", "app/src-tauri"]
+default-members = ["crates/motet-cli", "crates/motet-core"]
 resolver = "3"

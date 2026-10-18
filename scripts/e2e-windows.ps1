@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path $PSScriptRoot -Parent
-$Work = Join-Path ([IO.Path]::GetTempPath()) ('meetnote-e2e-' + [guid]::NewGuid())
+$Work = Join-Path ([IO.Path]::GetTempPath()) ('motet-e2e-' + [guid]::NewGuid())
 $OldLocation = Get-Location
 $OldHost = $env:OLLAMA_HOST
 function Run-Native([string]$Tool, [string[]]$Arguments) {
@@ -32,7 +32,7 @@ try {
     Run-Native cargo @('clippy', '--all-targets', '--', '-D', 'warnings')
     Run-Native cargo @('test')
     Run-Native cargo @('build', '--release')
-    $Binary = Join-Path $Root 'target/release/meetnote.exe'
+    $Binary = Join-Path $Root 'target/release/motet.exe'
     New-Item -ItemType Directory $Work | Out-Null
     Set-Location $Work
     $Settings = @("WHISPER_MODEL='$WhisperPath'", "WHISPER_VAD_MODEL='$VadPath'", "OLLAMA_MODEL='$NotesModel'", 'FIX_MODEL=')
