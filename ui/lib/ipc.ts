@@ -54,6 +54,12 @@ export const getLevels = () => invoke<[number, number]>("get_levels");
 
 export const liveTranscript = () => invoke<[string, string, string]>("live_transcript");
 
+// The native drag returns when the mouse is released; Rust then snaps Tucked to the nearer edge.
+export async function dragCompanion() {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().startDragging();
+  await invoke<void>("snap_companion");
+}
 export async function onCompanionFocus(callback: (focused: boolean) => void) {
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   return getCurrentWindow().onFocusChanged(event => callback(event.payload));
@@ -70,6 +76,7 @@ export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("searc
 
 export const meetingAction = (id: string, action: "reveal" | "regenerate" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
 export const deletedMeetings = () => invoke<MeetingSummary[]>("deleted_meetings");
+export const renameMeeting = (id: string, title: string) => invoke<MeetingSummary>("rename_meeting", { id, title });
 
 import type { MeetingMedia } from './bindings/MeetingMedia';
 export async function meetingMedia(id: string): Promise<MeetingMedia> {

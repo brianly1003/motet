@@ -46,7 +46,7 @@ async (page) => {
       }};
     });
     await p.goto('http://127.0.0.1:3000/main/');
-    await p.getByRole('button',{name:/FCM vs Pusher Beams/}).click();
+    await p.getByRole('button',{name:/FCM vs Pusher Beams/}).first().click();
     await p.getByText('01:27',{exact:true}).first().waitFor();
     await p.getByRole('checkbox').first().check();
     await p.waitForFunction(()=>window.testCalls.some(c=>c.command==='set_action_item_done'&&c.args.done));
@@ -78,6 +78,13 @@ async (page) => {
     await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
     await p.evaluate(()=>document.querySelectorAll('audio').forEach(a=>a.playbackRate=1));
     if(await p.getByRole('checkbox').first().isChecked())throw Error('Source chip toggled task');
+    // Clicking the voice wave selects Transcript and plays from that point, as in the mockup.
+    const wave=await p.locator('.timeline-wave input').boundingBox();
+    await p.mouse.click(wave.x+wave.width*.25,wave.y+wave.height/2);
+    await p.waitForFunction(()=>document.getElementById('tab-Transcript')?.getAttribute('aria-selected')==='true');
+    await p.waitForFunction(()=>{const t=document.querySelector('audio')?.currentTime;return t>=18&&t<26;});
+    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.getByRole('tab',{name:'Notes',exact:true}).click();
     await p.getByRole('tab',{name:'Transcript',exact:true}).click();
     await p.getByRole('button',{name:'Play from 00:16',exact:true}).click();
     await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=16&&document.querySelector('audio')?.currentTime<20);

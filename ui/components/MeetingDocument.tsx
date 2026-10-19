@@ -8,9 +8,37 @@ import {meetingDate, timeLabel, fileSize, durationLabel} from '@/lib/document';
 import {transcriptLines} from '@/lib/transcript';
 import * as ipc from '@/lib/ipc';
 import {strings as s} from '@/lib/strings';
+import {MenuIcon} from './MenuIcon';
 
-export default function MeetingDocument({meeting, onChange, onChanged, onError}: {meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void}) {
+const TITLE_MAX=80;
+
+export default function MeetingDocument({meeting, onChange, onChanged, onError, onRename, onDelete, renameRequest=0}: {meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
   const [tab,setTab]=useState('Notes');
+  // Rename (SPEC 7.6): one editor, this title. Enter saves, Esc or an empty title keeps the old one.
+  const title=useRef<HTMLHeadingElement>(null);
+  const [editing,setEditing]=useState(false);
+  const [count,setCount]=useState(0);
+  const [titleKey,setTitleKey]=useState(0);
+  // A ref, not state: a blur that arrives after Enter or Esc must not save a second time.
+  const editingNow=useRef(false);
+  function startRename(){
+    const h=title.current;if(!h||editingNow.current)return;
+    editingNow.current=true;setEditing(true);setCount(h.textContent?.length??0);
+    requestAnimationFrame(()=>{h.focus();const range=document.createRange();range.selectNodeContents(h);const selection=getSelection();selection?.removeAllRanges();selection?.addRange(range);});
+  }
+  function capTitle(){
+    const h=title.current;if(!h)return;
+    if((h.textContent??'').length>TITLE_MAX){h.textContent=(h.textContent??'').slice(0,TITLE_MAX);const range=document.createRange();range.selectNodeContents(h);range.collapse(false);const selection=getSelection();selection?.removeAllRanges();selection?.addRange(range);}
+    setCount(h.textContent?.length??0);
+  }
+  function endRename(save:boolean){
+    if(!editingNow.current)return;
+    editingNow.current=false;
+    const value=(title.current?.textContent??'').replace(/\s+/g,' ').trim();
+    setEditing(false);setTitleKey(key=>key+1);
+    if(save&&value&&value!==meeting.summary.title)void onRename(value);
+  }
+  useEffect(()=>{if(renameRequest)startRename();},[renameRequest]);
   const [media,setMedia]=useState<MeetingMedia|null>(null);
   const [playing,setPlaying]=useState(false);
   const [position,setPosition]=useState(0);
@@ -92,8 +120,13 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError}:
     return `M${x(track.offset_ms)} 20 `+track.waveform.map((peak,index)=>`L${x(track.offset_ms+index/track.waveform.length*track.duration_ms)} ${20+sign*height(peak)}`).join(' ')+` L${x(track.offset_ms+track.duration_ms)} 20 Z`;
   }
   return <article className="document">
-    <header className="dochead">
-      <div className="titlerow"><h1>{meeting.summary.title}</h1><MeetingActions meeting={meeting} onError={onError} onChanged={onChanged}/></div>
+    <header className={`dochead${editing?' editing':''}`}>
+      <div className="titlerow"><div className="tedit"><h1 key={titleKey} ref={title} contentEditable={editing} suppressContentEditableWarning spellCheck={false}
+        onClick={()=>{if(!editing)startRename();}} onInput={capTitle} onBlur={()=>endRename(true)}
+        onKeyDown={event=>{if(!editingNow.current)return;if(event.key==='Enter'){event.preventDefault();endRename(true);}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();endRename(false);}}}>{meeting.summary.title}</h1>
+        <button type="button" className="pen" aria-label={s.rename} title={s.rename} onClick={startRename}><MenuIcon name="rename"/></button></div>
+        <MeetingActions meeting={meeting} onError={onError} onChanged={onChanged} onRename={startRename} onDelete={onDelete}/></div>
+      <div className="edithint" aria-live="polite"><span><kbd>Enter</kbd> {s.renameSave}</span><span><kbd>Esc</kbd> {s.renameCancel}</span><span className={`count${count>=72?' near':''}`}>{count>=60?`${count}/${TITLE_MAX}`:''}</span></div>
       <div className="document-meta"><span>{meetingDate(meeting.summary.created_ms)}</span>{duration>0&&<><i className="sep"/><span>{durationLabel(duration)}</span></>}{meeting.summary.notes_ms!=null&&<><i className="sep"/><span>Notes in {Math.round(meeting.summary.notes_ms/1000)} s</span></>}</div>
       <div className="tl">
         <div className="timeline-wave"><svg viewBox="0 0 1000 40" preserveAspectRatio="none" aria-label="Recorded audio: You above, Them below">
@@ -102,7 +135,7 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError}:
           {duration>0&&meeting.summary.marks_ms.map(mark=><line key={mark} x1={mark/duration*1000} x2={mark/duration*1000} y1="2" y2="38" className="tl-mark"/>)}
           {duration>0&&[...new Set(itemTimes)].map(ms=><circle key={ms} cx={ms/duration*1000} cy="20" r="4" className="tl-item"/>)}
           {showPlayer&&duration>0&&<line x1={position/duration*1000} x2={position/duration*1000} y1="0" y2="40" className="tl-thread"/>}
-        </svg><input type="range" aria-label="Play recording from time" min="0" max={duration||1} value={position} disabled={!duration} onChange={event=>seek(Number(event.target.value))}/></div>
+        </svg><input type="range" aria-label="Play recording from time" min="0" max={duration||1} value={position} disabled={!duration} onChange={event=>{seek(Number(event.target.value));setTab('Transcript');}}/></div>
         <div className="tl-legend"><span className="lm">You</span><span className="lt">Them</span><span>{duration?timeLabel(duration):'No saved audio'}</span></div>
       </div>
     </header>

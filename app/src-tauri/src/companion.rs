@@ -88,6 +88,9 @@ pub fn update(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
     );
     let result = (|| -> tauri::Result<()> {
         resize(&window, width, height)?;
+        if next.1 == CompanionSize::Tucked && !next.2 {
+            snap_to_edge(&window)?;
+        }
         if next.0 {
             window.show()?;
         } else {
@@ -122,6 +125,60 @@ fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::Resu
     }
     window.set_size(LogicalSize::new(width, height))?;
     window.set_position(PhysicalPosition::new(x, y))
+}
+
+/// Tucked floats 10 px in from the nearer side edge, at the height it was left (DESIGN 4.3).
+/// Rectangles are physical pixels: (x, y, width, height); `scale` converts the 10/16 px margins.
+fn edge_position(
+    area: (i32, i32, i32, i32),
+    window: (i32, i32, i32, i32),
+    scale: f64,
+) -> (i32, i32) {
+    let (ax, ay, aw, ah) = area;
+    let (x, y, w, h) = window;
+    let side = (10.0 * scale) as i32;
+    let edge = (16.0 * scale) as i32;
+    let left = x + w / 2 < ax + aw / 2;
+    let x = if left { ax + side } else { ax + aw - w - side };
+    let top = ay + edge;
+    (x, y.clamp(top, (ay + ah - h - edge).max(top)))
+}
+
+fn snap_to_edge(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let (position, size) = (window.outer_position()?, window.outer_size()?);
+    let (x, y) = edge_position(
+        (
+            area.position.x,
+            area.position.y,
+            area.size.width as i32,
+            area.size.height as i32,
+        ),
+        (
+            position.x,
+            position.y,
+            size.width as i32,
+            size.height as i32,
+        ),
+        window.scale_factor()?,
+    );
+    window.set_position(PhysicalPosition::new(x, y))
+}
+
+/// Called by the Tucked capsule after the user drags it (the native drag has ended).
+#[tauri::command]
+pub fn snap_companion(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != "companion" {
+        return Err("Only recording controls can be moved this way".into());
+    }
+    let state = window.state::<crate::controller::Controller>().state()?;
+    if state.companion.size != CompanionSize::Tucked {
+        return Ok(());
+    }
+    snap_to_edge(&window).map_err(|e| e.to_string())
 }
 
 fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
@@ -173,4 +230,33 @@ pub async fn sharing_mode(app: tauri::AppHandle, active: bool) -> Result<(), Str
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::edge_position;
+
+    #[test]
+    fn tucked_snaps_to_the_nearer_side_edge_and_stays_on_screen() {
+        // A 1440 x 900 work area under a 25 px menu bar, at 2x: the capsule is 48 x 128 px.
+        let area = (0, 50, 2880, 1750);
+        // Dropped left of centre: 10 px (20 physical) in from the left, height kept.
+        assert_eq!(edge_position(area, (900, 600, 48, 128), 2.0), (20, 600));
+        // Right of centre: its right side 10 px in from the right edge.
+        assert_eq!(
+            edge_position(area, (2000, 600, 48, 128), 2.0),
+            (2880 - 48 - 20, 600)
+        );
+        // Dragged above the menu bar or below the Dock: kept 16 px inside the work area.
+        assert_eq!(edge_position(area, (2000, 0, 48, 128), 2.0).1, 50 + 32);
+        assert_eq!(
+            edge_position(area, (2000, 1790, 48, 128), 2.0).1,
+            50 + 1750 - 128 - 32
+        );
+        // A second display to the left (negative x) uses its own edges.
+        assert_eq!(
+            edge_position((-1920, 0, 1920, 1080), (-300, 400, 24, 64), 1.0),
+            (-24 - 10, 400)
+        );
+    }
 }

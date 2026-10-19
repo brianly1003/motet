@@ -54,6 +54,7 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .pill[data-size="tucked"] { width: 24px; height: 64px; left: auto; right: 10px; top: 160px; transform: none; border-radius: 99px; }
 .pill[data-size="tucked"] .pillbar, .pill[data-size="tucked"] .pilldrawer, .pill[data-size="tucked"] .jotbar { display: none; }
 .pill[data-size="tucked"] .handle { display: grid; justify-items: center; align-content: center; gap: 7px; width: 24px; height: 64px; border: 0; background: transparent; padding: 0; }
+.pill[data-size="tucked"] .handle { cursor: grab; } .pill[data-size="tucked"] .handle:active { cursor: grabbing; }
 /* Tucked says whose capsule it is: the still mark under the red dot (the dot alone means recording). */
 .handle .mark { width: 15px; height: 15px; }
 .iconbtn[aria-pressed="true"] { background: var(--me-soft); color: var(--me); }

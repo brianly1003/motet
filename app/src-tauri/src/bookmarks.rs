@@ -19,9 +19,43 @@ pub fn save(root: &Path, value: &MeetingSummary) -> Result<(), String> {
     let mut value = value.clone();
     let path = library::folder(root, &value.id)?.join("meeting.json");
     if path.try_exists().map_err(|e| e.to_string())? {
-        value.marks_ms = library::summary(root, &value.id)?.marks_ms;
+        // Marks and the title belong to the user once the meeting exists; a worker's status
+        // update must not undo a Mark or a rename made while the notes were being written.
+        let saved = library::summary(root, &value.id)?;
+        value.marks_ms = saved.marks_ms;
+        value.title = saved.title;
     }
     write(root, &value)
+}
+
+/// SPEC 7.6: one line, at most 80 characters; an empty title is refused (the UI keeps the old one).
+pub fn clean_title(title: &str) -> Result<String, String> {
+    let title = title
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(80)
+        .collect::<String>();
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err("A meeting needs a title".into());
+    }
+    Ok(title)
+}
+
+pub fn rename(root: &Path, id: &str, title: &str) -> Result<MeetingSummary, String> {
+    let title = clean_title(title)?;
+    let _guard = WRITER
+        .lock()
+        .map_err(|_| "Meeting storage is unavailable")?;
+    let mut value = library::summary(root, id)?;
+    if value.title != title {
+        value.title = title;
+        write(root, &value)?;
+    }
+    Ok(value)
 }
 
 pub fn mark(root: &Path, id: &str, at_ms: u64) -> Result<(), String> {
@@ -94,6 +128,45 @@ mod tests {
             fs::read_to_string(root.join("123/meeting.json")).unwrap(),
             "damaged metadata"
         );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_cleans_the_title_and_survives_a_stale_worker_save() {
+        assert_eq!(
+            clean_title("  Push \n vendor\tdecision ").unwrap(),
+            "Push vendor decision"
+        );
+        assert_eq!(clean_title(&"é".repeat(95)).unwrap().chars().count(), 80);
+        assert!(clean_title(" \n\t ").is_err());
+        let root = std::env::temp_dir().join(format!(
+            "motet-rename-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("123")).unwrap();
+        fs::write(
+            root.join("123/meeting.json"),
+            r#"{"id":"123","title":"Recorded meeting","created_ms":0,"status":"Finishing"}"#,
+        )
+        .unwrap();
+        // The worker read the summary before the user renamed the meeting.
+        let mut stale = library::summary(&root, "123").unwrap();
+        assert_eq!(
+            rename(&root, "123", "Weekly sync").unwrap().title,
+            "Weekly sync"
+        );
+        stale.status = "Ready".into();
+        save(&root, &stale).unwrap();
+        let saved = library::summary(&root, "123").unwrap();
+        assert_eq!(
+            (saved.title.as_str(), saved.status.as_str()),
+            ("Weekly sync", "Ready")
+        );
+        assert!(rename(&root, "123", "   ").is_err());
+        assert!(rename(&root, "../123", "Escape").is_err());
+        assert!(rename(&root, "999", "Missing").is_err());
+        assert_eq!(library::summary(&root, "123").unwrap().title, "Weekly sync");
         fs::remove_dir_all(root).unwrap();
     }
 }

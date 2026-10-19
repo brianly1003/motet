@@ -1,6 +1,9 @@
 export const strings = {
-  deletePermanently: "Delete permanently", permanentDeleteWarning: "Its audio, transcript, and notes will be permanently removed. This cannot be undone.",
-  copyMenu: "Copy ▾", moreActions: "More actions", copyItems: "Action items", copyMarkdown: "Notes as Markdown", copyPlain: "Notes as plain text", regenerate: "Write the notes again", reveal: "Show in Finder", deleteMeeting: "Delete meeting…", deletedMeetings: "Recently deleted", restoreMeeting: "Restore", copied: "Copied.", regenerateConfirm: "Replace these notes? The previous version will be kept in notes.prev.md.", deleteConfirm: "Delete this meeting? You can restore it from Recently deleted.", confirm: "Confirm", cancel: "Cancel",
+  deletePermanently: "Delete permanently", permanentDeleteWarning: "Its audio, transcript and notes are removed from this computer. This can't be undone.",
+  rename: "Rename", renamed: "Renamed.", renameSave: "save", renameCancel: "cancel",
+  rowActions: "Actions for", open: "Open", copyActionItems: "Copy action items", deleted: "Deleted.", undo: "Undo", restored: "Restored.", purged: "Deleted permanently.", deleteBusy: "Wait until the notes are written",
+  deletedLead: "Meetings stay here for 30 days. After that Motet removes their audio, transcript and notes from this computer.",
+  copyMenu: "Copy ▾", moreActions: "More actions", copyItems: "Action items", copyMarkdown: "Notes as Markdown", copyPlain: "Notes as plain text", regenerate: "Write the notes again", reveal: "Show in Finder", deleteMeeting: "Delete meeting", deletedMeetings: "Recently deleted", restoreMeeting: "Restore", copied: "Copied.", regenerateConfirm: "Replace these notes? The previous version will be kept in notes.prev.md.", confirm: "Confirm", cancel: "Cancel",
   markMoment: "Mark this moment", marked: "Marked", mark: "mark",
   companion: "Motet companion", showControls: "Recording. Show controls", shrink: "Shrink to Dot",
   pillQuitQuestion: "Quit while recording?",

@@ -1,0 +1,23 @@
+// 16 px line icons for the meeting menus and the row "•••" (20 px, three 2.5 px dots), as drawn
+// in docs/app/motet-app-mockup.html.
+const paths = {
+  open: <path d="M9.5 2.5h4v4M13.5 2.5 8 8M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/>,
+  rename: <><path d="M10.8 2.7l2.5 2.5L6 12.5l-3.2.7.7-3.2z"/><path d="M9.3 4.2l2.5 2.5"/></>,
+  copy: <><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1H3.5a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5"/></>,
+  folder: <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>,
+  again: <><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v3h-3"/></>,
+  trash: <path d="M2.8 4.5h10.4M6.3 4.5V3h3.4v1.5M4.3 4.5l.7 8.5h6l.7-8.5"/>,
+};
+export type IconName = keyof typeof paths;
+
+export function MenuIcon({ name }: { name: IconName }) {
+  return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+export function Dots() {
+  return <svg viewBox="0 0 20 20" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="5.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="14.5" cy="10" r="1.25"/></svg>;
+}
+
+export function MenuItem({ icon, label, onClick, danger, disabled, title }: { icon: IconName; label: string; onClick: () => void; danger?: boolean; disabled?: boolean; title?: string }) {
+  return <button type="button" role="menuitem" className={danger ? "danger" : undefined} disabled={disabled} title={title} onClick={onClick}><MenuIcon name={icon}/><span>{label}</span></button>;
+}

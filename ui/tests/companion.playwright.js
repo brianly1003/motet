@@ -76,6 +76,16 @@ async (page) => {
     const pillBounds = await p.locator('.pill').boundingBox();
     if (menuBounds.y < pillBounds.y + pillBounds.height + 6 || menuBounds.y + menuBounds.height > 300) throw Error('Menu overlaps the Pill or exceeds its native window');
     await p.screenshot({path: `.playwright-out/parity-size-menu-${theme}.png`});
+    // A press outside the menu closes it and shrinks the window: on the clear area, then on the Pill.
+    for (const [x, y] of [[40, 500], [30, 22]]) {
+      const before = await p.evaluate(() => window.testCalls.length);
+      await p.mouse.click(x, y);
+      if (await p.getByRole('menu').count()) throw Error(`Size menu stayed open after a click at ${x},${y}`);
+      if (!await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'companion_menu' && c.args.open === false), before)) throw Error('Window did not shrink after closing the menu');
+      await p.getByRole('button', {name: 'Change size'}).click();
+    }
+    await p.getByRole('menu').click({position: {x: 5, y: 5}});
+    if (!await p.getByRole('menu').count()) throw Error('A click inside the menu closed it');
     await p.getByRole('menuitemradio', {name: 'Notes and live transcript'}).click();
     const editor = p.getByRole('textbox', {name: 'My notes. Each line keeps the time you wrote it.'});
     await editor.waitFor();

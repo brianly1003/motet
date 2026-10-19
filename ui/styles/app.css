@@ -203,3 +203,59 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 
 .meeting-list .list-heading { margin-left: -6px; margin-right: -6px; }
 @media (prefers-color-scheme: dark) { .document { --ink-3: #7e8578; } }
+
+/* Rename, row menus, delete and Recently deleted, from docs/app/motet-app-mockup.html (DESIGN 4.7, 4.8). */
+:root { --rec-soft: #fbe1dd; --menu: var(--surface-1); --menu-hover: var(--surface-2); }
+@media (prefers-color-scheme: dark) { :root { --rec-soft: #3d1714; --menu: var(--surface-3); --menu-hover: var(--line-2); } }
+.tedit { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.document .dochead h1 { cursor: text; border-radius: 6px; padding: 0 4px; margin-left: -4px; outline: none; }
+.document .dochead h1:hover { background: var(--surface-2); }
+.document .dochead h1[contenteditable="true"] { background: var(--surface-2); box-shadow: 0 0 0 2px var(--attention); }
+.dochead .pen { opacity: 0; border: 0; background: transparent; color: var(--ink-3); width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; flex: none; transition: opacity .12s; }
+.dochead .pen svg { width: 15px; height: 15px; stroke-width: 1.4; }
+.tedit:hover .pen, .dochead .pen:focus-visible { opacity: 1; }
+.dochead .pen:hover { background: var(--surface-2); color: var(--ink-1); }
+.dochead.editing .pen { display: none; }
+.dochead .edithint { display: none; color: var(--ink-3); font-size: 12px; gap: 12px; }
+.dochead.editing .edithint { display: flex; }
+.dochead.editing .document-meta { display: none; }
+.dochead .edithint kbd { font: 11px var(--font-data); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--ink-2); }
+.dochead .edithint .count { margin-left: auto; font-feature-settings: "tnum"; }
+.dochead .edithint .count.near { color: var(--accent-ink); }
+.mrow { position: relative; }
+.mrow .rowmore { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); display: grid; place-items: center; opacity: 0; }
+.mrow .rowmore svg { display: block; width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.mrow:hover .rowmore, .mrow:focus-within .rowmore, .mrow.open .rowmore { opacity: 1; }
+.mrow .rowmore:hover, .mrow.open .rowmore { background: var(--line); color: var(--ink-1); }
+.mrow:hover .meeting-row strong, .mrow:focus-within .meeting-row strong, .mrow.open .meeting-row strong { padding-right: 26px; }
+.mrow.open .meeting-row { background: var(--surface-3); }
+.gmenu { z-index: 40; width: 256px; background: var(--menu); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.rowmenu { position: fixed; }
+.doc-dropdown.gmenu { top: 30px; }
+.gmenu button { border: 0; background: transparent; text-align: left; height: 32px; padding: 0 10px; border-radius: 8px; font: 400 14px/1 var(--font-ui); color: var(--ink-1); display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; }
+.gmenu button svg { width: 16px; height: 16px; flex: none; color: var(--ink-2); stroke-width: 1.4; }
+.gmenu button:hover, .gmenu button:focus-visible { background: var(--menu-hover); outline: none; }
+.gmenu button[disabled] { opacity: .45; cursor: not-allowed; background: transparent; }
+.gmenu .sep { height: 1px; background: var(--line-2); margin: 6px 10px; }
+.gmenu .danger, .gmenu .danger svg { color: var(--rec); }
+.sidebar .trash { margin: 0 6px 6px; border: 0; background: transparent; border-radius: 8px; padding: 6px 9px; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12.5px; text-align: left; }
+.sidebar .trash:hover { background: var(--surface-3); }
+.sidebar .trash[aria-current="page"] { background: var(--surface-1); box-shadow: 0 0 0 1px var(--line); color: var(--ink-1); }
+.sidebar .trash svg { width: 14px; height: 14px; flex: none; stroke-width: 1.4; }
+.sidebar .trash .n { margin-left: auto; color: var(--ink-3); font-size: 11.5px; font-feature-settings: "tnum"; }
+.trashview { padding: 14px 28px; display: grid; gap: 10px; align-content: start; }
+.trashview h1 { margin: 0; font: 400 30px/1.15 var(--font-doc); }
+.trashview .lead { margin: 0; color: var(--ink-2); font-size: 13px; }
+.trashlist { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.trow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface-1); }
+.trow:last-child { border-bottom: 0; }
+.trow .tt { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.trow .tt b { font-weight: 500; font-size: 13.5px; overflow-wrap: anywhere; }
+.trow .tt span { color: var(--ink-3); font-size: 12px; }
+.trow .acts { display: flex; gap: 6px; flex: none; }
+.trow.confirming { background: var(--rec-soft); }
+/* Destructive confirmation: red, by the owner's direction (DESIGN 2.1). */
+.doc-action.danger { background: var(--rec); border-color: var(--rec); color: #fff; }
+.doc-action.danger:hover { filter: brightness(1.06); background: var(--rec); }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 70; background: var(--ink-1); color: var(--surface-1); padding: 8px 8px 8px 14px; border-radius: 10px; font-size: 13px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; max-width: min(620px, calc(100% - 32px)); }
+.toast button { border: 0; background: transparent; color: var(--accent-soft); font-weight: 600; padding: 2px 8px; border-radius: 6px; }

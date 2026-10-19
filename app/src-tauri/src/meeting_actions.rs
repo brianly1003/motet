@@ -116,6 +116,19 @@ pub fn deleted_meetings(
     library::list(&deleted)
 }
 
+/// SPEC 7.6 `rename_meeting`: titles live in meeting.json only, so the folder never moves.
+/// Not gated on `busy`: renaming is safe while a meeting records or writes its notes.
+#[tauri::command]
+pub fn rename_meeting(
+    app: tauri::AppHandle,
+    id: String,
+    title: String,
+) -> Result<library::MeetingSummary, String> {
+    let summary = crate::bookmarks::rename(&app.state::<Library>().root, &id, &title)?;
+    let _ = app.emit("motet://library-changed", ());
+    Ok(summary)
+}
+
 #[tauri::command]
 pub async fn meeting_action(
     app: tauri::AppHandle,

@@ -21,6 +21,8 @@ export default function Companion() {
   }, [markedAt]);
   async function mark() { await act(async () => { setMarkedAt(await ipc.markMoment()); }); }
   const flushNotes = useRef<() => Promise<void>>(async () => {});
+  // Tucked: press and move 4 px to drag the capsule; a click without movement opens the Sidecar.
+  const dragFrom = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [menu, setMenu] = useState(false);
   const [liveError, setLiveError] = useState("");
   const [live, setLive] = useState("");
@@ -44,6 +46,18 @@ export default function Companion() {
     }).then(cleanup => { if (active) off = cleanup; else cleanup(); }).catch(() => {});
     return () => { active = false; off?.(); };
   }, [state?.companion.size, pinned, menu]);
+  // A press anywhere else closes the size menu. The window is enlarged and transparent while it is
+  // open, so a click "outside" often lands on this page, where focus doesn't change.
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: PointerEvent) => {
+      if ((event.target as Element | null)?.closest?.(".sizemenu, [aria-label='Change size']")) return;
+      setMenu(false);
+      void ipc.companionMenu(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menu]);
   useEffect(() => {
     let active = true;
     let off: (() => void) | undefined;
@@ -98,7 +112,15 @@ export default function Companion() {
         else void act(() => size(sidecar ? "Tucked" : "Dot"));
       }
     }}>
-    {tucked ? <button className="handle" aria-label="Recording. Open notes and live transcript" onClick={() => act(() => size("Sidecar"))}><span className="dot pulse" /><MotetMark className="mark"/></button> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className="dot pulse" /></button> :
+    {tucked ? <button className="handle" aria-label="Recording. Open notes and live transcript" title="Drag to move"
+      onPointerDown={event => { if (event.button === 0) dragFrom.current = { x: event.screenX, y: event.screenY, moved: false }; }}
+      onPointerMove={event => {
+        const from = dragFrom.current;
+        if (!from || from.moved || !(event.buttons & 1) || Math.hypot(event.screenX - from.x, event.screenY - from.y) < 4) return;
+        from.moved = true;
+        void act(() => ipc.dragCompanion());
+      }}
+      onClick={() => { const moved = dragFrom.current?.moved; dragFrom.current = null; if (!moved) void act(() => size("Sidecar")); }}><span className="dot pulse" /><MotetMark className="mark"/></button> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className="dot pulse" /></button> :
       <div className="pillbar" data-tauri-drag-region>
         {state.quit_pending ? <>
           <span className="pillmsg">{notice || (state.state.type === "Finishing" ? s.quitPending : s.pillQuitQuestion)}</span>
