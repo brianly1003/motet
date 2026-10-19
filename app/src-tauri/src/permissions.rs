@@ -76,8 +76,18 @@ pub fn notifications(request: bool) -> Result<bool, String> {
             let _: () = msg_send![center, getNotificationSettingsWithCompletionHandler: &*callback];
         }
     }
-    rx.recv_timeout(Duration::from_secs(if request { 60 } else { 3 }))
-        .map_err(|_| "Notification permission check timed out. Retry in Motet.".to_string())?
+    let result = rx
+        .recv_timeout(Duration::from_secs(if request { 60 } else { 3 }))
+        .map_err(|_| "Notification permission check timed out. Retry in Motet.".to_string())?;
+    // An ad-hoc signed bundle can fail the request even when System Settings allows Motet,
+    // so trust the current setting before reporting the error.
+    match result {
+        Err(error) if request => match notifications(false) {
+            Ok(true) => Ok(true),
+            _ => Err(error),
+        },
+        result => result,
+    }
 }
 #[cfg(not(target_os = "macos"))]
 pub fn notifications(_request: bool) -> Result<bool, String> {

@@ -10,9 +10,12 @@ export default function NotificationPermission() {
   useEffect(() => {
     if (!ipc.desktopAvailable()) return;
     let active = true;
-    ipc.notificationPermission().then(value => { if (active) setAllowed(value); })
+    // Check again on focus: people allow Motet in System Settings, then come back.
+    const check = () => ipc.notificationPermission().then(value => { if (active) setAllowed(value); })
       .catch(error => { if (active) { setAllowed(false); setMessage(String(error)); } });
-    return () => { active = false; };
+    check();
+    window.addEventListener("focus", check);
+    return () => { active = false; window.removeEventListener("focus", check); };
   }, []);
   async function request() {
     setPending(true);

@@ -1,4 +1,10 @@
 {
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "Motet Local Signing",
+      "hardenedRuntime": false
+    }
+  },
   "app": {
     "windows": [
       {
