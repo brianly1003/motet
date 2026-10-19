@@ -81,7 +81,6 @@ pub fn start(
                     break;
                 }
                 let result = (|| -> Result<Option<(String, u64)>, Box<dyn std::error::Error>> {
-                    let mut segments = Vec::new();
                     let mut duration = u64::MAX;
                     for side in ["mic", "system"] {
                         let source = format!("{base}.{side}.wav");
@@ -96,31 +95,14 @@ pub fn start(
                     let Some(end) = preview_end(&base, cursor, duration)? else {
                         return Ok(None);
                     };
-                    for side in ["mic", "system"] {
-                        let file = directory.join(format!("preview.{side}.wav"));
-                        slice::write(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
-                        let decoded = directory.join(format!("preview.{side}.16k.wav"));
-                        motet_core::decode_audio(&file, &decoded)?;
-                        let samples = hound::WavReader::open(decoded)?
-                            .samples::<f32>()
-                            .collect::<Result<Vec<_>, _>>()?;
-                        if samples.iter().any(|sample| sample.abs() > 0.005) {
-                            let prompt = motet_core::config::terms();
-                            for segment in server.transcribe(
-                                &samples,
-                                offset + cursor,
-                                prompt.as_deref(),
-                                &stop,
-                            )? {
-                                segments.push((
-                                    segment.start_ms,
-                                    segment.end_ms,
-                                    side,
-                                    segment.text,
-                                ));
-                            }
-                        }
-                    }
+                    let segments = transcribe_slice(
+                        &mut server,
+                        &base,
+                        &directory,
+                        (cursor, end),
+                        offset,
+                        &stop,
+                    )?;
                     recent.extend(segments);
                     recent.sort_by_key(|segment| segment.0);
                     let rows: Vec<_> = recent
@@ -185,6 +167,38 @@ pub fn start(
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
+type Row = (u64, u64, &'static str, String);
+
+/// Transcribes `cursor..end` of both tracks, skipping a track that is digital silence.
+fn transcribe_slice(
+    server: &mut crate::speech::Server,
+    base: &str,
+    directory: &Path,
+    (cursor, end): (u64, u64),
+    offset: u64,
+    stop: &Stop,
+) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
+    let mut segments = Vec::new();
+    for side in ["mic", "system"] {
+        let file = directory.join(format!("preview.{side}.wav"));
+        slice::write(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
+        let decoded = directory.join(format!("preview.{side}.16k.wav"));
+        motet_core::decode_audio(&file, &decoded)?;
+        let samples = hound::WavReader::open(decoded)?
+            .samples::<f32>()
+            .collect::<Result<Vec<_>, _>>()?;
+        // a peak check; a live mic's room noise passes it (measured 2026-10-19), but
+        // skipping by RMS level saved no request on a real call. Needs a VAD to do better.
+        if samples.iter().any(|sample| sample.abs() > 0.005) {
+            let prompt = motet_core::config::terms();
+            for segment in server.transcribe(&samples, offset + cursor, prompt.as_deref(), stop)? {
+                segments.push((segment.start_ms, segment.end_ms, side, segment.text));
+            }
+        }
+    }
+    Ok(segments)
+}
+
 // Preview 3-10 s at a time, ending in the latest pause both tracks share, so a word or a
 // sentence is not split and each slice usually holds one language. When the model is behind,
 // the slice grows to 10 s and still ends in a pause, so catch-up never skips audio.
@@ -260,5 +274,62 @@ mod tests {
         assert_eq!(preview_end(&base, 6200, 13_000).unwrap(), None);
         assert_eq!(preview_end(&base, 6200, 17_000).unwrap(), Some(16_000));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Replays `MOTET_MEASURE_BASE`.{mic,system}.wav on a clock that runs at audio speed and
+    /// waits for each real request, then prints the slices, caption delay and one line per
+    /// caption: `<start ms> +<delay ms> <track>:<text>`. See docs/app/live-captions-runbook.md.
+    #[test]
+    #[ignore = "needs whisper-server, WHISPER_MODEL and MOTET_MEASURE_BASE"]
+    fn measure_caption_delay() {
+        let base = std::env::var("MOTET_MEASURE_BASE").unwrap();
+        let total = ["mic", "system"]
+            .map(|side| {
+                let reader = hound::WavReader::open(format!("{base}.{side}.wav")).unwrap();
+                u64::from(reader.duration()) * 1000 / u64::from(reader.spec().sample_rate)
+            })
+            .into_iter()
+            .min()
+            .unwrap();
+        let stop = Stop::default();
+        let directory = std::env::temp_dir().join(format!("motet-measure-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let mut server = crate::speech::Server::start(&stop).unwrap();
+        let (mut clock, mut cursor, mut slices, mut busy) = (0_u64, 0_u64, 0, 0_u64);
+        let mut delays = Vec::new();
+        let mut lines = String::new();
+        loop {
+            let Some(end) = preview_end(&base, cursor, clock.min(total)).unwrap() else {
+                // A tail without a pause is never cut while recording; Stop ends it.
+                if clock >= total {
+                    break;
+                }
+                clock += 250;
+                continue;
+            };
+            let started = std::time::Instant::now();
+            let rows =
+                transcribe_slice(&mut server, &base, &directory, (cursor, end), 0, &stop).unwrap();
+            let took = started.elapsed().as_millis() as u64;
+            (slices, busy) = (slices + 1, busy + took);
+            clock = clock.max(end) + took;
+            for (start, _, side, text) in rows {
+                delays.push(clock - start);
+                lines.push_str(&format!("{start} +{} {side}:{text}\n", clock - start));
+            }
+            cursor = end;
+        }
+        fs::remove_dir_all(directory).unwrap();
+        delays.sort_unstable();
+        let at = |q: f64| delays[((delays.len() - 1) as f64 * q).round() as usize] as f64 / 1000.0;
+        println!(
+            "slices={slices} inference={:.1}s lines={} delay median={:.1}s p90={:.1}s max={:.1}s",
+            busy as f64 / 1000.0,
+            delays.len(),
+            at(0.5),
+            at(0.9),
+            at(1.0),
+        );
+        print!("{lines}");
     }
 }
