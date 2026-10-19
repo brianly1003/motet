@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fs;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::config;
 
@@ -14,7 +14,8 @@ names aren't known; use those labels for them unless the transcript shows their 
 Write the notes in the language most of the transcript is in. Output Markdown only, in this order:\n\
 1. The heading \"### Action items\", then one \"- [ ] \" line per follow-up task someone agreed to \
 or was asked to do; a proposed next meeting is a task too. Start with the owner's name only when the \
-transcript shows who takes the task. The owner is the person who does the work, not the person who \
+transcript shows who takes the task, followed by a colon. End each task with its source [mm:ss] \
+exactly as written in the transcript; omit it if no source line supports the task. The owner is the person who does the work, not the person who \
 receives it: \"Me: I will send the report to Anna\" means You send it, for Anna. News and facts are \
 not tasks. Add a due date only if one was said. Only when there are no tasks at all, write \"- None\".\n\
 2. The heading \"### Overview\", then two to four bullets on what the call covered and who is involved.\n\
@@ -26,7 +27,7 @@ const MERGE: &str = "Below are meeting notes for consecutive parts of one call, 
 into one set of notes with the same layout and language: \"### Action items\" with every task from all \
 parts (merge duplicates, keep owners and due dates), \"### Overview\" with two to four bullets for the \
 whole call, then one \"### \" section per topic in the order first discussed, merging sections about \
-the same topic from different parts. Keep every decision, number, name and owner and the **bold** marks. \
+the same topic from different parts. Keep every decision, number, name and owner, source [mm:ss] timestamps and the **bold** marks. \
 Do not add anything that is not in the parts.\n\nPARTS:\n";
 
 // Characters per summary part: well inside qwen3:8b's 40k-token window, and small models write
@@ -80,7 +81,7 @@ pub(crate) fn ask(llm: &str, prompt: &str) -> Result<String, Box<dyn Error>> {
     // `ollama run` downloads a model it doesn't have, and the name can come from a ./.env in a
     // folder you didn't write: only run models already installed, never fetch one.
     // one `ollama list` per prompt (~30 ms); cache it if prompts get many and small.
-    let list = Command::new("ollama")
+    let list = crate::tools::command("ollama")
         .env("OLLAMA_HOST", "http://127.0.0.1:11434")
         .arg("list")
         .output()?;
@@ -97,7 +98,7 @@ pub(crate) fn ask(llm: &str, prompt: &str) -> Result<String, Box<dyn Error>> {
         )
         .into());
     }
-    let mut child = Command::new("ollama")
+    let mut child = crate::tools::command("ollama")
         .env("OLLAMA_HOST", "http://127.0.0.1:11434")
         .args([
             "run",

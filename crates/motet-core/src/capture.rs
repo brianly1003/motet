@@ -5,7 +5,7 @@ use screencapturekit::prelude::*;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufWriter, Seek, Write};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,7 @@ struct Track {
     path: String,
     wav: Wav,
     errors: mpsc::Sender<Result<(), String>>,
+    level: Option<Arc<AtomicU32>>,
 }
 
 impl SCStreamOutputTrait for Track {
@@ -51,6 +52,12 @@ impl Track {
         // Non-interleaved: buffer 0 is channel 0. Interleaved: take every Nth sample.
         let stride = (samples.len() / frames).max(1);
 
+        if let Some(level) = &self.level {
+            level.store(
+                rms(samples.iter().step_by(stride).copied()).to_bits(),
+                Ordering::Relaxed,
+            );
+        }
         let mut wav = self.wav.lock().map_err(|_| "audio writer lock poisoned")?;
         if wav.is_none() {
             let rate = buf
@@ -69,6 +76,19 @@ impl Track {
             write_samples(writer, samples.iter().step_by(stride).copied())?;
         }
         Ok(())
+    }
+}
+
+fn rms(samples: impl Iterator<Item = f32>) -> f32 {
+    let (sum, count) = samples
+        .filter(|v| v.is_finite())
+        .fold((0.0_f64, 0_u64), |(sum, count), v| {
+            (sum + f64::from(v).powi(2), count + 1)
+        });
+    if count == 0 {
+        0.0
+    } else {
+        ((sum / count as f64).sqrt() as f32).min(1.0)
     }
 }
 
@@ -92,7 +112,7 @@ fn wait_for_stop(
         match errors.recv_timeout(Duration::from_millis(50)) {
             Ok(result) => return result,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if flushed.elapsed() >= Duration::from_secs(5) {
+                if flushed.elapsed() >= Duration::from_secs(1) {
                     flush()?;
                     flushed = Instant::now();
                 }
@@ -107,6 +127,15 @@ fn wait_for_stop(
 
 /// Records both tracks until `stop` is set or writing fails; returns tracks that got audio.
 pub fn record(base: &str, stop: Stop) -> Result<Vec<String>, Box<dyn Error>> {
+    record_with_levels(base, stop, None)
+}
+
+/// Optional real signal levels for the desktop; indices are microphone, system audio.
+pub fn record_with_levels(
+    base: &str,
+    stop: Stop,
+    levels: Option<[Arc<AtomicU32>; 2]>,
+) -> Result<Vec<String>, Box<dyn Error>> {
     let display = SCShareableContent::get()?
         .displays()
         .into_iter()
@@ -139,6 +168,9 @@ pub fn record(base: &str, stop: Stop) -> Result<Vec<String>, Box<dyn Error>> {
                 path: path.clone(),
                 wav: wav.clone(),
                 errors: errors.clone(),
+                level: levels
+                    .as_ref()
+                    .map(|levels| levels[usize::from(suffix == "system")].clone()),
             },
             kind,
         )?;
@@ -202,6 +234,13 @@ mod tests {
     use std::io::{self, Cursor, SeekFrom};
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    #[test]
+    fn meter_uses_real_signal_and_rejects_non_finite_samples() {
+        assert_eq!(rms([0.0, 0.0].into_iter()), 0.0);
+        assert_eq!(rms([0.5, -0.5].into_iter()), 0.5);
+        assert_eq!(rms([f32::NAN, f32::INFINITY].into_iter()), 0.0);
+        assert_eq!(rms([4.0].into_iter()), 1.0);
+    }
     struct FailingWriter {
         bytes: Cursor<Vec<u8>>,
         fail: Arc<AtomicBool>,
@@ -236,6 +275,15 @@ mod tests {
         );
         stop.store(true, Ordering::Relaxed);
         assert_eq!(wait_for_stop(&stop, &receiver, || Ok(())), Ok(()));
+    }
+
+    #[test]
+    fn periodic_flush_failure_reaches_the_recorder() {
+        let (_sender, receiver) = mpsc::channel();
+        assert_eq!(
+            wait_for_stop(&Stop::default(), &receiver, || Err("flush failed".into())),
+            Err("flush failed".into())
+        );
     }
 
     #[test]

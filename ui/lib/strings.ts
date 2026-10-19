@@ -1,5 +1,9 @@
 export const strings = {
+  deletePermanently: "Delete permanently", permanentDeleteWarning: "Its audio, transcript, and notes will be permanently removed. This cannot be undone.",
+  copyMenu: "Copy ▾", moreActions: "More actions", copyItems: "Action items", copyMarkdown: "Notes as Markdown", copyPlain: "Notes as plain text", regenerate: "Write the notes again", reveal: "Show in Finder", deleteMeeting: "Delete meeting…", deletedMeetings: "Recently deleted", restoreMeeting: "Restore", copied: "Copied.", regenerateConfirm: "Replace these notes? The previous version will be kept in notes.prev.md.", deleteConfirm: "Delete this meeting? You can restore it from Recently deleted.", confirm: "Confirm", cancel: "Cancel",
+  markMoment: "Mark this moment", marked: "Marked", mark: "mark",
   companion: "Motet companion", showControls: "Recording. Show controls", shrink: "Shrink to Dot",
+  pillQuitQuestion: "Quit while recording?",
   pillStop: "Stop", pillStopped: "Stopped · notes start in", seconds: "s", recordingShort: "Recording",
   permissionBody: "Allow notifications for recording reminders and completed notes. Recording controls stay visible even with Focus on.",
   allowNotifications: "Allow notifications", notificationsDenied: "Notifications are off. Turn them on in System Settings > Notifications > Motet.",
@@ -10,7 +14,7 @@ export const strings = {
   keepRecording: "Keep recording", stayOpen: "Keep Motet open",
   app: "Motet", privacy: "On this computer", meetings: "Meetings", meeting: "meeting", import: "Import a recording…",
   dismiss: "Dismiss",
-  search: "Search meetings", emptyTitle: "Your first meeting will appear here.",
+  search: "Search notes and transcripts", emptyTitle: "Your first meeting will appear here.",
   emptyBody: "Import a recording to make notes from it.",
   privateBody: "Audio, transcripts, and notes stay on this computer. No account needed.",
   importHint: "WAV, MP3, M4A, MP4, MOV, FLAC and more",

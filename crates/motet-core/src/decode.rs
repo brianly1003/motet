@@ -7,7 +7,7 @@ use std::{
     fs::File,
     io::{BufWriter, ErrorKind},
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
 };
 use symphonia::core::{
     formats::{TrackType, probe::Hint},
@@ -17,7 +17,7 @@ use symphonia::core::{
 type Writer = hound::WavWriter<BufWriter<File>>;
 
 /// Decode one audio track without loading the entire recording into memory.
-pub(crate) fn to_wav(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
+pub fn to_wav(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
     let result = match convert(source, destination) {
         Err(e) if unsupported(e.as_ref()) => ffmpeg(source, destination, e.as_ref()),
         other => other,
@@ -126,7 +126,7 @@ fn ffmpeg(source: &Path, destination: &Path, why: &dyn Error) -> Result<(), Box<
         arg.push(path.as_os_str());
         arg
     };
-    let status = Command::new("ffmpeg")
+    let status = crate::tools::command("ffmpeg")
         .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
         .args(["-protocol_whitelist", "file", "-y", "-i"])
         .arg(local(source))

@@ -16,11 +16,14 @@ pub enum Action {
     StopMeeting(String),
     Resume,
     Size(CompanionSize),
+    Pin(bool),
+    Sharing(bool),
     RequestQuit,
     Quit(bool),
     Dismiss(u64),
 }
 pub enum Message {
+    Mark(mpsc::Sender<Result<u64, String>>),
     Action(Action, mpsc::Sender<Result<(), String>>),
     CaptureFailed {
         id: String,
@@ -48,6 +51,7 @@ pub enum Job {
 
 /// Native effects are injected so controller ordering can be tested without opening a microphone.
 pub trait Host: Send + 'static {
+    fn mark(&self, id: &str, at_ms: u64) -> Result<(), String>;
     fn readiness(&self) -> Result<Readiness, String>;
     fn event(&self, event: Event) -> Result<(), String>;
     fn announce(&self) -> Result<(), String>;
@@ -82,6 +86,9 @@ impl Controller {
                     // Advance deadlines even under a continuous stream of UI commands.
                     engine.apply(Command::Tick, now);
                     match message {
+                        Ok(Message::Mark(reply)) => {
+                            let _ = reply.send(engine.mark());
+                        }
                         Ok(Message::Action(action, reply)) => {
                             let _ = reply.send(engine.action(action, now));
                         }
@@ -125,6 +132,14 @@ impl Controller {
             state,
             origin,
         })
+    }
+    pub fn mark(&self) -> Result<u64, String> {
+        let (tx, rx) = mpsc::channel();
+        self.sender
+            .send(Message::Mark(tx))
+            .map_err(|_| "Session controller stopped")?;
+        rx.recv()
+            .map_err(|_| "Session controller stopped".to_string())?
     }
     pub fn resume_remaining_ms(&self) -> Result<u64, String> {
         Ok(match self.state()?.state {
@@ -178,6 +193,20 @@ impl<H: Host> Engine<H> {
             clock: None,
         }
     }
+    fn mark(&self) -> Result<u64, String> {
+        if self.session.app.state != SessionState::Recording || self.session.app.quit_pending {
+            return Err("Mark a moment while recording".into());
+        }
+        let id = self
+            .session
+            .app
+            .meeting_id
+            .as_deref()
+            .ok_or("No active meeting")?;
+        let at_ms = self.session.app.elapsed_ms;
+        self.host.mark(id, at_ms)?;
+        Ok(at_ms)
+    }
     fn action(&mut self, action: Action, now: u64) -> Result<(), String> {
         if self.exiting {
             return Err("Motet is shutting down".into());
@@ -230,12 +259,9 @@ impl<H: Host> Engine<H> {
                 self.apply(Command::ReadinessChanged(readiness), now);
                 Command::ResumeRecording
             }
-            Action::Size(size) => {
-                if !matches!(size, CompanionSize::Pill | CompanionSize::Dot) {
-                    return Err("Only Pill and Dot are available in this version".into());
-                }
-                Command::SetCompanionSize(size)
-            }
+            Action::Size(size) => Command::SetCompanionSize(size),
+            Action::Pin(pinned) => Command::SetCompanionPinned(pinned),
+            Action::Sharing(active) => Command::SetSharing(active),
             Action::StopMeeting(id) => {
                 if self.session.app.meeting_id.as_ref() != Some(&id) {
                     return Ok(());

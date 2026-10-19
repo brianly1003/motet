@@ -833,8 +833,30 @@ fn companion_sizes_follow_recording_stop_quit_and_deadline() {
 
     let s = start(fresh(), false);
     let (s, _) = step(s, 1, Command::SetCompanionSize(CompanionSize::Sidecar));
-    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
     let (s, _) = step(s, 2, Command::SetCompanionSize(CompanionSize::Dot));
     let (s, _) = step(s, 3, Command::RequestQuit);
     assert_eq!(s.app.companion.size, CompanionSize::Pill);
+}
+
+#[test]
+fn unverified_sharing_hides_text_and_peek_expires_even_when_pinned() {
+    let s = start(fresh(), false);
+    let (s, _) = step(s, 1, Command::SetCompanionSize(CompanionSize::Sidecar));
+    let (s, _) = step(s, 2, Command::SetSharing(true));
+    assert_eq!(s.app.companion.size, CompanionSize::Dot);
+    assert_eq!(s.app.sharing.as_ref().unwrap().hidden_from_capture, None);
+    let (s, _) = step(s, 3, Command::SetCompanionSize(CompanionSize::Pill));
+    assert_eq!(s.app.companion.size, CompanionSize::Dot);
+    let (s, _) = step(s, 4, Command::SetCompanionPinned(true));
+    let (s, _) = step(s, 5, Command::SetCompanionSize(CompanionSize::Sidecar));
+    assert!(s.app.companion.peeking);
+    let (s, _) = step(s, 15_004, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
+    let (s, _) = step(s, 15_005, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Dot);
+    assert!(!s.app.companion.peeking);
+    let (s, _) = step(s, 15_006, Command::SetSharing(false));
+    assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
+    assert!(s.app.sharing.is_none());
 }

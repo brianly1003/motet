@@ -1,10 +1,11 @@
 use super::*;
 
 fn directory() -> std::path::PathBuf {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
         "motet-decode-{}-{}",
         std::process::id(),
-        std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir(&path).unwrap();
     path

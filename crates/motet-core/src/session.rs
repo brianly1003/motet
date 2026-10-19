@@ -88,6 +88,8 @@ pub struct Session {
     last_ms: u64,
     last_emit_ms: u64,
     idle_since: Option<u64>,
+    peek_until: Option<u64>,
+    before_share: CompanionSize,
 }
 
 impl Session {
@@ -105,6 +107,8 @@ impl Session {
             last_ms: 0,
             last_emit_ms: 0,
             idle_since: None,
+            peek_until: None,
+            before_share: CompanionSize::Pill,
         }
     }
 
@@ -210,6 +214,9 @@ impl Session {
         self.app.app = self.call.as_ref().map(|c| c.app.clone());
         self.app.started_by = Some(reason.clone());
         self.app.companion.size = CompanionSize::Pill;
+        self.app.sharing = None;
+        self.app.companion.peeking = false;
+        self.peek_until = None;
         self.idle_since = None;
         if self.audio() {
             effects.push(Effect::NotifyRecording { reason });
@@ -446,11 +453,37 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 session.resume(&input.since, &mut effects);
             }
         }
-        Command::SetCompanionSize(size)
-            if session.app.state == SessionState::Recording
-                && matches!(size, CompanionSize::Pill | CompanionSize::Dot) =>
-        {
-            session.app.companion.size = size;
+        Command::SetCompanionSize(size) if session.app.state == SessionState::Recording => {
+            if session.app.sharing.is_some() {
+                if size == CompanionSize::Sidecar {
+                    session.app.companion.peeking = true;
+                    session.peek_until = Some(now.saturating_add(15_000));
+                    session.app.companion.size = size;
+                } else {
+                    session.app.companion.peeking = false;
+                    session.peek_until = None;
+                    session.app.companion.size = CompanionSize::Dot;
+                }
+            } else {
+                session.app.companion.size = size;
+            }
+        }
+        Command::SetCompanionPinned(pinned) => session.app.companion.pinned = pinned,
+        Command::SetSharing(active) if session.app.state == SessionState::Recording => {
+            if active && session.app.sharing.is_none() {
+                session.before_share = session.app.companion.size;
+                session.app.sharing = Some(Sharing {
+                    hidden_from_capture: None,
+                    shared_display: None,
+                    other_displays: vec![],
+                });
+                session.app.companion.size = CompanionSize::Dot;
+            } else if !active && session.app.sharing.is_some() {
+                session.app.sharing = None;
+                session.app.companion.size = session.before_share;
+            }
+            session.app.companion.peeking = false;
+            session.peek_until = None;
         }
         Command::RequestQuit => match session.app.state {
             SessionState::Recording
@@ -593,6 +626,11 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
         }
         Command::Recoverable { meeting_ids } => effects.push(Effect::OfferRecovery { meeting_ids }),
         _ => {}
+    }
+    if session.peek_until.is_some_and(|until| now >= until) {
+        session.peek_until = None;
+        session.app.companion.peeking = false;
+        session.app.companion.size = CompanionSize::Dot;
     }
     session.app.companion.visible = match session.app.state {
         SessionState::Idle => false,

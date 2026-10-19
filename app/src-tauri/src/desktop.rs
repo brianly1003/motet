@@ -1,93 +1,14 @@
 //! Tauri commands, windows and native menu adapter.
+use crate::library_commands::{self, Library};
 use crate::{
     controller::{Action, Controller, Host, Job},
     library, permissions, recording,
 };
 use motet_core::events::{AppState, Event, Readiness, SessionState};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
-};
 use tauri::{Emitter, Manager};
-use tauri_plugin_dialog::DialogExt;
-
-struct Library {
-    root: PathBuf,
-    busy: Arc<AtomicBool>,
-    importing: AtomicBool,
-    allow_exit: Arc<AtomicBool>,
-    quit_pending: AtomicBool,
-}
-
-#[tauri::command]
-fn list_meetings(state: tauri::State<'_, Library>) -> Result<Vec<library::MeetingSummary>, String> {
-    #[cfg(debug_assertions)]
-    eprintln!("motet: main window connected");
-    library::list(&state.root)
-}
-#[tauri::command]
-fn get_meeting(id: String, state: tauri::State<'_, Library>) -> Result<library::Meeting, String> {
-    library::read(&state.root, &id)
-}
-#[tauri::command]
-fn importing(state: tauri::State<'_, Library>) -> bool {
-    state.importing.load(Ordering::SeqCst)
-}
-
-#[tauri::command]
-async fn import_audio(app: tauri::AppHandle) -> Result<Option<library::MeetingSummary>, String> {
-    let state = app.state::<Library>();
-    if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("A meeting is already being processed".into());
-    }
-    state.importing.store(true, Ordering::SeqCst);
-    refresh_tray(&app);
-    let worker = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let Some(file) = worker
-            .dialog()
-            .file()
-            .add_filter(
-                "Audio or video",
-                &[
-                    "wav", "mp3", "m4a", "aac", "mp4", "mov", "flac", "aiff", "ogg", "opus", "webm",
-                ],
-            )
-            .blocking_pick_file()
-        else {
-            return Ok(None);
-        };
-        let source = file.into_path().map_err(|e| e.to_string())?;
-        let root = &worker.state::<Library>().root;
-        library::import(root, &source).map(Some)
-    })
-    .await
-    .map_err(|e| e.to_string())
-    .and_then(|r| r);
-    state.importing.store(false, Ordering::SeqCst);
-    state.busy.store(false, Ordering::SeqCst);
-    refresh_tray(&app);
-    let _ = app.emit("motet://library-changed", ());
-    match &result {
-        Ok(Some(meeting)) => crate::notifications::send(
-            &app,
-            &meeting.title,
-            "Your meeting notes are ready. Open Motet to read them.",
-        ),
-        Err(_) => crate::notifications::send(
-            &app,
-            "Couldn’t write the notes",
-            "Open Motet to review the problem. Your source file is unchanged.",
-        ),
-        _ => {}
-    }
-    if state.quit_pending.load(Ordering::SeqCst) {
-        state.allow_exit.store(true, Ordering::SeqCst);
-        app.exit(0);
-    }
-    result
-}
 
 pub(crate) fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -98,14 +19,24 @@ pub(crate) fn show(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
-            list_meetings,
-            get_meeting,
-            import_audio,
-            importing,
+            library_commands::list_meetings,
+            crate::meeting_media::meeting_media,
+            crate::note_items::set_action_item_done,
+            crate::meeting_actions::meeting_action,
+            crate::meeting_actions::deleted_meetings,
+            library_commands::search_meetings,
+            library_commands::get_meeting,
+            library_commands::import_audio,
+            library_commands::importing,
             get_state,
+            crate::my_notes::get_my_notes,
+            crate::my_notes::save_my_notes,
+            crate::my_notes::add_jot,
+            mark_moment,
             start_recording,
             stop_recording,
             resume_recording,
@@ -113,6 +44,11 @@ pub fn run() {
             dismiss_problem,
             set_companion_size,
             companion_ready,
+            crate::companion::companion_menu,
+            crate::companion::pin_companion,
+            crate::companion::sharing_mode,
+            crate::live::get_levels,
+            crate::live::live_transcript,
             resume_remaining_ms,
             notification_permission
         ])
@@ -123,6 +59,8 @@ pub fn run() {
             if let Err(e) = library::recover_interrupted(&root) {
                 eprintln!("Motet: couldn't check for interrupted imports: {e}");
             }
+            app.manage(crate::my_notes::Store::new(root.clone()));
+            app.manage(crate::live::State::default());
             let busy = Arc::new(AtomicBool::new(false));
             let allow_exit = Arc::new(AtomicBool::new(false));
             let (sender, receiver) = mpsc::channel();
@@ -147,6 +85,7 @@ pub fn run() {
             });
             crate::companion::create(app.handle())?;
             crate::notifications::setup(app.handle())?;
+            crate::shortcuts::install(app.handle())?;
             app.manage(crate::tray::State::default());
             let menu = crate::tray::initial(app.handle())?;
             tauri::tray::TrayIconBuilder::with_id("motet")
@@ -159,6 +98,21 @@ pub fn run() {
                     "record" => dispatch(app.clone(), Action::Start),
                     "resume" => dispatch(app.clone(), Action::Resume),
                     "stop" => dispatch(app.clone(), Action::Stop),
+                    "mark" => {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            if let Err(error) = app.state::<Controller>().mark() {
+                                let _ = app.emit("motet://notice", error);
+                            }
+                        });
+                    }
+                    "notes" | "jot" => {
+                        crate::shortcuts::open_notes(app, event.id().as_ref() == "jot")
+                    }
+                    "settings" => {
+                        show(app);
+                        let _ = app.emit("motet://open-settings", ());
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -200,6 +154,8 @@ pub fn run() {
                     } else {
                         dispatch(app.clone(), Action::RequestQuit);
                     }
+                } else {
+                    crate::speech::shutdown();
                 }
             }
         });
@@ -251,6 +207,9 @@ struct Desktop {
     jobs: mpsc::Sender<Job>,
 }
 impl Host for Desktop {
+    fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
+        crate::bookmarks::mark(&self.root, id, at_ms)
+    }
     fn readiness(&self) -> Result<Readiness, String> {
         let (microphone, system_audio) = permissions::audio()?;
         let disk = std::process::Command::new("df")
@@ -284,10 +243,17 @@ impl Host for Desktop {
             crate::companion::update(&self.app, state)?;
             crate::tray::update(
                 &self.app,
-                &state.state,
+                state,
                 self.app.state::<Library>().importing.load(Ordering::SeqCst),
             )?;
             if let Some(tray) = self.app.tray_by_id("motet") {
+                let seconds = state.elapsed_ms / 1000;
+                let title = if state.state == SessionState::Recording {
+                    format!("● {:02}:{:02}", seconds / 60, seconds % 60)
+                } else {
+                    String::new()
+                };
+                crate::window_native::tray_title(&tray, title).map_err(|e| e.to_string())?;
                 tray.set_tooltip(Some(if state.state == SessionState::Recording {
                     "Motet - Recording microphone and system audio; Stop in this menu"
                 } else {
@@ -352,11 +318,11 @@ impl Host for Desktop {
     }
 }
 
-fn refresh_tray(app: &tauri::AppHandle) {
+pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
     let result = app.state::<Controller>().state().and_then(|state| {
         crate::tray::update(
             app,
-            &state.state,
+            &state,
             app.state::<Library>().importing.load(Ordering::SeqCst),
         )
     });
@@ -390,4 +356,11 @@ async fn notification_permission(request: bool) -> Result<bool, String> {
 #[tauri::command]
 fn resume_remaining_ms(controller: tauri::State<'_, Controller>) -> Result<u64, String> {
     controller.resume_remaining_ms()
+}
+
+#[tauri::command]
+async fn mark_moment(app: tauri::AppHandle) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<Controller>().mark())
+        .await
+        .map_err(|e| e.to_string())?
 }

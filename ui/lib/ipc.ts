@@ -32,16 +32,48 @@ export async function onNotice(callback: (notice: string) => void) {
   return listen<string>("motet://notice", event => callback(event.payload));
 }
 
-export const setCompanionSize = (size: "Pill" | "Dot") => invoke<void>("set_companion_size", { size });
+export const setCompanionSize = (size: "Pill" | "Dot" | "Sidecar" | "Tucked") => invoke<void>("set_companion_size", { size });
 export const companionReady = () => invoke<void>("companion_ready");
 export const resumeRemainingMs = () => invoke<number>("resume_remaining_ms");
 export const notificationPermission = (request = false) => invoke<boolean>("notification_permission", { request });
-export async function dragCompanion() {
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().startDragging();
-}
 
 export async function onOpenMeeting(callback: (id: string) => void) {
   const { listen } = await import("@tauri-apps/api/event");
   return listen<string>("motet://open-meeting", event => callback(event.payload));
 }
+
+export const markMoment = () => invoke<number>("mark_moment");
+
+import type { MyNotes } from "./bindings/MyNotes";
+export const getMyNotes = (meetingId: string) => invoke<MyNotes>("get_my_notes", { meetingId });
+export const saveMyNotes = (meetingId: string, text: string, baseVersion: number) => invoke<MyNotes>("save_my_notes", { meetingId, text, baseVersion });
+export const addJot = (text: string) => invoke<MyNotes>("add_jot", { text });
+export const companionMenu = (open: boolean) => invoke<void>("companion_menu", { open });
+export const getLevels = () => invoke<[number, number]>("get_levels");
+
+export const liveTranscript = () => invoke<[string, string, string]>("live_transcript");
+
+export async function onCompanionFocus(callback: (focused: boolean) => void) {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  return getCurrentWindow().onFocusChanged(event => callback(event.payload));
+}
+export async function onOpenNotes(callback: (mode: string) => void) {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<string>("motet://open-notes", event => callback(event.payload));
+}
+
+export const pinCompanion = (pinned: boolean) => invoke<void>("pin_companion", { pinned });
+export const sharingMode = (active: boolean) => invoke<void>("sharing_mode", { active });
+
+export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("search_meetings", { query });
+
+export const meetingAction = (id: string, action: "reveal" | "regenerate" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
+export const deletedMeetings = () => invoke<MeetingSummary[]>("deleted_meetings");
+
+import type { MeetingMedia } from './bindings/MeetingMedia';
+export async function meetingMedia(id: string): Promise<MeetingMedia> {
+  const media = await invoke<MeetingMedia>('meeting_media', {id});
+  const {convertFileSrc} = await import('@tauri-apps/api/core');
+  return {...media, tracks:media.tracks.map(track=>({...track,path:convertFileSrc(track.path)}))};
+}
+export const setActionItemDone = (id:string, line:number, done:boolean, expected:string) => invoke<string>('set_action_item_done',{id,line,done,expected});

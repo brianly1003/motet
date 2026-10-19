@@ -18,6 +18,8 @@ use std::{
     },
 };
 use tauri::Emitter;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 pub fn spawn(
     root: PathBuf,
@@ -48,7 +50,32 @@ pub fn spawn(
                             continue;
                         };
                         let result = capture_part(&root, record, offset_ms, stop, |base, stop| {
-                            motet_core::capture::record(base, stop).map_err(|e| e.to_string())
+                            crate::live::start(
+                                app.clone(),
+                                id.clone(),
+                                base.into(),
+                                offset_ms,
+                                stop.clone(),
+                            )?;
+                            #[cfg(target_os = "macos")]
+                            let result = motet_core::capture::record_with_levels(
+                                base,
+                                stop.clone(),
+                                Some(app.state::<crate::live::State>().levels.clone()),
+                            )
+                            .map_err(|e| e.to_string());
+                            #[cfg(target_os = "windows")]
+                            let result = motet_core::capture::record(base, stop.clone())
+                                .map_err(|e| e.to_string());
+                            let ended = stop.swap(true, Ordering::SeqCst);
+                            crate::speech::shutdown();
+                            if result.is_ok() && !ended {
+                                return Err(
+                                    "Audio capture ended unexpectedly. Partial audio is retained."
+                                        .into(),
+                                );
+                            }
+                            result
                         });
                         if let Err(mut reason) = result {
                             if let Err(e) = status(&root, &id, "NeedsAttention") {
@@ -91,8 +118,19 @@ pub fn spawn(
                             .as_ref()
                             .is_some_and(|r| r.id == id && r.failure.is_none())
                         {
-                            let result = library::folder(&root, &id)
-                                .and_then(|dir| fs::remove_dir_all(dir).map_err(|e| e.to_string()));
+                            let result = library::folder(&root, &id).and_then(|dir| {
+                                let notes = dir.join("my-notes.md");
+                                if notes.exists() && !library::text(&notes)?.trim().is_empty() {
+                                    status(&root, &id, "NeedsAttention")?;
+                                    let _ = app.emit(
+                                        "motet://notice",
+                                        "The short recording was kept with your notes.",
+                                    );
+                                    Ok(())
+                                } else {
+                                    fs::remove_dir_all(dir).map_err(|e| e.to_string())
+                                }
+                            });
                             if let Err(e) = result {
                                 let _ = app.emit(
                                     "motet://notice",
@@ -160,6 +198,10 @@ fn create(root: &Path, id: &str) -> Result<PathBuf, String> {
                     .checked_div(1_000_000)
                     .unwrap_or(0) as u64,
                 status: "Recording".into(),
+                marks_ms: vec![],
+                duration_ms: None,
+                notes_ms: None,
+                spellings: vec![],
             },
         )?;
     }
@@ -195,7 +237,24 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
             None => transcript,
         };
         stage(Stage::Summarizing { part: 1, of: 1 });
+        let started = std::time::Instant::now();
+        let spellings = library::used_spellings();
         summarize::notes(&dir.join("notes").to_string_lossy(), &text)?;
+        let mut metadata = library::summary(root, &record.id)?;
+        metadata.notes_ms = Some(started.elapsed().as_millis() as u64);
+        metadata.spellings = spellings;
+        library::save(root, &metadata)?;
+        let my_notes = dir.join("my-notes.md");
+        if my_notes.exists() {
+            let text = library::text(&my_notes)?;
+            if !text.trim().is_empty() {
+                use std::io::Write;
+                let mut file = fs::OpenOptions::new()
+                    .append(true)
+                    .open(dir.join("notes.md"))?;
+                write!(file, "\n### My notes\n\n{text}\n")?;
+            }
+        }
         stage(Stage::Saving);
         Ok(())
     })();

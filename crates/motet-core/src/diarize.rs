@@ -3,7 +3,6 @@
 use std::error::Error;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use crate::config;
 
@@ -49,7 +48,7 @@ fn run(wav: &Path, seg: &str, emb: &str) -> Result<Vec<Turn>, Box<dyn Error>> {
     let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
     // 0.5 is the tool's default; 0.4-0.8 gave the same speakers on our synthetic calls.
     // no speaker-count hint; add --clustering.num-clusters if people ask for one.
-    let out = Command::new(TOOL)
+    let out = crate::tools::command(TOOL)
         .arg(format!("--segmentation.pyannote-model={seg}"))
         .arg(format!("--embedding.model={emb}"))
         .arg(format!("--segmentation.num-threads={threads}"))

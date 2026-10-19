@@ -53,6 +53,9 @@ impl Speaker {
 #[derive(Debug, Clone, PartialEq)]
 struct Segment {
     start_ms: u64,
+    end_ms: u64,
+    microphone: bool,
+    system: bool,
     speaker: Speaker,
     text: String,
 }
@@ -90,7 +93,7 @@ pub fn transcript_parts(
             let wav16 = format!("{stem}.16k.wav");
             decode::to_wav(Path::new(src), Path::new(&wav16))?;
             println!("Transcribing {src} with {model}...");
-            let mut whisper = Command::new("whisper-cli");
+            let mut whisper = crate::tools::command("whisper-cli");
             whisper.args([
                 "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
             ]);
@@ -121,10 +124,13 @@ pub fn transcript_parts(
             } else {
                 voices(src, Path::new(&wav16), speaker, &rows)
             };
-            for ((start_ms, _, text), speaker) in rows.into_iter().zip(speakers) {
+            for ((start_ms, end_ms, text), label) in rows.into_iter().zip(speakers) {
                 segments.push(Segment {
                     start_ms: start_ms.saturating_add(*offset_ms),
-                    speaker,
+                    end_ms: end_ms.saturating_add(*offset_ms),
+                    microphone: speaker == Speaker::Me,
+                    system: speaker == Speaker::Them,
+                    speaker: label,
                     text,
                 });
             }
@@ -158,6 +164,32 @@ fn voices(src: &str, wav16: &Path, track: Speaker, rows: &[(u64, u64, String)]) 
 /// Orders segments by start time and renders one `[mm:ss] Me: text` line each. The sort is
 /// stable, so segments starting together keep the order their tracks were given in.
 fn merge(mut segments: Vec<Segment>) -> String {
+    // Unknown single-file imports are not evidence of system-audio echo.
+    let indices: Vec<_> = segments
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.microphone || s.system)
+        .map(|(i, _)| i)
+        .collect();
+    let rows: Vec<_> = indices
+        .iter()
+        .map(|&i| {
+            let s = &segments[i];
+            (s.start_ms, s.end_ms, s.text.as_str(), s.microphone)
+        })
+        .collect();
+    let duplicates = crate::echo::duplicates(&rows);
+    let remove: std::collections::HashSet<_> = indices
+        .into_iter()
+        .zip(duplicates)
+        .filter_map(|(i, duplicate)| duplicate.then_some(i))
+        .collect();
+    let mut index = 0;
+    segments.retain(|_| {
+        let keep = !remove.contains(&index);
+        index += 1;
+        keep
+    });
     segments.sort_by_key(|s| s.start_ms);
     segments
         .iter()
@@ -194,6 +226,36 @@ fn parse_csv(csv: &str) -> Vec<(u64, u64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_filters_mic_echo_of_diarized_system_but_not_unknown_imports() {
+        let mic = Segment {
+            start_ms: 100,
+            end_ms: 1200,
+            microphone: true,
+            system: false,
+            speaker: Speaker::Me,
+            text: "One speaker in the video".into(),
+        };
+        let system = Segment {
+            start_ms: 0,
+            end_ms: 1000,
+            microphone: false,
+            system: true,
+            speaker: Speaker::Voice(2),
+            text: "One speaker in the video".into(),
+        };
+        assert_eq!(
+            merge(vec![mic.clone(), system.clone()]),
+            "[00:00] Speaker 2: One speaker in the video\n"
+        );
+        let unknown = Segment {
+            system: false,
+            speaker: Speaker::Unknown,
+            ..system
+        };
+        assert!(merge(vec![mic, unknown]).contains("Me: One speaker"));
+    }
 
     #[test]
     fn parses_whisper_csv() {
@@ -236,6 +298,9 @@ mod tests {
     fn merge_orders_by_start_time_across_tracks() {
         let seg = |start_ms, speaker, text: &str| Segment {
             start_ms,
+            end_ms: start_ms + 1000,
+            microphone: speaker == Speaker::Me,
+            system: speaker == Speaker::Them,
             speaker,
             text: text.into(),
         };

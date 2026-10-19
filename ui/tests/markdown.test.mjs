@@ -18,3 +18,11 @@ test('transcript shows You for the mic and leaves other speakers alone',()=>{
  const out=displayTranscript('[00:01] Them: Me: is a word\n[00:03] Me: Sure\n[00:05] Speaker 2: ok');
  assert.equal(out,'[00:01] Them: Me: is a word\n[00:03] You: Sure\n[00:05] Speaker 2: ok');
 });
+
+test('source chips require an existing transcript timestamp and escape untrusted text', () => {
+  const html=renderNotes('- [01:20] <script>alert(1)</script> [99:59]',[80000]);
+  assert.match(html,/class="src" data-ms="80000"/);
+  assert.ok(!html.includes('data-ms="5999000"'));
+  assert.ok(!html.includes('<script>'));
+  assert.ok(!renderNotes('[01:20]').includes('class="src"'));
+});

@@ -8,9 +8,14 @@ pub use platform::windows as capture;
 pub mod config;
 pub mod correct;
 mod decode;
+pub use decode::to_wav as decode_audio;
 mod diarize;
 pub mod events;
 pub mod session;
 pub mod summarize;
 pub mod transcribe;
 pub mod whisper;
+
+pub mod tools;
+
+pub mod echo;

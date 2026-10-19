@@ -16,6 +16,17 @@ pub struct MeetingSummary {
     #[ts(type = "number")]
     pub created_ms: u64,
     pub status: String,
+    #[serde(default)]
+    #[ts(type = "number[]")]
+    pub marks_ms: Vec<u64>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub duration_ms: Option<u64>,
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub notes_ms: Option<u64>,
+    #[serde(default)]
+    pub spellings: Vec<String>,
 }
 
 #[derive(Serialize, TS)]
@@ -36,7 +47,7 @@ pub fn folder(root: &Path, id: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn text(path: &Path) -> Result<String, String> {
+pub(crate) fn text(path: &Path) -> Result<String, String> {
     if path.canonicalize().map_err(|e| e.to_string())?.parent()
         != Some(
             path.parent()
@@ -79,17 +90,46 @@ pub fn list(root: &Path) -> Result<Vec<MeetingSummary>, String> {
     Ok(meetings)
 }
 
+/// Search locally, including saved text, without loading every meeting into the webview.
+pub fn search(root: &Path, query: &str) -> Result<Vec<MeetingSummary>, String> {
+    let query = query.trim().to_lowercase();
+    Ok(list(root)?
+        .into_iter()
+        .filter(|meeting| {
+            if meeting.title.to_lowercase().contains(&query) {
+                return true;
+            }
+            let Ok(folder) = folder(root, &meeting.id) else {
+                return false;
+            };
+            [
+                "notes.md",
+                "transcript.txt",
+                "transcript.fixed.txt",
+                "my-notes.md",
+            ]
+            .iter()
+            .any(|name| {
+                text(&folder.join(name)).is_ok_and(|text| text.to_lowercase().contains(&query))
+            })
+        })
+        .collect())
+}
+
 fn is_id(id: &str) -> bool {
     !id.is_empty() && id.bytes().all(|v| v.is_ascii_digit())
 }
 
 pub fn summary(root: &Path, id: &str) -> Result<MeetingSummary, String> {
     let dir = folder(root, id)?;
-    let summary: MeetingSummary = serde_json::from_str(&text(&dir.join("meeting.json"))?)
+    let mut summary: MeetingSummary = serde_json::from_str(&text(&dir.join("meeting.json"))?)
         .map_err(|e| format!("Cannot read meeting {id}: {e}"))?;
     if summary.id != id {
         return Err("Meeting ID does not match its folder".into());
     }
+    summary.duration_ms = summary
+        .duration_ms
+        .or_else(|| crate::meeting_media::duration(root, id).ok().flatten());
     Ok(summary)
 }
 
@@ -101,6 +141,10 @@ fn unreadable(id: &str) -> MeetingSummary {
         title: "Meeting that couldn't be read".into(),
         created_ms: id.parse::<u128>().map_or(0, |ns| (ns / 1_000_000) as u64),
         status: "NeedsAttention".into(),
+        marks_ms: vec![],
+        duration_ms: None,
+        notes_ms: None,
+        spellings: vec![],
     }
 }
 
@@ -123,8 +167,7 @@ pub fn recover_interrupted(root: &Path) -> Result<usize, String> {
 
 pub fn read(root: &Path, id: &str) -> Result<Meeting, String> {
     let dir = folder(root, id)?;
-    let summary =
-        serde_json::from_str(&text(&dir.join("meeting.json"))?).map_err(|e| e.to_string())?;
+    let summary = summary(root, id)?;
     let notes_md = if dir.join("notes.md").exists() {
         text(&dir.join("notes.md"))?
     } else {
@@ -142,16 +185,7 @@ pub fn read(root: &Path, id: &str) -> Result<Meeting, String> {
     })
 }
 
-pub fn save(root: &Path, summary: &MeetingSummary) -> Result<(), String> {
-    let dir = folder(root, &summary.id)?;
-    let temporary = dir.join("meeting.json.tmp");
-    fs::write(
-        &temporary,
-        serde_json::to_vec_pretty(summary).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    fs::rename(temporary, dir.join("meeting.json")).map_err(|e| e.to_string())
-}
+pub use crate::bookmarks::save;
 
 pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
     // Checked before a folder exists, so a wrong pick leaves nothing behind.
@@ -181,6 +215,10 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
             .collect(),
         created_ms,
         status: "Finishing".into(),
+        marks_ms: vec![],
+        duration_ms: None,
+        notes_ms: None,
+        spellings: vec![],
     };
     let dir = root.join(&summary.id);
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
@@ -205,7 +243,11 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
             }
             None => transcript,
         };
+        let started = std::time::Instant::now();
+        let spellings = used_spellings();
         motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input)?;
+        summary.notes_ms = Some(started.elapsed().as_millis() as u64);
+        summary.spellings = spellings;
         Ok(())
     })();
     summary.status = if result.is_ok() {
@@ -232,9 +274,39 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
     }
 }
 
+pub(crate) fn used_spellings() -> Vec<String> {
+    motet_core::config::terms()
+        .map(|terms| terms.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn search_matches_notes_and_transcript_without_exposing_paths() {
+        let root = temp_root();
+        fs::create_dir(root.join("123")).unwrap();
+        fs::write(
+            root.join("123/meeting.json"),
+            r#"{"id":"123","title":"Design review","created_ms":1,"status":"Ready"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("123/transcript.txt"),
+            "[00:04] Me: Publish the roadmap",
+        )
+        .unwrap();
+        fs::write(
+            root.join("123/my-notes.md"),
+            "[00:05] [] Follow up Thursday",
+        )
+        .unwrap();
+        assert_eq!(search(&root, " ROADMAP ").unwrap().len(), 1);
+        assert_eq!(search(&root, "Thursday").unwrap().len(), 1);
+        assert!(search(&root, "unrelated").unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn rejects_paths_outside_library() {
         let root = std::env::temp_dir();
@@ -269,6 +341,10 @@ mod tests {
                     title: format!("Meeting {id}"),
                     created_ms: id.parse().unwrap(),
                     status: "Ready".into(),
+                    marks_ms: vec![],
+                    duration_ms: None,
+                    notes_ms: None,
+                    spellings: vec![],
                 },
             )
             .unwrap();
@@ -306,6 +382,10 @@ mod tests {
                 title: id.into(),
                 created_ms: 1,
                 status: status.into(),
+                marks_ms: vec![],
+                duration_ms: None,
+                notes_ms: None,
+                spellings: vec![],
             };
             save(&root, &summary).unwrap();
         }

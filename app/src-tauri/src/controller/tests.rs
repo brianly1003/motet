@@ -7,6 +7,10 @@ struct Fake {
     announce_ok: bool,
 }
 impl Host for Fake {
+    fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
+        self.log.lock().unwrap().push(format!("mark:{id}:{at_ms}"));
+        Ok(())
+    }
     fn readiness(&self) -> Result<Readiness, String> {
         Ok(Readiness {
             microphone: self.allowed.load(Ordering::SeqCst),
@@ -217,13 +221,29 @@ fn notification_stop_is_scoped_to_its_meeting_and_sizes_are_validated() {
         .unwrap();
     assert_eq!(e.session.app.state, SessionState::Recording);
     assert!(!e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
-    assert!(
-        e.action(Action::Size(CompanionSize::Sidecar), 25_000)
-            .is_err()
+    e.action(Action::Size(CompanionSize::Sidecar), 25_000)
+        .unwrap();
+    assert_eq!(
+        e.shared.lock().unwrap().companion.size,
+        CompanionSize::Sidecar
     );
     e.action(Action::Size(CompanionSize::Dot), 25_000).unwrap();
     assert_eq!(e.shared.lock().unwrap().companion.size, CompanionSize::Dot);
     e.action(Action::StopMeeting(id), 26_000).unwrap();
     assert!(e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
     assert_eq!(e.shared.lock().unwrap().companion.size, CompanionSize::Pill);
+}
+
+#[test]
+fn bookmarks_use_recording_time_and_reject_stopped_sessions() {
+    let mut e = engine();
+    assert!(e.mark().is_err());
+    e.action(Action::Start, 0).unwrap();
+    e.apply(Command::Tick, 25_000);
+    assert_eq!(e.mark().unwrap(), 25_000);
+    e.action(Action::Stop, 25_000).unwrap();
+    assert!(e.mark().is_err());
+    e.action(Action::Resume, 29_000).unwrap();
+    e.apply(Command::Tick, 30_000);
+    assert_eq!(e.mark().unwrap(), 26_000);
 }

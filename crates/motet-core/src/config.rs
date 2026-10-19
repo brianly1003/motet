@@ -7,8 +7,9 @@ use std::sync::OnceLock;
 /// The only keys a `.env` file may set. Anything else (PATH, DYLD_*, OLLAMA_HOST…) is ignored,
 /// so a `.env` in a folder you happen to run motet from can't redirect tools or send data off
 /// the Mac. The process environment is never changed; child tools see the shell's environment.
-const KEYS: [&str; 8] = [
+const KEYS: [&str; 9] = [
     "WHISPER_MODEL",
+    "ALLOW_SCREENSHOTS",
     "WHISPER_VAD_MODEL",
     "DIARIZE_SEGMENTATION_MODEL",
     "DIARIZE_EMBEDDING_MODEL",
@@ -27,10 +28,19 @@ fn allowed(key: &str, local: bool) -> bool {
     KEYS.contains(&key) && !(local && GLOBAL_ONLY.contains(&key))
 }
 
+/// Capture is blocked by default; only explicit `true` allows companion screenshots.
+pub fn allow_screenshots() -> bool {
+    screenshots_allowed(var("ALLOW_SCREENSHOTS").as_deref())
+}
+
+fn screenshots_allowed(value: Option<&str>) -> bool {
+    value == Some("true")
+}
+
 /// `TERMS` reduced to name-like terms: at most 60, each at most 40 characters of letters, digits,
 /// spaces and `-.&'()/+#`. It reaches the whisper and summary prompts, so quotes, brackets, colons,
 /// line breaks and anything else that could start a new instruction or markup are dropped.
-pub(crate) fn terms() -> Option<String> {
+pub fn terms() -> Option<String> {
     var("TERMS").and_then(|t| clean_terms(&t))
 }
 
@@ -82,6 +92,15 @@ pub fn var(key: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn screenshots_require_explicit_opt_in() {
+        assert!(allowed("ALLOW_SCREENSHOTS", true));
+        assert!(allowed("ALLOW_SCREENSHOTS", false));
+        assert!(screenshots_allowed(Some("true")));
+        for value in [None, Some(""), Some("false"), Some("typo")] {
+            assert!(!screenshots_allowed(value));
+        }
+    }
     #[test]
     fn local_env_cant_set_prompt_keys_or_foreign_keys() {
         assert!(allowed("WHISPER_MODEL", true) && allowed("TERMS", false));

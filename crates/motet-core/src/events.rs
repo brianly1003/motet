@@ -260,6 +260,8 @@ pub enum Command {
         app_id: String,
     },
     SetCompanionSize(CompanionSize),
+    SetCompanionPinned(bool),
+    SetSharing(bool),
     RequestQuit,
     Quit {
         stop_and_save: bool,

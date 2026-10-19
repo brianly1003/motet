@@ -1,0 +1,97 @@
+// Browser-only IPC fixture; storage, file validation and waveform sampling have Rust tests.
+async (page) => {
+  const reference=await page.context().newPage();
+  await reference.route('https://**/*',route=>route.abort());
+  await reference.setViewportSize({width:1200,height:900});
+  await reference.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await reference.getByRole('button',{name:'macOS',exact:true}).click();
+  await reference.getByRole('button',{name:'After the call',exact:true}).click();
+  const results=[];
+  for(const theme of ['light','dark']) {
+    const p=await page.context().newPage();
+    const errors=[];
+    p.on('pageerror',e=>errors.push(e.message));
+    await p.emulateMedia({colorScheme:theme});
+    await reference.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
+    await p.setViewportSize({width:1046,height:662});
+    // Silent, valid local WAV exercises actual HTML audio playback without private recordings.
+    const wav=Buffer.alloc(44+8000*87*2);
+    wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
+    await p.route('**/fixture*.wav',route=>{
+      const range=/bytes=(\d+)-(\d*)/.exec(route.request().headers().range??'');
+      const start=range?Number(range[1]):0, end=range&&range[2]?Math.min(Number(range[2]),wav.length-1):wav.length-1;
+      return route.fulfill({status:range?206:200,contentType:'audio/wav',headers:{'Accept-Ranges':'bytes','Content-Length':String(end-start+1),...(range?{'Content-Range':`bytes ${start}-${end}/${wav.length}`}:{})},body:wav.subarray(start,end+1)});
+    });
+    await p.addInitScript(()=>{
+      Object.defineProperty(navigator,'platform',{value:'MacIntel'});
+      const summary={id:'123',title:'FCM vs Pusher Beams',created_ms:Date.now(),status:'Ready',marks_ms:[74000],duration_ms:87000,notes_ms:48000,spellings:['FCM','IGB']};
+      const meeting={summary,notes_md:'### Action items\n- [ ] You: Share the device table design before Thursday [01:20]\n- [ ] Kevin: Check whether the 2021 Firebase project is still active [00:56]\n- [x] Book a follow-up on the IGB notification table [01:14]\n\n### Overview\n- Compared **FCM** with push beams for Android push in the IGB app.\n- Decided to **keep FCM** and build device management ourselves.\n\n### Push beams on top of FCM\n- Pusher beams relies on **FCM** for Android delivery and adds device management and reporting. [00:16]\n- Its device management is hard to fit into the current **IGB back office** flows. [00:36]\n\n### Cost\n- **FCM has no messaging fee.** [01:00]',transcript:'[00:16] Me: Pusher beams relies on FCM.\n[00:36] Them: Existing back office flows.\n[00:56] Them: Check the Firebase project.\n[01:00] Me: FCM has no messaging fee.\n[01:14] Them: Book a follow-up.\n[01:20] Me: I will share the device table design.'};
+      const tracks=['You','Them'].map((speaker,index)=>({path:`/fixture${index}.wav`,name:index?'system.wav':'mic.wav',speaker,offset_ms:0,duration_ms:87000,bytes:2100000,waveform:Array.from({length:200},(_,i)=>i%40<(index?10:30)?.65:0)}));
+      let next=0;window.testCalls=[];
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+      window.__TAURI_INTERNALS__={convertFileSrc:path=>path,transformCallback:()=>++next,unregisterCallback:()=>{},invoke:async(command,args)=>{
+        window.testCalls.push({command,args});
+        if(command==='plugin:event|listen')return next;
+        if(command==='get_state')return {state:{type:'Idle'},meeting_id:null,companion:{visible:false,size:'Pill'},elapsed_ms:0,quit_pending:false};
+        if(command==='notification_permission')return true;
+        if(command==='list_meetings')return [summary,{...summary,id:'124',title:'Earlier meeting',created_ms:0}];
+        if(command==='deleted_meetings')return [];
+        if(command==='get_meeting')return meeting;
+        if(command==='meeting_media')return {tracks,duration_ms:87000,folder:'~/Documents/Motet/imports/123'};
+        if(command==='set_action_item_done'){
+          if(args.expected!==meeting.notes_md)throw Error('Stale notes');
+          const lines=meeting.notes_md.split('\n');lines[args.line]=lines[args.line].replace(/\[[ x]\]/,args.done?'[x]':'[ ]');meeting.notes_md=lines.join('\n');return meeting.notes_md;
+        }
+        return false;
+      }};
+    });
+    await p.goto('http://127.0.0.1:3000/main/');
+    await p.getByRole('button',{name:/FCM vs Pusher Beams/}).click();
+    await p.getByText('01:27',{exact:true}).first().waitFor();
+    await p.getByRole('checkbox').first().check();
+    await p.waitForFunction(()=>window.testCalls.some(c=>c.command==='set_action_item_done'&&c.args.done));
+    await p.getByRole('checkbox').first().uncheck();
+    const differences=[];
+    const pairs=[['.dochead','.dochead'],['.document-meta','.meta'],['.docbody','.docbody'],['.notes','.notes'],['.notes h3','.notes h3'],['.notes h4','.notes h4'],['.todo','.todo'],['.todo input','.todo input'],['.owner','.owner'],['.src','.src'],['.meeting-aside','.aside'],['.panel','.panel'],['.panel h5','.panel h5'],['.kv','.kv'],['.tl','.tl'],['.tl svg','.tl svg'],['.tl-legend','.tl-legend']];
+    const properties=['padding','gap','fontSize','fontWeight','lineHeight','borderRadius','backgroundColor','color','borderColor','display'];
+    for(const [actualSelector,sourceSelector] of pairs){
+      const actual=await p.locator(actualSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),properties);
+      const expected=await reference.locator('#doc '+sourceSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),properties);
+      for(const key of properties)if(actual[key]!==expected[key])differences.push(`${actualSelector} ${key}: ${actual[key]} != ${expected[key]}`);
+    }
+    await p.screenshot({path:`.playwright-out/document-full-${theme}.png`});
+    await reference.locator('.mainwin').screenshot({path:`.playwright-out/document-reference-${theme}.png`});
+    await p.evaluate(() => {
+      window.audioSeeks=[0,0];
+      document.querySelectorAll('audio').forEach((audio,index)=>{
+        audio.playbackRate=.5;
+        audio.addEventListener('seeking',()=>window.audioSeeks[index]++);
+      });
+    });
+    await p.locator('.src').first().click();
+    await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=80);
+    await p.waitForFunction(()=>[...document.querySelectorAll('audio')].every(a=>!a.seeking&&!a.paused));
+    await p.evaluate(()=>{window.audioSeeks=[0,0];});
+    await p.waitForTimeout(1200);
+    const playback=await p.evaluate(()=>({seeks:window.audioSeeks,position:Number(document.querySelector('.timeline-wave input').value)/1000,audio:document.querySelector('audio').currentTime}));
+    if(playback.seeks[0]!==0 || Math.abs(playback.position-playback.audio)>.15)throw Error(`Playback chases wall clock: ${JSON.stringify(playback)}`);
+    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.evaluate(()=>document.querySelectorAll('audio').forEach(a=>a.playbackRate=1));
+    if(await p.getByRole('checkbox').first().isChecked())throw Error('Source chip toggled task');
+    await p.getByRole('tab',{name:'Transcript',exact:true}).click();
+    await p.getByRole('button',{name:'Play from 00:16',exact:true}).click();
+    await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=16&&document.querySelector('audio')?.currentTime<20);
+    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.getByRole('tab',{name:'Audio',exact:true}).click();
+    await p.getByRole('button',{name:'mic.wav',exact:true}).waitFor();
+    await p.setViewportSize({width:760,height:520});
+    await p.getByRole('tab',{name:'Notes',exact:true}).click();
+    const overflow=await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
+    await p.screenshot({path:`.playwright-out/document-minimum-${theme}.png`});
+    if(differences.length||overflow||errors.length)throw Error(JSON.stringify({theme,differences,overflow,errors}));
+    results.push({theme,differences,overflow,errors});
+    await p.close();
+  }
+  await reference.close();
+  return results;
+}
