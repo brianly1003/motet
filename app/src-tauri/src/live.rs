@@ -1,5 +1,5 @@
 //! Live preview reads flushed audio on a background thread; capture never waits for the model.
-use motet_core::events::Stop;
+use motet_core::{events::Stop, slice};
 use std::{
     fs,
     path::Path,
@@ -93,13 +93,12 @@ pub fn start(
                                 / u64::from(reader.spec().sample_rate),
                         );
                     }
-                    // Bound each preview to ten seconds even when the model is slower than the call.
-                    let Some(end) = preview_end(cursor, duration) else {
+                    let Some(end) = preview_end(&base, cursor, duration)? else {
                         return Ok(None);
                     };
                     for side in ["mic", "system"] {
                         let file = directory.join(format!("preview.{side}.wav"));
-                        slice(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
+                        slice::write(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
                         let decoded = directory.join(format!("preview.{side}.16k.wav"));
                         motet_core::decode_audio(&file, &decoded)?;
                         let samples = hound::WavReader::open(decoded)?
@@ -186,28 +185,22 @@ pub fn start(
         .map(|_| ())
         .map_err(|e| e.to_string())
 }
-// Drain available slices immediately; poll only while waiting for more flushed audio.
-fn preview_end(cursor: u64, duration: u64) -> Option<u64> {
-    (duration.saturating_sub(cursor) >= 3000).then(|| duration.min(cursor.saturating_add(10_000)))
-}
-
-fn slice(
-    source: &Path,
-    target: &Path,
-    start: u64,
-    end: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut reader = hound::WavReader::open(source)?;
-    let spec = reader.spec();
-    reader.seek((start * u64::from(spec.sample_rate) / 1000).try_into()?)?;
-    let samples =
-        ((end - start) * u64::from(spec.sample_rate) / 1000) as usize * usize::from(spec.channels);
-    let mut writer = hound::WavWriter::create(target, spec)?;
-    for sample in reader.samples::<f32>().take(samples) {
-        writer.write_sample(sample?)?;
+// Preview 3-10 s at a time, ending in the latest pause both tracks share, so a word or a
+// sentence is not split and each slice usually holds one language. When the model is behind,
+// the slice grows to 10 s and still ends in a pause, so catch-up never skips audio.
+fn preview_end(
+    base: &str,
+    cursor: u64,
+    duration: u64,
+) -> Result<Option<u64>, Box<dyn std::error::Error>> {
+    if duration.saturating_sub(cursor) < 3000 {
+        return Ok(None);
     }
-    writer.finalize()?;
-    Ok(())
+    let end = duration.min(cursor + 10_000);
+    let mic = slice::levels(Path::new(&format!("{base}.mic.wav")), cursor, end)?;
+    let system = slice::levels(Path::new(&format!("{base}.system.wav")), cursor, end)?;
+    let levels: Vec<f32> = mic.iter().zip(&system).map(|(a, b)| a.max(*b)).collect();
+    Ok(slice::cut(&levels, 30, 100, false).map(|frames| cursor + frames as u64 * slice::FRAME_MS))
 }
 
 fn failed(app: &tauri::AppHandle, id: &str, stop: &Stop) {
@@ -226,43 +219,46 @@ fn failed(app: &tauri::AppHandle, id: &str, stop: &Stop) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn preview_catches_up_without_skipping_audio() {
-        assert_eq!(preview_end(0, 2999), None);
-        assert_eq!(preview_end(0, 3000), Some(3000));
-        let mut cursor = 0;
-        let mut ends = Vec::new();
-        while let Some(end) = preview_end(cursor, 36_000) {
-            ends.push(end);
-            cursor = end;
-        }
-        assert_eq!(ends, vec![10_000, 20_000, 30_000, 36_000]);
-        assert_eq!(preview_end(36_000, 35_000), None);
-    }
-    #[test]
-    fn preview_slice_keeps_rate_and_exact_interval() {
-        let root = std::env::temp_dir().join(format!("motet-live-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        let source = root.join("source.wav");
-        let target = root.join("slice.wav");
-        let mut writer = hound::WavWriter::create(
-            &source,
-            hound::WavSpec {
-                channels: 1,
-                sample_rate: 16000,
-                bits_per_sample: 32,
-                sample_format: hound::SampleFormat::Float,
-            },
-        )
-        .unwrap();
-        for _ in 0..32000 {
-            writer.write_sample(0.25_f32).unwrap();
+    fn track(path: &Path, pattern: &str) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 48000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        for c in pattern.chars() {
+            for i in 0..4800 {
+                let level = if c == '1' { 0.1 } else { 0.0 };
+                writer
+                    .write_sample(if i % 2 == 0 { level } else { -level })
+                    .unwrap();
+            }
         }
         writer.finalize().unwrap();
-        slice(&source, &target, 500, 1500).unwrap();
-        let reader = hound::WavReader::open(target).unwrap();
-        assert_eq!(reader.duration(), 16000);
-        assert_eq!(reader.spec().sample_rate, 16000);
+    }
+    #[test]
+    fn preview_ends_in_a_shared_pause_and_catches_up_without_skipping_audio() {
+        let root = std::env::temp_dir().join(format!("motet-live-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let base = root.join("call").to_string_lossy().into_owned();
+        // 100 ms per character. Me pauses alone at 4.0-4.5 s; both pause at 6.0-6.5 s, so that
+        // is the cut. After it, 11 s of speech with no shared pause.
+        let mic = format!(
+            "{}00000{}00000{}",
+            "1".repeat(40),
+            "1".repeat(15),
+            "1".repeat(105)
+        );
+        let system = format!("{}00000{}", "1".repeat(60), "1".repeat(105));
+        track(Path::new(&format!("{base}.mic.wav")), &mic);
+        track(Path::new(&format!("{base}.system.wav")), &system);
+        assert_eq!(preview_end(&base, 0, 2999).unwrap(), None);
+        assert_eq!(preview_end(&base, 0, 5000).unwrap(), None);
+        assert_eq!(preview_end(&base, 0, 13_000).unwrap(), Some(6200));
+        // No pause: wait while under 10 s, then end near 10 s; the next slice starts there.
+        assert_eq!(preview_end(&base, 6200, 13_000).unwrap(), None);
+        assert_eq!(preview_end(&base, 6200, 17_000).unwrap(), Some(16_000));
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -1,0 +1,10 @@
+{
+  "identifier": "main-window",
+  "description": "Double-clicking the macOS overlay title bar (data-tauri-drag-region) zooms the library window, as in other Mac apps. Windows keeps its native title bar.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-internal-toggle-maximize"
+  ]
+}

@@ -7,6 +7,7 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return invoke<T>(command, args);
 }
 export const listMeetings = () => invoke<MeetingSummary[]>("list_meetings");
+export const libraryBytes = () => invoke<number>("library_bytes");
 export const getMeeting = (id: string) => invoke<Meeting>("get_meeting", { id });
 export const importAudio = () => invoke<MeetingSummary | null>("import_audio");
 export const importing = () => invoke<boolean>("importing");

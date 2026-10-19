@@ -84,6 +84,13 @@ async (page) => {
     await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
     await p.getByRole('tab',{name:'Audio',exact:true}).click();
     await p.getByRole('button',{name:'mic.wav',exact:true}).waitFor();
+    await reference.locator('#doc').getByRole('tab',{name:'Audio',exact:true}).click();
+    for(const [actualSelector,sourceSelector] of [['.audio-table','.tbl'],['.audio-table table','.tbl table'],['.audio-table th','.tbl th'],['.audio-table td','.tbl td'],['.audio-table td.mono','.tbl td.mono']]){
+      const actual=await p.locator(actualSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),properties);
+      const expected=await reference.locator('#doc '+sourceSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),properties);
+      for(const key of properties)if(actual[key]!==expected[key])differences.push(`${actualSelector} ${key}: ${actual[key]} != ${expected[key]}`);
+    }
+    await reference.locator('#doc').getByRole('tab',{name:'Notes',exact:true}).click();
     await p.setViewportSize({width:760,height:520});
     await p.getByRole('tab',{name:'Notes',exact:true}).click();
     const overflow=await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth);

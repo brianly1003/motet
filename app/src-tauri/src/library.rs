@@ -90,6 +90,25 @@ pub fn list(root: &Path) -> Result<Vec<MeetingSummary>, String> {
     Ok(meetings)
 }
 
+/// Bytes of the files in every listed meeting folder, for the sidebar footer. `DirEntry`
+/// metadata does not follow links, so a linked file is not counted.
+pub fn bytes(root: &Path) -> Result<u64, String> {
+    let mut total = 0;
+    for meeting in list(root)? {
+        let Ok(folder) = folder(root, &meeting.id) else {
+            continue;
+        };
+        for entry in fs::read_dir(folder).into_iter().flatten().flatten() {
+            if let Ok(meta) = entry.metadata()
+                && meta.is_file()
+            {
+                total += meta.len();
+            }
+        }
+    }
+    Ok(total)
+}
+
 /// Search locally, including saved text, without loading every meeting into the webview.
 pub fn search(root: &Path, query: &str) -> Result<Vec<MeetingSummary>, String> {
     let query = query.trim().to_lowercase();
@@ -283,6 +302,22 @@ pub(crate) fn used_spellings() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bytes_sum_meeting_files_but_not_links() {
+        let root = temp_root();
+        fs::create_dir(root.join("123")).unwrap();
+        fs::write(
+            root.join("123/meeting.json"),
+            r#"{"id":"123","title":"A","created_ms":1,"status":"Ready"}"#,
+        )
+        .unwrap();
+        fs::write(root.join("123/part-0000.mic.wav"), vec![0u8; 1000]).unwrap();
+        let json = fs::metadata(root.join("123/meeting.json")).unwrap().len();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/hosts", root.join("123/link.wav")).unwrap();
+        assert_eq!(bytes(&root).unwrap(), 1000 + json);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn search_matches_notes_and_transcript_without_exposing_paths() {
         let root = temp_root();

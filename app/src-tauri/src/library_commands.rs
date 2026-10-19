@@ -27,6 +27,10 @@ pub(crate) fn list_meetings(
     library::list(&state.root)
 }
 #[tauri::command]
+pub(crate) fn library_bytes(state: tauri::State<'_, Library>) -> Result<u64, String> {
+    library::bytes(&state.root)
+}
+#[tauri::command]
 pub(crate) fn get_meeting(
     id: String,
     state: tauri::State<'_, Library>,

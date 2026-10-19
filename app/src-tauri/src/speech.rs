@@ -44,6 +44,9 @@ impl Server {
             &model,
             "-l",
             "auto",
+            // Per-slice language detection stays on; -nlp drops the server's second detection
+            // pass (language_probabilities), which Motet never reads: ~4.8 s -> ~3.0 s per slice.
+            "-nlp",
         ]);
         if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
             command.args(["--vad", "--vad-model", &vad]);

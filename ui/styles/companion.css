@@ -96,7 +96,6 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 
 .pill[data-size="sidecar"] { right: auto; bottom: auto; width: 340px; height: 100dvh; }
 .pill[data-size="dot"], .pill[data-size="tucked"] { right: auto; top: auto; min-height: 0; }
-.pill[data-compact="true"] .caption { display: none; }
 .pill .line { background: transparent; border: 0; text-align: left; padding: 0; color: var(--ink); }
 .pill [hidden] { display: none; }
 .sizemenu { top: 43px; right: 6px; padding: 5px; display: grid; gap: 1px; box-shadow: var(--shadow); border: 1px solid var(--line); border-radius: 10px; background: var(--glass); border-color: var(--glass-edge); }

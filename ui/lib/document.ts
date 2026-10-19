@@ -8,12 +8,19 @@ export function meetingDate(time: number, now = new Date()) {
   const date = new Date(time);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  const day = time >= today.getTime() ? 'Today' : time >= yesterday.getTime() ? 'Yesterday' : new Intl.DateTimeFormat(undefined, {month:'short', day:'numeric'}).format(date);
+  const week = new Date(today); week.setDate(today.getDate() - 6);
+  // Mockup: "Today", "Yesterday", then the weekday ("Thu") for the last week, then the date.
+  const day = time >= today.getTime() ? 'Today' : time >= yesterday.getTime() ? 'Yesterday' : new Intl.DateTimeFormat(undefined, time >= week.getTime() ? {weekday:'short'} : {month:'short', day:'numeric'}).format(date);
   return `${day} · ${new Intl.DateTimeFormat(undefined, {hour:'2-digit', minute:'2-digit', hour12:false}).format(date)}`;
 }
 export function timeLabel(ms: number) {
   const seconds = Math.floor(ms / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
+}
+// Mockup durations: "22 s", "1 min 27 s" for short meetings, whole minutes from 10 min.
+export function durationLabel(ms: number) {
+  const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60);
+  return seconds < 60 ? `${seconds} s` : minutes < 10 ? `${minutes} min ${seconds % 60} s` : `${minutes} min`;
 }
 export function fileSize(bytes: number) {
   return bytes >= 1e9 ? `${(bytes/1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes/1e6).toFixed(1)} MB` : `${(bytes/1e3).toFixed(1)} KB`;

@@ -117,18 +117,24 @@ fn resize(window: &tauri::WebviewWindow, width: f64, height: f64) -> tauri::Resu
         x = x.clamp(left, right.max(left));
         y = y.clamp(top, bottom.max(top));
     }
+    if !height.is_finite() {
+        height = 560.0; // no monitor reported: the previous fixed Sidecar height
+    }
     window.set_size(LogicalSize::new(width, height))?;
     window.set_position(PhysicalPosition::new(x, y))
 }
 
 fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
     if compact {
-        return (420.0, 46.0);
+        // Stopped and the quit question show a Pill with its caption row, as in the mockup.
+        return (420.0, 72.0);
     }
     match size {
         CompanionSize::Dot => (40.0, 40.0),
         CompanionSize::Tucked => (24.0, 64.0),
-        CompanionSize::Sidecar => (340.0, 560.0),
+        // Fills the work area 16 px from top and bottom, as in the mockup (DESIGN 4.3: 40-100 %);
+        // resize() clamps it. no splitter or saved height yet (SPEC sidecar_height_pct).
+        CompanionSize::Sidecar => (340.0, f64::INFINITY),
         CompanionSize::Pill => (420.0, 72.0),
     }
 }

@@ -24,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             library_commands::list_meetings,
+            library_commands::library_bytes,
             crate::meeting_media::meeting_media,
             crate::note_items::set_action_item_done,
             crate::meeting_actions::meeting_action,

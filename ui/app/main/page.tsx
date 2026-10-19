@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Duet from "@/components/MotetMark";
 import DeletedMeeting from "@/components/DeletedMeeting";
 import MeetingDocument from "@/components/MeetingDocument";
-import {meetingDate,meetingGroup} from "@/lib/document";
+import {meetingDate,meetingGroup,durationLabel,fileSize} from "@/lib/document";
 import CommandPalette from "@/components/CommandPalette";
 import NotificationPermission from "@/components/NotificationPermission";
 import SessionControls from "@/components/SessionControls";
@@ -18,6 +18,7 @@ import type { MeetingSummary } from "@/lib/bindings/MeetingSummary";
 export default function Main(){
   const [deleted,setDeleted]=useState<MeetingSummary[]>([]);
   const [meetings,setMeetings]=useState<MeetingSummary[]>([]);
+  const [bytes,setBytes]=useState(0);
   const [selected,setSelected]=useState<Meeting|null>(null);
   const [query,setQuery]=useState("");
   const [palette,setPalette]=useState(false);
@@ -40,7 +41,7 @@ export default function Main(){
     const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();setPalette(value=>!value);}};
     document.addEventListener("keydown",key);return()=>document.removeEventListener("keydown",key);
   },[]);
-  async function refresh(){try{setMeetings(await ipc.listMeetings());setDeleted(await ipc.deletedMeetings());setBusy(await ipc.importing());}catch(e){setError(String(e));}}
+  async function refresh(){try{setMeetings(await ipc.listMeetings());setBytes(await ipc.libraryBytes());setDeleted(await ipc.deletedMeetings());setBusy(await ipc.importing());}catch(e){setError(String(e));}}
   async function select(id:string){const request=++selection.current;try{const meeting=await ipc.getMeeting(id);if(request===selection.current){setSelected(meeting);}}catch(e){if(request===selection.current)setError(String(e));}}
   useEffect(()=>{
     setMac(/Mac/.test(navigator.platform));
@@ -57,11 +58,11 @@ export default function Main(){
     <aside className="sidebar" aria-label={s.meetings}>
       <label className="search"><span className="sr-only">{s.search}</span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input placeholder={s.search} value={query} onChange={e=>setQuery(e.target.value)}/><button className="search-key" aria-label="Command palette" onClick={event=>{event.preventDefault();setPalette(true);}}><kbd>⌘K</kbd></button></label>
       <nav className="meeting-list" aria-label={s.meetings}>
-        {["Today","This week","Earlier"].map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=><button key={meeting.id} className={`meeting-row ${selected?.summary.id===meeting.id?"selected":""}`} aria-current={selected?.summary.id===meeting.id?"page":undefined} onClick={()=>select(meeting.id)}><strong>{meeting.title}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${Math.floor(meeting.duration_ms/60000)} min`:""}<i className={meeting.status==="Ready"?"ready":"attention"}>{meeting.status==="Ready"?s.ready:meeting.status==="Finishing"?s.finishing:s.failed}</i></span></button>)}</div>:null;})}
+        {["Today","This week","Earlier"].map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=><button key={meeting.id} className={`meeting-row ${selected?.summary.id===meeting.id?"selected":""}`} aria-current={selected?.summary.id===meeting.id?"page":undefined} onClick={()=>select(meeting.id)}><strong>{meeting.title}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${durationLabel(meeting.duration_ms)}`:""}<i className={meeting.status==="Ready"?"ready":"attention"}>{meeting.status==="Ready"?s.ready:meeting.status==="Finishing"?s.finishing:s.failed}</i></span></button>)}</div>:null;})}
         {deleted.length>0&&<><div className="list-heading">{s.deletedMeetings}</div>{deleted.map(meeting=><DeletedMeeting key={meeting.id} meeting={meeting} onChanged={refresh} onError={setError}/>)}</>}
         {query&&!shown.length&&<p className="list-empty">{s.none}</p>}
       </nav>
-      <div className="privacy"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3"/></svg>{s.privacy} · {meetings.length} {meetings.length===1?s.meeting:s.meetings.toLowerCase()}</div>
+      <div className="privacy"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3"/></svg>{s.privacy} · {meetings.length} {meetings.length===1?s.meeting:s.meetings.toLowerCase()}{bytes>0?` · ${fileSize(bytes)}`:""}</div>
     </aside>
     <section className="workspace" aria-busy={loading||busy}>
       <NotificationPermission/><SessionControls/>

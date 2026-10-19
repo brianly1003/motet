@@ -113,10 +113,12 @@ async (page) => {
     await p.getByRole('button', {name: 'Recording. Open notes and live transcript'}).click();
     await p.getByRole('button', {name: 'Stop', exact: true}).click();
     await p.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+    if (!await p.locator('.caption').isVisible()) throw Error('Stopped Pill lost its caption row (mockup keeps it)');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-stopped-${theme}.png`});
     await p.getByRole('button', {name: 'Resume', exact: true}).click();
     await p.evaluate(() => window.fixtureState({quit_pending: true}));
     await p.getByRole('button', {name: 'Keep recording', exact: true}).waitFor();
+    if (!await p.locator('.caption').isVisible()) throw Error('Quit question lost its caption row (mockup keeps it)');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-quit-${theme}.png`});
     results.push({theme, differences, errors});
     await p.close();

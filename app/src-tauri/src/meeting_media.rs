@@ -92,27 +92,32 @@ pub fn read(root: &Path, id: &str) -> Result<MeetingMedia, String> {
         let frames = reader.duration();
         let duration_ms = u64::from(frames) * 1000 / u64::from(spec.sample_rate);
         let mut waveform = Vec::with_capacity(200);
-        // Sample short windows across the file, never load an entire meeting into memory.
+        // Peak of 8 windows of 25 ms spread across each bin: one 5 ms window at the bin start
+        // mostly landed between syllables, so speech drew as a flat line. Bounded reads only
+        // (about 40 s of audio per track), never the whole meeting.
+        let count = (spec.sample_rate as usize / 40).max(1) * usize::from(spec.channels);
         for bin in 0..200u64 {
-            reader
-                .seek((u64::from(frames) * bin / 200) as u32)
+            let mut peak = 0.0f32;
+            for window in 0..8u64 {
+                reader
+                    .seek((u64::from(frames) * (bin * 8 + window) / 1600) as u32)
+                    .map_err(|e| e.to_string())?;
+                peak = if spec.sample_format == hound::SampleFormat::Float {
+                    reader
+                        .samples::<f32>()
+                        .take(count)
+                        .try_fold(peak, |peak, value| value.map(|v| peak.max(v.abs())))
+                } else {
+                    let scale = 2f32.powi(i32::from(spec.bits_per_sample) - 1);
+                    reader
+                        .samples::<i32>()
+                        .take(count)
+                        .try_fold(peak, |peak, value| {
+                            value.map(|v| peak.max((v as f32 / scale).abs()))
+                        })
+                }
                 .map_err(|e| e.to_string())?;
-            let count = 256 * usize::from(spec.channels);
-            let peak = if spec.sample_format == hound::SampleFormat::Float {
-                reader
-                    .samples::<f32>()
-                    .take(count)
-                    .try_fold(0.0f32, |peak, value| value.map(|v| peak.max(v.abs())))
-            } else {
-                let scale = 2f32.powi(i32::from(spec.bits_per_sample) - 1);
-                reader
-                    .samples::<i32>()
-                    .take(count)
-                    .try_fold(0.0f32, |peak, value| {
-                        value.map(|v| peak.max((v as f32 / scale).abs()))
-                    })
             }
-            .map_err(|e| e.to_string())?;
             waveform.push(if peak.is_finite() {
                 peak.clamp(0.0, 1.0)
             } else {
@@ -201,6 +206,38 @@ mod tests {
             std::os::unix::fs::symlink("/etc/passwd", &path).unwrap();
             assert!(read(&root, "1").unwrap_err().contains("outside"));
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn waveform_sees_speech_between_bin_starts() {
+        // 20 s, 100 ms per bin: a 30 ms burst 60 ms into every bin, silence elsewhere.
+        let root = std::env::temp_dir().join(format!("motet-media-burst-{}", std::process::id()));
+        fs::create_dir_all(root.join("1")).unwrap();
+        let path = root.join("1/part-0000.system.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut wav = hound::WavWriter::create(&path, spec).unwrap();
+        for i in 0..320_000 {
+            wav.write_sample(if (960..1440).contains(&(i % 1600)) {
+                0.5f32
+            } else {
+                0.0
+            })
+            .unwrap();
+        }
+        wav.finalize().unwrap();
+        fs::write(
+            root.join("1/parts.json"),
+            serde_json::to_vec(&vec![(vec![path.to_string_lossy().into_owned()], 0u64)]).unwrap(),
+        )
+        .unwrap();
+        let media = read(&root, "1").unwrap();
+        assert_eq!(media.tracks[0].speaker, "Them");
+        assert!(media.tracks[0].waveform.iter().all(|v| *v == 0.5));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

@@ -4,7 +4,7 @@ import type {MeetingMedia} from '@/lib/bindings/MeetingMedia';
 import MeetingActions from './MeetingActions';
 import NotesView from './NotesView';
 import Transcript from './Transcript';
-import {meetingDate, timeLabel, fileSize} from '@/lib/document';
+import {meetingDate, timeLabel, fileSize, durationLabel} from '@/lib/document';
 import {transcriptLines} from '@/lib/transcript';
 import * as ipc from '@/lib/ipc';
 import {strings as s} from '@/lib/strings';
@@ -58,7 +58,10 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError}:
         if(!element.readyState)return;
         if(!positioned.has(element)){
           element.currentTime=local;positioned.add(element);
-        }else if(index!==leader && !element.seeking && !element.paused && !starting.has(element) && Math.abs(element.currentTime-local)>.05){
+        // Re-sync a partner only when it is clearly off: in WebKit a seek restarts the audio
+        // pipeline, so a 50 ms limit seeked the audible track every ~180 ms and it stuttered.
+        // Left alone, two tracks hold a steady ~85 ms start offset.
+        }else if(index!==leader && !element.seeking && !element.paused && !starting.has(element) && Math.abs(element.currentTime-local)>.25){
           element.currentTime=local;
         }
         if(element.paused && !starting.has(element)){
@@ -79,15 +82,19 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError}:
   const itemTimes=[...meeting.notes_md.split("<details>")[0].matchAll(/\[(\d+):(\d{2})\]/g)].map(match=>(Number(match[1])*60+Number(match[2]))*1000).filter(ms=>sourceTimes.includes(ms));
   const duration=media?.duration_ms??0;
   const tracks=media?.tracks??[];
+  // One scale for both sides, set by the meeting's loudest moment, so a quietly recorded call
+  // still shows its speech and You and Them stay comparable; the square root lifts quiet words.
+  const loudest=Math.max(0,...tracks.flatMap(track=>track.waveform));
   function envelope(track:MeetingMedia['tracks'][number]) {
     const x=(time:number)=>duration?time/duration*1000:0;
     const sign=track.speaker==='You'?-1:1;
-    return `M${x(track.offset_ms)} 20 `+track.waveform.map((peak,index)=>`L${x(track.offset_ms+index/track.waveform.length*track.duration_ms)} ${20+sign*peak*17}`).join(' ')+` L${x(track.offset_ms+track.duration_ms)} 20 Z`;
+    const height=(peak:number)=>loudest>0?Math.sqrt(peak/loudest)*17:0;
+    return `M${x(track.offset_ms)} 20 `+track.waveform.map((peak,index)=>`L${x(track.offset_ms+index/track.waveform.length*track.duration_ms)} ${20+sign*height(peak)}`).join(' ')+` L${x(track.offset_ms+track.duration_ms)} 20 Z`;
   }
   return <article className="document">
     <header className="dochead">
       <div className="titlerow"><h1>{meeting.summary.title}</h1><MeetingActions meeting={meeting} onError={onError} onChanged={onChanged}/></div>
-      <div className="document-meta"><span>{meetingDate(meeting.summary.created_ms)}</span>{duration>0&&<><i className="sep"/><span>{Math.floor(duration/60000)} min {Math.floor(duration/1000)%60} s</span></>}{meeting.summary.notes_ms!=null&&<><i className="sep"/><span>Notes in {Math.round(meeting.summary.notes_ms/1000)} s</span></>}</div>
+      <div className="document-meta"><span>{meetingDate(meeting.summary.created_ms)}</span>{duration>0&&<><i className="sep"/><span>{durationLabel(duration)}</span></>}{meeting.summary.notes_ms!=null&&<><i className="sep"/><span>Notes in {Math.round(meeting.summary.notes_ms/1000)} s</span></>}</div>
       <div className="tl">
         <div className="timeline-wave"><svg viewBox="0 0 1000 40" preserveAspectRatio="none" aria-label="Recorded audio: You above, Them below">
           {tracks.map(track=><path key={track.path} className={track.speaker==='You'?'tl-me':'tl-them'} d={envelope(track)}/>)}
@@ -105,7 +112,7 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError}:
       event.preventDefault();setTab(names[next]);document.getElementById(`tab-${names[next]}`)?.focus();
     }}>{name}</button>)}</div>
     <div className="docbody" id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-      {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} sourceTimes={sourceTimes} onSeek={duration?seek:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript text={meeting.transcript} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td>{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
+      {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} sourceTimes={sourceTimes} onSeek={duration?seek:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript text={meeting.transcript} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td className="mono"><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td className="mono">{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
       <aside className="meeting-aside">
         <div className="panel"><h5>This meeting</h5><dl className="kv"><dt>Length</dt><dd>{duration?timeLabel(duration):'Not recorded'}</dd><dt>Language</dt><dd>Not recorded</dd><dt>Notes in</dt><dd>{meeting.summary.notes_ms!=null?`${Math.round(meeting.summary.notes_ms/1000)} s`:"Not recorded"}</dd><dt>Marks</dt><dd>{meeting.summary.marks_ms.length}</dd></dl></div>
         <div className="panel"><h5>Spellings used</h5>{meeting.summary.spellings?.length?<div className="spelling-chips">{meeting.summary.spellings.map(term=><span key={term} className="chip plain">{term}</span>)}</div>:<p className="tip">No saved spellings</p>}</div>

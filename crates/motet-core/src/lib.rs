@@ -12,6 +12,7 @@ pub use decode::to_wav as decode_audio;
 mod diarize;
 pub mod events;
 pub mod session;
+pub mod slice;
 pub mod summarize;
 pub mod transcribe;
 pub mod whisper;
