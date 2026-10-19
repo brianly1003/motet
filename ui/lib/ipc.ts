@@ -72,6 +72,7 @@ export async function onOpenNotes(callback: (mode: string) => void) {
 export const pinCompanion = (pinned: boolean) => invoke<void>("pin_companion", { pinned });
 export const sharingMode = (active: boolean) => invoke<void>("sharing_mode", { active });
 
+export const openActionItems = () => invoke<[MeetingSummary, string][]>("open_action_items");
 export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("search_meetings", { query });
 
 export const meetingAction = (id: string, action: "reveal" | "regenerate" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });

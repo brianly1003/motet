@@ -1,7 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 import type {Meeting} from '@/lib/bindings/Meeting';
 import type {MeetingMedia} from '@/lib/bindings/MeetingMedia';
-import MeetingActions from './MeetingActions';
+import MeetingActions, { deletable } from './MeetingActions';
 import NotesView from './NotesView';
 import Transcript from './Transcript';
 import {meetingDate, timeLabel, fileSize, durationLabel} from '@/lib/document';
@@ -125,7 +125,8 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
         onClick={()=>{if(!editing)startRename();}} onInput={capTitle} onBlur={()=>endRename(true)}
         onKeyDown={event=>{if(!editingNow.current)return;if(event.key==='Enter'){event.preventDefault();endRename(true);}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();endRename(false);}}}>{meeting.summary.title}</h1>
         <button type="button" className="pen" aria-label={s.rename} title={s.rename} onClick={startRename}><MenuIcon name="rename"/></button></div>
-        <MeetingActions meeting={meeting} onError={onError} onChanged={onChanged} onRename={startRename} onDelete={onDelete}/></div>
+        {/* Copy and ••• have nothing to act on while the meeting records or its notes are written. */}
+        {deletable(meeting.summary.status)&&<MeetingActions meeting={meeting} onError={onError} onChanged={onChanged} onRename={startRename} onDelete={onDelete}/>}</div>
       <div className="edithint" aria-live="polite"><span><kbd>Enter</kbd> {s.renameSave}</span><span><kbd>Esc</kbd> {s.renameCancel}</span><span className={`count${count>=72?' near':''}`}>{count>=60?`${count}/${TITLE_MAX}`:''}</span></div>
       <div className="document-meta"><span>{meetingDate(meeting.summary.created_ms)}</span>{duration>0&&<><i className="sep"/><span>{durationLabel(duration)}</span></>}{meeting.summary.notes_ms!=null&&<><i className="sep"/><span>Notes in {Math.round(meeting.summary.notes_ms/1000)} s</span></>}</div>
       <div className="tl">
@@ -145,14 +146,14 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
       event.preventDefault();setTab(names[next]);document.getElementById(`tab-${names[next]}`)?.focus();
     }}>{name}</button>)}</div>
     <div className="docbody" id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-      {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} sourceTimes={sourceTimes} onSeek={duration?seek:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript text={meeting.transcript} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td className="mono"><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td className="mono">{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
+      {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} sourceTimes={sourceTimes} onSeek={duration?seek:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript text={meeting.transcript} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined} position={showPlayer?position:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td className="mono"><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td className="mono">{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
       <aside className="meeting-aside">
         <div className="panel"><h5>This meeting</h5><dl className="kv"><dt>Length</dt><dd>{duration?timeLabel(duration):'Not recorded'}</dd><dt>Language</dt><dd>Not recorded</dd><dt>Notes in</dt><dd>{meeting.summary.notes_ms!=null?`${Math.round(meeting.summary.notes_ms/1000)} s`:"Not recorded"}</dd><dt>Marks</dt><dd>{meeting.summary.marks_ms.length}</dd></dl></div>
         <div className="panel"><h5>Spellings used</h5>{meeting.summary.spellings?.length?<div className="spelling-chips">{meeting.summary.spellings.map(term=><span key={term} className="chip plain">{term}</span>)}</div>:<p className="tip">No saved spellings</p>}</div>
         <div className="panel"><h5>Stays on this computer</h5><p className="tip">No account, no upload. Folder: <span>{media?.folder??'Loading…'}</span></p></div>
       </aside>
     </div>
-    {(showPlayer||tab==='Transcript')&&duration>0&&<div className="player"><button className="doc-action" onClick={()=>{setShowPlayer(true);if(cursor.current>=duration){cursor.current=0;seekRequested.current=true;setPosition(0);}setPlaying(!playing);}}>{playing?'Ⅱ Pause':'▶ Play'}</button><span>{timeLabel(position)}</span><div className="bar"><i style={{width:`${position/duration*100}%`}}/></div><span className="tip">{tracks.some(t=>t.speaker==='You')&&tracks.some(t=>t.speaker==='Them')?'Both sides':'Audio'}</span></div>}
+    {(showPlayer||tab==='Transcript')&&duration>0&&<div className="player"><button className="doc-action" onClick={()=>{setShowPlayer(true);if(cursor.current>=duration){cursor.current=0;seekRequested.current=true;setPosition(0);}setPlaying(!playing);}}>{playing?'❚❚ Pause':'▶ Play'}</button><span>{timeLabel(position)}</span><div className="bar"><i style={{width:`${position/duration*100}%`}}/></div><span className="tip">{tracks.some(t=>t.speaker==='You')&&tracks.some(t=>t.speaker==='Them')?'Both sides':'Audio'}</span></div>}
     {tracks.map((track,index)=><audio key={track.path} ref={element=>{audio.current[index]=element;}} src={track.path} preload="metadata"/>)}
   </article>;
 }

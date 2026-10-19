@@ -16,6 +16,10 @@ md.renderer.rules.text = (tokens, index, _options, env) => {
 export function renderNotes(notes: string, sourceTimes: number[] = []) {
   return md.render(notes.split("<details><summary>Transcript</summary>")[0], {sourceTimes});
 }
+// One line (an action item) without a wrapping paragraph; same escaping as the notes.
+export function renderInline(text: string) {
+  return md.renderInline(text, {sourceTimes: []});
+}
 // Transcript files label the mic "Me" (CLI contract); people read "You".
 export function displayTranscript(text: string) {
   return text.replace(/^(\[[0-9:]+\] )Me:/gm, "$1You:");

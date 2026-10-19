@@ -31,6 +31,7 @@ pub fn run() {
             crate::meeting_actions::deleted_meetings,
             crate::meeting_actions::rename_meeting,
             library_commands::search_meetings,
+            library_commands::open_action_items,
             library_commands::get_meeting,
             library_commands::import_audio,
             library_commands::importing,
@@ -123,6 +124,23 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event
+                && window.label() == "main"
+                && let Some(path) = paths.first().cloned()
+            {
+                let app = window.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match library_commands::import_file(app.clone(), Some(path)).await {
+                        Ok(Some(meeting)) => {
+                            let _ = app.emit("motet://open-meeting", meeting.id);
+                        }
+                        Err(e) => {
+                            let _ = app.emit("motet://import-failed", e);
+                        }
+                        Ok(None) => {}
+                    }
+                });
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let active = window

@@ -7,10 +7,11 @@
   --ok-soft: #dcefe2;
   --accent-soft: #f4e5c9;
   --accent-ink: #7b4e08;
+  --hl: #fff1c9;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --line-2: #3b4137; --ok-soft: #173123; --accent-soft: #3a2d16; --accent-ink: #f0c27c; color-scheme: dark; }
+  :root { --line-2: #3b4137; --ok-soft: #173123; --accent-soft: #3a2d16; --accent-ink: #f0c27c; --hl: #4a3d16; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface-1); color: var(--ink-1); font: 14px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
@@ -31,7 +32,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .meeting-row:hover { background: var(--surface-3); }
 .meeting-row.selected { background: var(--surface-1); box-shadow: 0 0 0 1px var(--line); }
 .meeting-row strong { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meeting-row > span { display: flex; justify-content: space-between; align-items: center; gap: 6px; color: var(--ink-3); font-size: 11.5px; flex-wrap: wrap; }
+.meeting-row > span { display: flex; justify-content: space-between; align-items: center; gap: 6px; color: var(--ink-3); font-size: 11.5px; }
 .meeting-row i { display: inline-flex; padding: 1px 8px; border-radius: 99px; font: 500 11px/1.6 var(--font-data); white-space: nowrap; font-feature-settings: "tnum"; }
 .ready { background: var(--ok-soft); color: var(--ok); }
 .attention { background: var(--accent-soft); color: var(--accent-ink); }
@@ -44,6 +45,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .quiet:hover { background: var(--surface-2); }
 .home { padding: 18px 28px 40px; display: grid; gap: 16px; align-content: start; }
 .home h1 { margin: 0; font: 400 28px/1.1 var(--font-doc); }
+.home .tip { font-size: 12px; color: var(--ink-3); margin: 0; }
+.openitems { border: 1px solid var(--line); border-radius: 10px; }
+.openitems .oi { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: start; font-size: 13.5px; }
+.openitems .oi:last-child { border-bottom: 0; }
+.openitems .oi input { margin-top: 3px; accent-color: var(--ok); }
+.openitems .from { font-size: 12px; color: var(--ink-3); border: 0; background: none; padding: 0; text-align: right; }
+.openitems .from:hover { color: var(--ink-1); text-decoration: underline; }
+.drop { border: 1.5px dashed var(--line-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-3); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .empty { border: 1.5px dashed var(--line-2); border-radius: 12px; padding: 28px; display: grid; gap: 10px; justify-items: start; color: var(--ink-2); }
 .empty b { color: var(--ink-1); font: 400 22px var(--font-doc); }
 .hint { font-size: 12px; color: var(--ink-2); }
@@ -88,6 +97,8 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 /* Transcript rows and bookmark flag from the approved mockup; playback is not wired yet. */
 .tline { display: grid; grid-template-columns: 50px 44px minmax(0,1fr); gap: 10px; font-size: 13.5px; padding: 6px 8px; border-radius: 7px; }
 .tline:hover { background: var(--surface-2); }
+.tline.seekable { cursor: pointer; }
+.tline.playing { background: var(--hl); }
 .tline .ts { color: var(--ink-3); font: 12px/1.7 var(--font-data); font-feature-settings: "tnum"; }
 .who { font: 500 11px/1.8 var(--font-data); font-feature-settings: "tnum"; }
 .who.me { color: var(--voice-me); }
@@ -202,7 +213,6 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 @media (prefers-color-scheme: dark) { :root { --them-soft: #12323b; } }
 
 .meeting-list .list-heading { margin-left: -6px; margin-right: -6px; }
-@media (prefers-color-scheme: dark) { .document { --ink-3: #7e8578; } }
 
 /* Rename, row menus, delete and Recently deleted, from docs/app/motet-app-mockup.html (DESIGN 4.7, 4.8). */
 :root { --rec-soft: #fbe1dd; --menu: var(--surface-1); --menu-hover: var(--surface-2); }

@@ -23,6 +23,8 @@ export const strings = {
   importHint: "WAV, MP3, M4A, MP4, MOV, FLAC and more",
   processing: "Writing your meeting notes", processingBody: "Your local models are working. You can keep this window in the background.",
   loading: "Opening your meetings…", none: "No matching meetings", transcript: "Transcript", notes: "Notes", meetingViews: "Meeting views",
+  openItemsTitle: "Open action items", openItemsCount: "{n} across {m} meetings", itemDone: "Marked done.", markDone: "Mark done",
+  noOpenItems: "No open action items.", dropHint: "Drop an audio or video file here to make notes from it",
   libraryTitle: "Your meetings, on this computer.", libraryBody: "Choose a meeting in the sidebar, or import a recording.",
   browser: "Open the desktop app to view your meetings or import a recording.",
   error: "Something needs attention", retry: "Refresh meetings", ready: "Ready", finishing: "Writing notes", failed: "Needs attention",

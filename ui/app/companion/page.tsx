@@ -41,11 +41,11 @@ export default function Companion() {
     let active = true;
     let off: (() => void) | undefined;
     ipc.onCompanionFocus(focused => {
+      // The Sidecar stays open when focus leaves (owner's direction 2026-10-20); Esc collapses it.
       if (!focused && menu) { setMenu(false); void ipc.companionMenu(false); }
-      if (!focused && state?.companion.size === "Sidecar" && !pinned) void act(() => size("Tucked"));
     }).then(cleanup => { if (active) off = cleanup; else cleanup(); }).catch(() => {});
     return () => { active = false; off?.(); };
-  }, [state?.companion.size, pinned, menu]);
+  }, [menu]);
   // A press anywhere else closes the size menu. The window is enlarged and transparent while it is
   // open, so a click "outside" often lands on this page, where focus doesn't change.
   useEffect(() => {
@@ -109,7 +109,7 @@ export default function Companion() {
       if (event.key === "Escape" && state.state.type === "Recording") {
         event.preventDefault();
         if (menu || jotOpen) { setMenu(false); setJotOpen(false); void act(() => ipc.companionMenu(false)); }
-        else void act(() => size(sidecar ? "Tucked" : "Dot"));
+        else if (!(sidecar && pinned)) void act(() => size(sidecar ? "Tucked" : "Dot"));
       }
     }}>
     {tucked ? <button className="handle" aria-label="Recording. Open notes and live transcript" title="Drag to move"
@@ -141,7 +141,7 @@ export default function Companion() {
       </div>}
     {!dot && !tucked && !sidecar && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}
     {jotOpen && <form className="jotbar" onSubmit={event => { event.preventDefault(); void act(async () => { await flushNotes.current(); await ipc.addJot(jot); setJot(""); setNotesKey(key => key + 1); setJotOpen(false); await ipc.companionMenu(false); }); }}><input type={state.sharing ? "password" : "text"} autoFocus value={jot} onChange={event => setJot(event.target.value)} placeholder="Jot a line into My notes…" aria-label="Jot a line into My notes"/><kbd>⌃⌥J</kbd><button type="submit" className="quiet">Add</button></form>}
-    {sidecar && meetingId && <div className="pilldrawer">{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? `Started because ${state.started_by.app} is using your microphone.` : "Started manually.")}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.map((line, i) => <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><MyNotes key={`${meetingId}-${notesKey}`} meetingId={meetingId} elapsed={state.elapsed_ms} registerFlush={flush => { flushNotes.current = flush; }}/></div>}
+    {sidecar && meetingId && <div className="pilldrawer">{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? `Started because ${state.started_by.app} is using your microphone.` : "Started manually.")}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.map((line, i) => <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>).concat(state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts">··:··</span><span className="who them">…</span><span className="tx">listening</span></div>] : []) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><MyNotes key={`${meetingId}-${notesKey}`} meetingId={meetingId} elapsed={state.elapsed_ms} registerFlush={flush => { flushNotes.current = flush; }}/></div>}
     {markedAt !== null && <span className="sr-only" role="status">{s.marked} {elapsedLabel(markedAt)}</span>}
     {notice && <span className="sr-only" role="alert">{notice}</span>}
   </main>{menu && <div className="dropdown sizemenu" role="menu" aria-label="Companion size" onKeyDown={event => {

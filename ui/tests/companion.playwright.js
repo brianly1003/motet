@@ -28,7 +28,9 @@ async (page) => {
       window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
       const publish = () => callbacks[listeners['motet://event']]?.({payload: {type: 'StateChanged', ...state}});
       window.fixtureState = value => { state = {...state, ...value}; publish(); };
+      window.fixtureEmit = (event, payload) => { if (!listeners[event]) throw Error(`No listener for ${event}`); callbacks[listeners[event]]({event, id: 0, payload}); };
       window.__TAURI_INTERNALS__ = {
+        metadata: {currentWindow: {label: 'companion'}, currentWebview: {windowLabel: 'companion', label: 'companion'}},
         transformCallback: callback => { callbacks[++next] = callback; return next; },
         unregisterCallback: id => delete callbacks[id],
         invoke: async (command, args) => {
@@ -93,24 +95,38 @@ async (page) => {
     await p.waitForTimeout(450);
     if (!await p.evaluate(() => window.testCalls.some(call => call.command === 'save_my_notes' && call.args.text.includes('tomorrow')))) throw Error('My notes did not save');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-sidecar-${theme}.png`});
+    // Owner's direction 2026-10-20: focus leaving keeps the Sidecar open; Esc tucks it unless pinned.
+    const sizedBefore = await p.evaluate(() => window.testCalls.length);
+    await p.evaluate(() => window.fixtureEmit('tauri://blur'));
+    await p.waitForTimeout(200);
+    if (await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size'), sizedBefore)) throw Error('Sidecar collapsed when focus left');
+    await p.getByRole('button', {name: 'Keep open'}).click();
+    await editor.click(); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+    if (await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size'), sizedBefore)) throw Error('Pinned Sidecar collapsed on Esc');
+    await p.getByRole('button', {name: 'Keep open'}).click();
+    await editor.click(); await p.keyboard.press('Escape');
+    await p.waitForFunction(() => window.testCalls.some(c => c.command === 'set_companion_size' && c.args.size === 'Tucked'));
+    await p.evaluate(() => window.fixtureState({companion: {visible: true, size: 'Sidecar', pinned: false, peeking: false, display_id: null}}));
+    await editor.waitFor();
     await p.evaluate(() => { window.fixtureTranscript = Array.from({length:30},(_,i)=>`[05:${String(i).padStart(2,'0')}] Me: Live message ${i}`).join('\n'); });
-    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return box?.children.length===30 && box.scrollTop>0 && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
+    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return box?.querySelectorAll('button.line').length===30 && box.scrollTop>0 && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
     await editor.focus();
     await p.evaluate(() => { document.querySelector('.lines').scrollTop=0; });
     const focusSession = await p.context().newCDPSession(p);
     await focusSession.send("Emulation.setFocusEmulationEnabled", {enabled:false});
     await reference.bringToFront();
     await p.evaluate(() => { window.fixtureTranscript += '\n[05:31] Them: Newest background message'; });
-    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return box?.lastElementChild?.textContent.includes('Newest background message') && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
+    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return [...(box?.querySelectorAll('button.line')||[])].at(-1)?.textContent.includes('Newest background message') && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
     if (await p.evaluate(() => document.hasFocus())) throw Error('Background fixture unexpectedly has window focus');
     if (!await editor.evaluate(e => e===document.activeElement)) throw Error('Auto-scroll stole editor focus');
     await p.screenshot({path: `.playwright-out/live-autoscroll-${theme}.png`});
+    if (await p.locator('.lines > .line.pending:last-child').innerText() !== '··:··\n…\nlistening') throw Error('Listening row missing after the newest line');
     await p.bringToFront();
     await p.locator('.panehead[aria-expanded]').click();
     await p.evaluate(() => { window.fixtureTranscript += '\n[05:32] Me: Arrived while collapsed'; });
     await p.waitForTimeout(1200);
     await p.locator('.panehead[aria-expanded]').click();
-    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return box?.lastElementChild?.textContent.includes('Arrived while collapsed') && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
+    await p.waitForFunction(() => { const box=document.querySelector('.lines'); return [...(box?.querySelectorAll('button.line')||[])].at(-1)?.textContent.includes('Arrived while collapsed') && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
 
     await p.evaluate(() => { window.fixtureTranscript = ''; window.fixtureLiveError = 'Live captions are unavailable. The full transcript will be written after the call.'; });
     await p.locator('.lines [role="status"]').waitFor();
@@ -123,6 +139,7 @@ async (page) => {
     await p.getByRole('button', {name: 'Recording. Open notes and live transcript'}).click();
     await p.getByRole('button', {name: 'Stop', exact: true}).click();
     await p.getByRole('button', {name: 'Resume', exact: true}).waitFor();
+    if (await p.locator('.line.pending').count()) throw Error('Listening row shown while stopped');
     if (!await p.locator('.caption').isVisible()) throw Error('Stopped Pill lost its caption row (mockup keeps it)');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-stopped-${theme}.png`});
     await p.getByRole('button', {name: 'Resume', exact: true}).click();

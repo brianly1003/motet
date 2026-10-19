@@ -206,6 +206,29 @@ pub fn read(root: &Path, id: &str) -> Result<Meeting, String> {
 
 pub use crate::bookmarks::save;
 
+/// Meetings whose notes still have an unchecked action item, newest first, with their notes,
+/// for the Library's Open action items. The UI parses the tasks as the meeting page does.
+/// reads every notes.md on each call; an index when libraries reach thousands.
+pub fn open_items(root: &Path) -> Result<Vec<(MeetingSummary, String)>, String> {
+    let mut open = Vec::new();
+    for meeting in list(root)? {
+        let Ok(dir) = folder(root, &meeting.id) else {
+            continue;
+        };
+        let Ok(notes) = text(&dir.join("notes.md")) else {
+            continue;
+        };
+        let tasks = notes.split("<details>").next().unwrap_or_default();
+        if tasks.lines().any(|line| {
+            let line = line.trim_start();
+            line.starts_with("- [ ] ") || line.starts_with("* [ ] ")
+        }) {
+            open.push((meeting, notes));
+        }
+    }
+    Ok(open)
+}
+
 pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
     // Checked before a folder exists, so a wrong pick leaves nothing behind.
     let extension = source
@@ -316,6 +339,31 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink("/etc/hosts", root.join("123/link.wav")).unwrap();
         assert_eq!(bytes(&root).unwrap(), 1000 + json);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn open_items_lists_only_meetings_with_unchecked_tasks() {
+        let root = temp_root();
+        for (id, notes) in [
+            ("1", "### Action items\n- [x] Done already\n"),
+            (
+                "2",
+                "### Action items\n- [ ] You: Share the design [01:20]\n",
+            ),
+            ("3", "<details>\n- [ ] Inside the transcript\n</details>"),
+        ] {
+            fs::create_dir(root.join(id)).unwrap();
+            fs::write(
+                root.join(id).join("meeting.json"),
+                format!(r#"{{"id":"{id}","title":"M{id}","created_ms":{id},"status":"Ready"}}"#),
+            )
+            .unwrap();
+            fs::write(root.join(id).join("notes.md"), notes).unwrap();
+        }
+        let open = open_items(&root).unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].0.id, "2");
+        assert!(open[0].1.contains("Share the design"));
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

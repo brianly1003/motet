@@ -75,7 +75,7 @@ async (page) => {
     await p.waitForTimeout(1200);
     const playback=await p.evaluate(()=>({seeks:window.audioSeeks,position:Number(document.querySelector('.timeline-wave input').value)/1000,audio:document.querySelector('audio').currentTime}));
     if(playback.seeks[0]!==0 || Math.abs(playback.position-playback.audio)>.15)throw Error(`Playback chases wall clock: ${JSON.stringify(playback)}`);
-    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.getByRole('button',{name:'❚❚ Pause',exact:true}).click();
     await p.evaluate(()=>document.querySelectorAll('audio').forEach(a=>a.playbackRate=1));
     if(await p.getByRole('checkbox').first().isChecked())throw Error('Source chip toggled task');
     // Clicking the voice wave selects Transcript and plays from that point, as in the mockup.
@@ -83,12 +83,28 @@ async (page) => {
     await p.mouse.click(wave.x+wave.width*.25,wave.y+wave.height/2);
     await p.waitForFunction(()=>document.getElementById('tab-Transcript')?.getAttribute('aria-selected')==='true');
     await p.waitForFunction(()=>{const t=document.querySelector('audio')?.currentTime;return t>=18&&t<26;});
-    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.getByRole('button',{name:'❚❚ Pause',exact:true}).click();
     await p.getByRole('tab',{name:'Notes',exact:true}).click();
     await p.getByRole('tab',{name:'Transcript',exact:true}).click();
     await p.getByRole('button',{name:'Play from 00:16',exact:true}).click();
     await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=16&&document.querySelector('audio')?.currentTime<20);
-    await p.getByRole('button',{name:'Ⅱ Pause',exact:true}).click();
+    await p.waitForFunction(()=>document.querySelector('.tline.playing')?.textContent.includes('Pusher beams relies'));
+    // As in the mockup, the whole line plays from its start and the heard line is highlighted.
+    await p.locator('.tline',{hasText:'Book a follow-up.'}).getByText('Book a follow-up.').click();
+    await p.waitForFunction(()=>{const t=document.querySelector('audio')?.currentTime;return t>=74&&t<78;});
+    await p.waitForFunction(()=>document.querySelectorAll('.tline.playing').length===1&&document.querySelector('.tline.playing').textContent.includes('Book a follow-up.'));
+    const hl=await p.locator('.tline.playing').evaluate(e=>getComputedStyle(e).backgroundColor);
+    const refHl=await reference.evaluate(()=>{const e=document.createElement('div');e.className='tline playing';document.querySelector('#doc').append(e);const c=getComputedStyle(e).backgroundColor;e.remove();return c;});
+    if(hl!==refHl)differences.push(`.tline.playing background: ${hl} != ${refHl}`);
+    await p.screenshot({path:`.playwright-out/transcript-playing-${theme}.png`});
+    await reference.locator('#doc').getByRole('tab',{name:'Transcript',exact:true}).click();
+    for(const [actualSelector,sourceSelector] of [['.tline:not(.playing)','.tline:not(.playing)'],['.tline .ts','.tline .ts'],['.tline .who','.tline .who'],['.flag','.flag'],['.player','.player'],['.player .bar','.player .bar'],['.player button','.player button']]){
+      const actual=await p.locator(actualSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),[...properties,'cursor','fontFamily']);
+      const expected=await reference.locator('#doc '+sourceSelector+', .mainwin '+sourceSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),[...properties,'cursor','fontFamily']);
+      for(const key of [...properties,'cursor','fontFamily'])if(actual[key]!==expected[key])differences.push(`${actualSelector} ${key}: ${actual[key]} != ${expected[key]}`);
+    }
+    await reference.locator('.mainwin').screenshot({path:`.playwright-out/transcript-reference-${theme}.png`});
+    await p.getByRole('button',{name:'❚❚ Pause',exact:true}).click();
     await p.getByRole('tab',{name:'Audio',exact:true}).click();
     await p.getByRole('button',{name:'mic.wav',exact:true}).waitFor();
     await reference.locator('#doc').getByRole('tab',{name:'Audio',exact:true}).click();

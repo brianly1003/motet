@@ -38,36 +38,67 @@ pub(crate) fn get_meeting(
     library::read(&state.root, &id)
 }
 #[tauri::command]
+pub(crate) async fn open_action_items(
+    app: tauri::AppHandle,
+) -> Result<Vec<(library::MeetingSummary, String)>, String> {
+    let root = app.state::<Library>().root.clone();
+    tauri::async_runtime::spawn_blocking(move || library::open_items(&root))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 pub(crate) fn importing(state: tauri::State<'_, Library>) -> bool {
     state.importing.load(Ordering::SeqCst)
 }
+
+const MEDIA: &[&str] = &[
+    "wav", "mp3", "m4a", "aac", "mp4", "mov", "flac", "aiff", "ogg", "opus", "webm",
+];
 
 #[tauri::command]
 pub(crate) async fn import_audio(
     app: tauri::AppHandle,
 ) -> Result<Option<library::MeetingSummary>, String> {
+    import_file(app, None).await
+}
+
+/// Imports a picked file, or one dropped on the library window. Drops arrive from the native
+/// window event, so the web page never hands Rust a path.
+pub(crate) async fn import_file(
+    app: tauri::AppHandle,
+    dropped: Option<PathBuf>,
+) -> Result<Option<library::MeetingSummary>, String> {
+    if let Some(path) = &dropped
+        && !path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| MEDIA.contains(&e.to_ascii_lowercase().as_str()))
+    {
+        return Err("Drop an audio or video file (wav, mp3, m4a, mp4, mov…).".into());
+    }
     let state = app.state::<Library>();
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("A meeting is already being processed".into());
     }
     state.importing.store(true, Ordering::SeqCst);
     refresh_tray(&app);
+    let _ = app.emit("motet://library-changed", ());
     let worker = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let Some(file) = worker
-            .dialog()
-            .file()
-            .add_filter(
-                "Audio or video",
-                &[
-                    "wav", "mp3", "m4a", "aac", "mp4", "mov", "flac", "aiff", "ogg", "opus", "webm",
-                ],
-            )
-            .blocking_pick_file()
-        else {
-            return Ok(None);
+        let source = match dropped {
+            Some(path) => path,
+            None => {
+                let Some(file) = worker
+                    .dialog()
+                    .file()
+                    .add_filter("Audio or video", MEDIA)
+                    .blocking_pick_file()
+                else {
+                    return Ok(None);
+                };
+                file.into_path().map_err(|e| e.to_string())?
+            }
         };
-        let source = file.into_path().map_err(|e| e.to_string())?;
         let root = &worker.state::<Library>().root;
         library::import(root, &source).map(Some)
     })

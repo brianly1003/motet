@@ -9,6 +9,7 @@ import {meetingDate,meetingGroup,durationLabel,fileSize} from "@/lib/document";
 import CommandPalette from "@/components/CommandPalette";
 import NotificationPermission from "@/components/NotificationPermission";
 import SessionControls from "@/components/SessionControls";
+import LibraryHome from "@/components/LibraryHome";
 import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
 import type { Meeting } from "@/lib/bindings/Meeting";
@@ -34,6 +35,7 @@ export default function Main(){
   const [trashOpen,setTrashOpen]=useState(false);
   const [rowMenu,setRowMenu]=useState<{id:string;left:number;top:number}|null>(null);
   const [rename,setRename]=useState<{id:string;n:number}|null>(null);
+  const [version,setVersion]=useState(0);
   const [toast,setToast]=useState<{text:string;undo?:()=>Promise<void>}|null>(null);
   const toastTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
   const menuRef=useRef<HTMLDivElement>(null);
@@ -77,7 +79,7 @@ export default function Main(){
     clearTimeout(toastTimer.current);setToast({text,undo});
     toastTimer.current=setTimeout(()=>setToast(null),undo?5000:3600);
   }
-  async function refresh(){try{setMeetings(await ipc.listMeetings());setBytes(await ipc.libraryBytes());const gone=await ipc.deletedMeetings();setDeleted(gone);if(!gone.length)setTrashOpen(false);setBusy(await ipc.importing());}catch(e){setError(String(e));}}
+  async function refresh(){setVersion(n=>n+1);try{setMeetings(await ipc.listMeetings());setBytes(await ipc.libraryBytes());const gone=await ipc.deletedMeetings();setDeleted(gone);if(!gone.length)setTrashOpen(false);setBusy(await ipc.importing());}catch(e){setError(String(e));}}
   async function select(id:string){setRename(null);setTrashOpen(false);const request=++selection.current;try{const meeting=await ipc.getMeeting(id);if(request===selection.current){setSelected(meeting);}}catch(e){if(request===selection.current)setError(String(e));}}
   async function selectForRename(id:string){await select(id);setRename(value=>({id,n:(value?.n??0)+1}));}
   // No confirmation: Undo and 30 days in Recently deleted are the safety net (SPEC 7.7).
@@ -137,6 +139,7 @@ export default function Main(){
       {busy?<div className="empty processing" role="status"><Duet/><h1>{s.processing}</h1><p>{s.processingBody}</p><div className="progress"/></div>:loading?<div className="empty" role="status"><p>{s.loading}</p></div>
         :trashOpen?<div className="trashview"><h1>{s.deletedMeetings}</h1><p className="lead">{s.deletedLead}</p><div className="trashlist">{deleted.map(meeting=><DeletedMeeting key={meeting.id} meeting={meeting} onError={setError} onChanged={async action=>{await refresh();notify(action==="restore"?s.restored:s.purged);}}/>)}</div></div>
         :selected?<MeetingDocument key={selected.summary.id} meeting={selected} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
+        :meetings.length?<LibraryHome version={version} onOpen={id=>void select(id)} onImport={importRecording} onError={setError} disabled={!desktop} onDone={undo=>notify(s.itemDone,undo)}/>
         :<div className="home"><h1>{s.meetings}</h1><div className="empty"><b>{meetings.length?s.libraryTitle:s.emptyTitle}</b><span>{meetings.length?s.libraryBody:s.emptyBody}</span><button className="quiet" onClick={importRecording} disabled={!desktop}>{s.import}</button>{!desktop&&<span className="hint">{s.browser}</span>}</div></div>}
       {toast&&<div className="toast" role="status"><span>{toast.text}</span>{toast.undo&&<button onClick={()=>{const undo=toast.undo!;clearTimeout(toastTimer.current);setToast(null);void undo().catch(e=>setError(String(e)));}}>{s.undo}</button>}</div>}
     </section>
