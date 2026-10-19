@@ -42,13 +42,15 @@ impl Track {
         if frames == 0 {
             return Ok(());
         }
-        let samples: Vec<f32> = first
-            .data()
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|b| f32::from_ne_bytes(*b))
-            .collect();
+        // Built-in mics deliver f32; a Bluetooth headset mic in call mode delivers 16-bit integers.
+        let format = buf.format_description();
+        let float = format.as_ref().is_none_or(|f| f.audio_is_float());
+        let bits = format
+            .as_ref()
+            .and_then(|f| f.audio_bits_per_channel())
+            .unwrap_or(32);
+        let samples = to_f32(first.data(), float, bits)
+            .ok_or_else(|| format!("unsupported audio format ({bits}-bit, float: {float})"))?;
         // Non-interleaved: buffer 0 is channel 0. Interleaved: take every Nth sample.
         let stride = (samples.len() / frames).max(1);
 
@@ -77,6 +79,30 @@ impl Track {
         }
         Ok(())
     }
+}
+
+fn to_f32(data: &[u8], float: bool, bits: u32) -> Option<Vec<f32>> {
+    Some(match (float, bits) {
+        (true, 32) => data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_ne_bytes(*b))
+            .collect(),
+        (false, 16) => data
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| f32::from(i16::from_ne_bytes(*b)) / 32768.0)
+            .collect(),
+        (false, 32) => data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| i32::from_ne_bytes(*b) as f32 / 2_147_483_648.0)
+            .collect(),
+        _ => return None,
+    })
 }
 
 fn rms(samples: impl Iterator<Item = f32>) -> f32 {
@@ -240,6 +266,21 @@ mod tests {
         assert_eq!(rms([0.5, -0.5].into_iter()), 0.5);
         assert_eq!(rms([f32::NAN, f32::INFINITY].into_iter()), 0.0);
         assert_eq!(rms([4.0].into_iter()), 1.0);
+    }
+
+    #[test]
+    fn integer_mic_buffers_become_float_samples() {
+        let int16: Vec<u8> = [16384_i16, -32768]
+            .iter()
+            .flat_map(|v| v.to_ne_bytes())
+            .collect();
+        assert_eq!(to_f32(&int16, false, 16), Some(vec![0.5, -1.0]));
+        assert_eq!(to_f32(&0.25_f32.to_ne_bytes(), true, 32), Some(vec![0.25]));
+        assert_eq!(
+            to_f32(&(i32::MIN).to_ne_bytes(), false, 32),
+            Some(vec![-1.0])
+        );
+        assert_eq!(to_f32(&[0; 3], false, 24), None);
     }
     struct FailingWriter {
         bytes: Cursor<Vec<u8>>,
