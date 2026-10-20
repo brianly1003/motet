@@ -337,9 +337,9 @@ impl<H: Host> Engine<H> {
                 if self.session.app.meeting_id.as_ref() != Some(&id) {
                     return Ok(());
                 }
-                Command::StopRecording
+                Command::StopRecordingInMain
             }
-            Action::Stop => Command::StopRecording,
+            Action::Stop => Command::StopRecordingInMain,
             Action::Keep => Command::KeepRecording,
             Action::Discard => Command::DiscardRecording,
             Action::UndoDiscard => Command::UndoDiscard,
@@ -360,7 +360,7 @@ impl<H: Host> Engine<H> {
             Action::Quit(stop_and_save) => Command::Quit { stop_and_save },
             Action::Dismiss(id) => Command::DismissProblem { id },
         };
-        let manual_stop = matches!(command, Command::StopRecording)
+        let manual_stop = matches!(command, Command::StopRecordingInMain)
             && matches!(
                 self.session.app.state,
                 SessionState::Recording | SessionState::Paused

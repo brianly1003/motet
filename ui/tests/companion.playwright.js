@@ -129,7 +129,13 @@ async (page) => {
     if (await p.evaluate(() => document.hasFocus())) throw Error('Background fixture unexpectedly has window focus');
     if (!await editor.evaluate(e => e===document.activeElement)) throw Error('Auto-scroll stole editor focus');
     await p.screenshot({path: `.playwright-out/live-autoscroll-${theme}.png`});
-    if (await p.locator('.lines > .line.pending:last-child').innerText() !== '··:··\n…\nlistening') throw Error('Listening row missing after the newest line');
+    if (await p.locator('.lines > .line.pending:last-child').innerText() !== '··:··\n...\nlistening') throw Error('Listening row missing after the newest line');
+    // The three dots brighten in turn, but stay still under Reduce Motion (DESIGN 2.4).
+    const dotMotion = () => p.locator('.lines > .line.pending .dots i').evaluateAll(dots => dots.map(d => `${getComputedStyle(d).animationName} ${getComputedStyle(d).animationDelay}`).join(','));
+    if (await dotMotion() !== 'none 0s,none 0.2s,none 0.4s') throw Error(`Listening dots move under Reduce Motion: ${await dotMotion()}`);
+    await p.emulateMedia({colorScheme: theme, reducedMotion: 'no-preference'});
+    if (await dotMotion() !== 'listening-dot 0s,listening-dot 0.2s,listening-dot 0.4s') throw Error(`Listening dots do not animate in turn: ${await dotMotion()}`);
+    await p.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
     await p.bringToFront();
     await p.locator('.panehead[aria-expanded]').click();
     await p.evaluate(() => { window.fixtureTranscript += '\n[05:32] Me: Arrived while collapsed'; });

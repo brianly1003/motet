@@ -183,8 +183,109 @@ fn top_middle(area: (i32, i32, i32), width: f64, scale: f64) -> (i32, i32) {
     )
 }
 
+/// A fast drag can leave no intersecting monitor. Recover on the closest work area.
+fn drag_monitor(window: &tauri::WebviewWindow) -> tauri::Result<Option<tauri::Monitor>> {
+    if let Some(monitor) = window.current_monitor()? {
+        return Ok(Some(monitor));
+    }
+    let position = window.outer_position()?;
+    let size = window.outer_size()?;
+    let center = (
+        f64::from(position.x) + f64::from(size.width) / 2.0,
+        f64::from(position.y) + f64::from(size.height) / 2.0,
+    );
+    Ok(window.available_monitors()?.into_iter().min_by(|a, b| {
+        let distance = |m: &tauri::Monitor| {
+            let area = m.work_area();
+            area_distance(
+                (
+                    area.position.x,
+                    area.position.y,
+                    area.size.width,
+                    area.size.height,
+                ),
+                center,
+            )
+        };
+        distance(a).total_cmp(&distance(b))
+    }))
+}
+
+fn area_distance(area: (i32, i32, u32, u32), (x, y): (f64, f64)) -> f64 {
+    let (ax, ay, w, h) = area;
+    let dx = x - x.clamp(f64::from(ax), f64::from(ax) + f64::from(w));
+    let dy = y - y.clamp(f64::from(ay), f64::from(ay) + f64::from(h));
+    dx * dx + dy * dy
+}
+
+fn inside_position(
+    area: (i32, i32, i32, i32),
+    window: (i32, i32, i32, i32),
+    scale: f64,
+) -> (i32, i32) {
+    let (ax, ay, aw, ah) = area;
+    let (x, y, w, h) = window;
+    let left = ax + (10.0 * scale) as i32;
+    let top = ay + (16.0 * scale) as i32;
+    (
+        x.clamp(left, (ax + aw - w - (10.0 * scale) as i32).max(left)),
+        y.clamp(top, (ay + ah - h - (16.0 * scale) as i32).max(top)),
+    )
+}
+
+/// Native movement events also cover a release outside the webview after a fast swipe.
+pub fn keep_tucked_on_screen(window: &tauri::Window) {
+    if window.label() != "companion" {
+        return;
+    }
+    let Some(controller) = window.try_state::<crate::controller::Controller>() else {
+        return;
+    };
+    if !controller
+        .state()
+        .is_ok_and(|s| s.companion.size == CompanionSize::Tucked && !compact(&s))
+    {
+        return;
+    }
+    let Some(webview) = window.app_handle().get_webview_window("companion") else {
+        return;
+    };
+    if let Err(error) = keep_inside(&webview) {
+        eprintln!("Couldn't keep recording controls on screen: {error}");
+    }
+}
+
+fn keep_inside(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = drag_monitor(window)? else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let position = window.outer_position()?;
+    let size = window.outer_size()?;
+    let (x, y) = inside_position(
+        (
+            area.position.x,
+            area.position.y,
+            area.size.width as i32,
+            area.size.height as i32,
+        ),
+        (
+            position.x,
+            position.y,
+            size.width as i32,
+            size.height as i32,
+        ),
+        monitor.scale_factor(),
+    );
+    // A correction emits Moved too; leave an already-safe position alone.
+    if (x, y) != (position.x, position.y) {
+        window.set_position(PhysicalPosition::new(x, y))?;
+    }
+    Ok(())
+}
+
 fn snap_to_edge(window: &tauri::WebviewWindow) -> tauri::Result<()> {
-    let Some(monitor) = window.current_monitor()? else {
+    let Some(monitor) = drag_monitor(window)? else {
         return Ok(());
     };
     let area = monitor.work_area();
@@ -247,7 +348,7 @@ fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
         // Dot, Pause and Stop stacked (owner 2026-10-20: pause or stop without opening it).
         CompanionSize::Tucked => (28.0, 104.0),
         // Fills the work area 16 px from top and bottom, as in the mockup (DESIGN 4.3: 40-100 %);
-        // resize() clamps it. no splitter or saved height yet (SPEC sidecar_height_pct).
+        // resize() clamps it. no saved outer height yet (SPEC sidecar_height_pct).
         CompanionSize::Sidecar => (340.0, f64::INFINITY),
         CompanionSize::Ask | CompanionSize::Pill => (460.0, 72.0),
     }
@@ -300,8 +401,33 @@ pub async fn sharing_mode(app: tauri::AppHandle, active: bool) -> Result<(), Str
 
 #[cfg(test)]
 mod tests {
-    use super::{dimensions, edge_position, top_middle};
+    use super::{area_distance, dimensions, edge_position, inside_position, top_middle};
     use motet_core::events::CompanionSize;
+
+    #[test]
+    fn fast_swipes_stay_inside_work_area_at_any_scale() {
+        for scale in [1.0, 2.0] {
+            let w = (28.0 * scale) as i32;
+            let h = (104.0 * scale) as i32;
+            let area = (-1920, 30, 1920, 1050);
+            for (x, y) in [(-9000, -9000), (9000, 9000), (-900, 400)] {
+                let (cx, cy) = inside_position(area, (x, y, w, h), scale);
+                assert!(cx >= -1920 + (10.0 * scale) as i32);
+                assert!(cx + w <= -(10.0 * scale) as i32);
+                assert!(cy >= 30 + (16.0 * scale) as i32);
+                assert!(cy + h <= 1080 - (16.0 * scale) as i32);
+                assert_eq!(inside_position(area, (cx, cy, w, h), scale), (cx, cy));
+            }
+        }
+        assert_eq!(
+            inside_position((0, 0, 20, 20), (999, 999, 28, 104), 1.0),
+            (10, 16)
+        );
+        let left = (-1920, 0, 1920, 1080);
+        let right = (0, 0, 1920, 1080);
+        assert!(area_distance(left, (-3000.0, 400.0)) < area_distance(right, (-3000.0, 400.0)));
+        assert!(area_distance(right, (4000.0, 400.0)) < area_distance(left, (4000.0, 400.0)));
+    }
 
     #[test]
     fn ask_card_is_fixed_and_sits_top_middle_of_the_work_area() {

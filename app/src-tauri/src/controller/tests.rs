@@ -578,6 +578,14 @@ fn explicit_stop_restores_main_after_stopping_but_automatic_stop_does_not() {
         e.action(Action::Stop, 26_000).unwrap();
         assert!(matches!(e.session.app.state, SessionState::Stopped { .. }));
         assert!(e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
+        assert!(!e.session.app.companion.visible);
+        e.apply(Command::Tick, 27_000);
+        assert!(
+            !e.session.app.companion.visible,
+            "ticks must not restore the stopped companion"
+        );
+        e.action(Action::Resume, 28_000).unwrap();
+        assert!(e.session.app.companion.visible);
         let log = e.host.log.lock().unwrap();
         assert!(
             log.iter()
@@ -590,6 +598,10 @@ fn explicit_stop_restores_main_after_stopping_but_automatic_stop_does_not() {
     e.action(Action::Start, 0).unwrap();
     e.host.log.lock().unwrap().clear();
     e.apply(Command::StopRecording, 26_000);
+    assert!(
+        e.session.app.companion.visible,
+        "automatic stops keep Resume accessible without opening the library"
+    );
     assert!(matches!(e.session.app.state, SessionState::Stopped { .. }));
     assert!(!e.host.log.lock().unwrap().iter().any(|s| s == "show-main"));
 }

@@ -67,7 +67,7 @@ export const getLevels = () => invoke<[number, number]>("get_levels");
 
 export const liveTranscript = () => invoke<[string, string, string]>("live_transcript");
 
-// The native drag returns when the mouse is released; Rust then snaps Tucked to the nearer edge.
+// Native movement events keep Tucked on-screen; this final snap chooses its nearer edge.
 export async function dragCompanion() {
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
   await getCurrentWindow().startDragging();

@@ -268,6 +268,8 @@ pub enum Command {
         record: bool,
     },
     StopRecording,
+    /// Explicit Stop restores the library, which owns Resume/Discard during the grace period.
+    StopRecordingInMain,
     /// Turns off the idle stop until the call's app uses the mic again.
     KeepRecording,
     /// The Stopped Pill's Discard: no notes; the meeting goes to Recently deleted.

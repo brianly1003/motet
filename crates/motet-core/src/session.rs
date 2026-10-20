@@ -548,7 +548,19 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             session.app.ask_on_call = on;
             effects.push(Effect::SetAskOnCall(on));
         }
-        Command::StopRecording => session.stop(now, &mut effects),
+        command @ (Command::StopRecording | Command::StopRecordingInMain) => {
+            let was_recording = matches!(
+                session.app.state,
+                SessionState::Recording | SessionState::Paused
+            );
+            session.stop(now, &mut effects);
+            if was_recording
+                && matches!(command, Command::StopRecordingInMain)
+                && matches!(session.app.state, SessionState::Stopped { .. })
+            {
+                session.app.companion.visible = false;
+            }
+        }
         Command::DiscardRecording if matches!(session.app.state, SessionState::Stopped { .. }) => {
             if let Some(meeting_id) = session.app.meeting_id.clone() {
                 effects.push(Effect::Trash {
@@ -795,7 +807,8 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             session.app.ask_off_pending.is_some() || session.app.discarded.is_some()
         }
         SessionState::Asking { .. } => true,
-        SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => true,
+        SessionState::Recording | SessionState::Paused => true,
+        SessionState::Stopped { .. } => session.app.companion.visible || session.app.quit_pending,
         SessionState::Finishing { .. } => session.app.quit_pending,
     };
     if !matches!(
