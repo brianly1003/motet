@@ -98,5 +98,5 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => transcript,
     };
 
-    summarize::notes(&base, &transcript)
+    summarize::notes(&base, &transcript, "")
 }

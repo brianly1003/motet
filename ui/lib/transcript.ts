@@ -1,3 +1,6 @@
+export function gapLabel(ms: number) {
+  return ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))} s` : `${Math.round(ms / 60_000)} min`;
+}
 export function transcriptLines(text: string, marks: number[]) {
   const lines = text.split("\n").filter(Boolean).map(raw => {
     const match = /^\[(\d+):(\d{2})\] ([^:]+):\s?(.*)$/.exec(raw);

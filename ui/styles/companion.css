@@ -1,10 +1,12 @@
 /* Pill/Dot geometry and controls from the approved mockup; native window supplies placement. */
 html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: transparent; overflow: hidden; }
-.pill { display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; width: 420px; height: 46px; }
+.pill { display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; width: 460px; height: 46px; }
 .pillbar { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; height: 44px; }
 .pill .t { font: 500 14px var(--font-data); font-variant-numeric: tabular-nums; min-width: 50px; font-feature-settings: "tnum"; cursor: grab; }
 .pillmsg { font-size: 12.5px; color: var(--ink-2); flex: 1; }
-.pill .primary, .pill .quiet { padding: 3px 9px; font-size: 12px; border-radius: 7px; flex-shrink: 0; }
+.pill .quiet { padding: 3px 9px; font-size: 12px; border-radius: 7px; flex-shrink: 0; }
+/* Resume and Stop and save sit in Stop's slot, so they share its size. */
+.pill .primary { display: inline-flex; align-items: center; min-width: 62px; min-height: 30px; justify-content: center; border-radius: 8px; font-size: 13px; font-weight: 500; padding: 6px 12px; white-space: nowrap; flex-shrink: 0; }
 .pill .stop { display: inline-flex; align-items: center; min-width: 62px; min-height: 30px; justify-content: center; border: 1px solid var(--rec); background: var(--rec); color: #fff; border-radius: 8px; font-size: 13px; font-weight: 500; padding: 6px 12px; gap: 7px; white-space: nowrap; }
 .pill .iconbtn { border: 0; background: transparent; width: 30px; height: 30px; border-radius: 7px; color: var(--ink-2); font-size: 15px; display: grid; place-items: center; }
 .pill .iconbtn svg { width: 16px; height: 16px; stroke-width: 1.5; }
@@ -18,7 +20,12 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .pill .dotbtn .dot { width: 12px; height: 12px; }
 .pill button:focus-visible { outline-offset: -3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-@media (prefers-reduced-motion: reduce) { .dot.pulse { animation: none; } }
+/* A click outside slides the Sidecar out toward the edge; the Tucked capsule then slides in. */
+.pill[data-leaving] { animation: slide-out .18s cubic-bezier(.4,0,1,1) forwards; }
+.pill[data-size="tucked"] { animation: slide-in .22s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes slide-out { to { transform: translateX(40px); opacity: 0; } }
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dot.pulse, .pill[data-leaving], .pill[data-size="tucked"] { animation: none; } }
 
 .pill .iconbtn[aria-pressed="true"] { background: var(--me-soft); color: var(--voice-me); }
 
@@ -35,7 +42,7 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .who { font: 500 11px/1.8 var(--font-data); font-feature-settings: "tnum"; }
 .who.me { color: var(--me); }
 .who.them { color: var(--them); }
-.line.pending .tx { color: var(--ink-3); font-style: italic; }
+.line.pending .tx, .line.gap .tx { color: var(--ink-3); font-style: italic; }
 .line.jot .tx { color: var(--ink); }
 .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; font: 500 10px/1.7 var(--font-data); background: var(--accent-soft); color: var(--accent-ink); vertical-align: 1px; font-feature-settings: "tnum"; }
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
@@ -66,8 +73,10 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .pill[data-size="sidecar"] { left: auto; right: 14px; transform: none; width: 340px; bottom: 16px; border-radius: 14px; }
 .stage[data-os="win"] .pill[data-size="sidecar"] { bottom: 56px; }
 .pill[data-size="sidecar"] .pillbar { padding-left: 12px; gap: 8px; }
-.pill[data-size="sidecar"] .duet .lm, .pill[data-size="sidecar"] .duet .lt { display: none; }
-.pill[data-size="sidecar"] .duet { grid-template-columns: 84px; } .pill[data-size="sidecar"] .duet svg { width: 84px; grid-column: 1; }
+/* The Sidecar's Live pane already shows who speaks; its 340 px bar keeps every control. */
+.pill[data-size="sidecar"] .duet { display: none; }
+/* Controls sit at the right edge in every size; the time (and the Duet) stay left. */
+.pillbar .markbtn { margin-left: auto; }
 .pill[data-size="sidecar"] .pilldrawer { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pill[data-size="sidecar"] .lines { height: auto; flex: 0 1 38%; min-height: 70px; }
 .pill[data-size="sidecar"] .editor { flex: 1 1 auto; }
@@ -88,8 +97,6 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .hints code { font: 10.5px var(--font-data); background: var(--surface-3); border-radius: 4px; padding: 0 4px; color: var(--ink-2); font-feature-settings: "tnum"; }
 .hints kbd { font: 10.5px var(--font-data); font-feature-settings: "tnum"; }
 .sharebadge { padding: 7px 14px; font-size: 12px; background: var(--ok-soft); color: var(--ok); }
-.sizemenu { position: absolute; z-index: 60; width: 230px; }
-.sizemenu .cur { font-weight: 600; }
 
 :root { --me: var(--voice-me); --them: var(--voice-them); --surface: var(--surface-1); --ink: var(--ink-1);  }
 .pill { position: relative; height: auto; min-height: 46px; }
@@ -99,11 +106,6 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .pill[data-size="dot"], .pill[data-size="tucked"] { right: auto; top: auto; min-height: 0; }
 .pill .line { background: transparent; border: 0; text-align: left; padding: 0; color: var(--ink); }
 .pill [hidden] { display: none; }
-.sizemenu { top: 43px; right: 6px; padding: 5px; display: grid; gap: 1px; box-shadow: var(--shadow); border: 1px solid var(--line); border-radius: 10px; background: var(--glass); border-color: var(--glass-edge); }
-.sizemenu button { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 6px 9px; gap: 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; font-size: 13px; }
-.sizemenu button:hover, .sizemenu button:focus-visible { background: var(--surface-2); }
-.sizemenu kbd { color: var(--ink-3); font-size: 11px; }
-.sizemenu [aria-checked="true"] { font-weight: 600; }
 
 .pill { --glass: rgba(249,251,249,.72); --glass-edge: rgba(255,255,255,.7); background: var(--glass); border-color: var(--glass-edge); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
 @media (prefers-color-scheme: dark) { .pill { --glass: rgba(26,29,24,.72); --glass-edge: rgba(255,255,255,.08); } }
@@ -112,9 +114,8 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 
 .pill[data-peek="true"] { border: 2px solid var(--rec); }
 .pill[data-peek="true"] .sharebadge { color: var(--rec); background: var(--surface); }
-.sizemenu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
 
-.pill[data-size="dot"]:has(.jotbar) { width: 420px; height: auto; border-radius: 16px; }
+.pill[data-size="dot"]:has(.jotbar) { width: 460px; height: auto; border-radius: 16px; }
 .pill[data-size="dot"]:has(.jotbar) .jotbar { display: flex; }
 
 .pill .why .quiet, .pill .jotbar .quiet { border-color: var(--line-2); background: var(--surface); color: var(--ink); white-space: nowrap; }
@@ -124,6 +125,5 @@ html:has(.pill), body:has(.pill), body:has(.companion-loading) { background: tra
 .pill { margin-left: auto; }
 
 /* Native dragging must hit the region itself, including over the timer and waveform. */
-.pillbar[data-tauri-drag-region] { cursor: grab; user-select: none; }
+.pillbar[data-tauri-drag-region] { cursor: grab; user-select: none; outline: none; }
 .pillbar[data-tauri-drag-region] > :not(button) { pointer-events: none; }
-.pill[data-size="pill"] ~ .sizemenu { top: 78px; }

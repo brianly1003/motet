@@ -10,12 +10,14 @@ use tauri::{
 enum Action {
     Record,
     Stop,
+    Paused,
     Resume,
     None,
 }
 fn action(state: &SessionState, importing: bool) -> Action {
     match state {
         SessionState::Recording => Action::Stop,
+        SessionState::Paused => Action::Paused,
         SessionState::Stopped { .. } => Action::Resume,
         SessionState::Idle if !importing => Action::Record,
         _ => Action::None,
@@ -35,6 +37,7 @@ fn menu(
         "status",
         match action {
             Action::Stop => "Recording",
+            Action::Paused => "Paused · not recording",
             Action::Resume => "Stopped · notes start soon",
             Action::None => "Writing notes",
             Action::Record => "Motet · ready for calls",
@@ -47,18 +50,26 @@ fn menu(
         Action::Record => vec![("record", "Record now", "Ctrl+Alt+S")],
         Action::Stop => vec![
             ("stop", "Stop recording", "Ctrl+Alt+S"),
+            ("pause", "Pause recording", ""),
             ("mark", "Mark this moment", "Ctrl+Alt+M"),
             ("jot", "Jot a note…", "Ctrl+Alt+J"),
+            ("notes", "Open My notes", "Ctrl+Alt+N"),
+        ],
+        Action::Paused => vec![
+            ("resume", "Resume recording", ""),
+            ("stop", "Stop recording", "Ctrl+Alt+S"),
             ("notes", "Open My notes", "Ctrl+Alt+N"),
         ],
         Action::Resume => vec![("resume", "Resume recording", "Ctrl+Alt+S")],
         Action::None => vec![],
     } {
-        builder = builder.item(
-            &MenuItemBuilder::with_id(id, label)
-                .accelerator(shortcut)
-                .build(app)?,
-        );
+        let item = MenuItemBuilder::with_id(id, label);
+        let item = if shortcut.is_empty() {
+            item
+        } else {
+            item.accelerator(shortcut)
+        };
+        builder = builder.item(&item.build(app)?);
     }
     let menu = builder
         .separator()
@@ -113,6 +124,12 @@ pub fn update(app: &tauri::AppHandle, state: &AppState, importing: bool) -> Resu
             seconds / 60,
             seconds % 60
         ),
+        SessionState::Paused => format!(
+            "Paused · {} · {:02}:{:02} · not recording",
+            state.app.as_deref().unwrap_or("Manual"),
+            seconds / 60,
+            seconds % 60
+        ),
         SessionState::Stopped { .. } => "Stopped · notes start soon".into(),
         SessionState::Finishing { .. } => "Writing notes".into(),
         _ => "Motet · ready for calls".into(),
@@ -137,6 +154,7 @@ mod tests {
     fn only_the_action_for_the_current_state_is_offered() {
         assert_eq!(action(&SessionState::Idle, false), Action::Record);
         assert_eq!(action(&SessionState::Recording, false), Action::Stop);
+        assert_eq!(action(&SessionState::Paused, false), Action::Paused);
         assert_eq!(
             action(
                 &SessionState::Stopped {

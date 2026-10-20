@@ -51,7 +51,9 @@ impl Host for Fake {
         self.log.lock().unwrap().push(value);
         Ok(())
     }
-    fn notice(&self, _: &str) {}
+    fn notice(&self, message: &str) {
+        self.log.lock().unwrap().push(format!("notice:{message}"));
+    }
     fn exit(&self) {
         self.log.lock().unwrap().push("exit".into());
     }
@@ -246,4 +248,37 @@ fn bookmarks_use_recording_time_and_reject_stopped_sessions() {
     e.action(Action::Resume, 29_000).unwrap();
     e.apply(Command::Tick, 30_000);
     assert_eq!(e.mark().unwrap(), 26_000);
+}
+#[test]
+fn pause_stops_capture_resume_starts_a_fresh_part_and_the_long_pause_reminds() {
+    let mut e = engine();
+    assert!(e.action(Action::Pause, 0).is_err());
+    e.action(Action::Start, 0).unwrap();
+    e.action(Action::Pause, 30_000).unwrap();
+    assert_eq!(e.session.app.state, SessionState::Paused);
+    assert!(e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
+    // Marks need a recording: paused time is not part of the meeting.
+    assert!(e.mark().is_err());
+    e.apply(Command::Tick, 30_000 + 15 * 60_000);
+    assert!(
+        e.host
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|s| s.contains("Still paused"))
+    );
+    e.action(Action::Resume, 31 * 60_000).unwrap();
+    let stops = e.host.stops.lock().unwrap();
+    assert_eq!(stops.len(), 2);
+    assert!(!stops[1].load(Ordering::SeqCst));
+    // The new part starts where the recorded time stopped, not at the wall clock.
+    assert!(
+        e.host
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|s| s == "capture:30000")
+    );
 }

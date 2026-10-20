@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import * as ipc from "@/lib/ipc";
 import { useSession } from "@/lib/useSession";
 import type { MeetingSummary } from "@/lib/bindings/MeetingSummary";
+import { meetingTitle } from "@/lib/document";
 
 export default function CommandPalette({onClose, onSelect, onImport}: {onClose: () => void; onSelect: (id: string) => void; onImport: () => void}) {
   const [query, setQuery] = useState("");
@@ -23,10 +24,11 @@ export default function CommandPalette({onClose, onSelect, onImport}: {onClose: 
   }, [query]);
   const actions = [
     ...(state?.state.type === "Idle" ? [{label: "Record now", run: ipc.startRecording}] : []),
-    ...(state?.state.type === "Recording" ? [{label: "Stop recording", run: ipc.stopRecording}, {label: "Mark this moment", run: async () => { await ipc.markMoment(); }}, {label: "Open My notes", run: () => ipc.setCompanionSize("Sidecar")}] : []),
+    ...(state?.state.type === "Recording" ? [{label: "Stop recording", run: ipc.stopRecording}, {label: "Pause recording", run: ipc.pauseRecording}, {label: "Mark this moment", run: async () => { await ipc.markMoment(); }}, {label: "Open My notes", run: () => ipc.setCompanionSize("Sidecar")}] : []),
+    ...(state?.state.type === "Paused" ? [{label: "Resume recording", run: ipc.resumeRecording}, {label: "Stop recording", run: ipc.stopRecording}] : []),
     {label: "Import a recording", run: async () => { onImport(); }},
   ].filter(action => action.label.toLowerCase().includes(query.toLowerCase()));
-  const rows = [...meetings.map(meeting => ({label: meeting.title, run: async () => onSelect(meeting.id)})), ...actions];
+  const rows = [...meetings.map(meeting => ({label: meetingTitle(meeting), run: async () => onSelect(meeting.id)})), ...actions];
   async function choose(index: number) { const row = rows[index]; if (row) await act(async () => { await row.run(); onClose(); }); }
   return <><div className="scrim" onClick={onClose}/><div ref={dialog} className="palette" role="dialog" aria-modal="true" aria-label="Command palette" onKeyDown={event => {
     if (event.key === "Escape") { event.preventDefault(); onClose(); }

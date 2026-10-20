@@ -21,6 +21,7 @@ import type { Event as SessionEvent } from "./bindings/Event";
 export const getState = () => invoke<AppState>("get_state");
 export const startRecording = () => invoke<void>("start_recording");
 export const stopRecording = () => invoke<void>("stop_recording");
+export const pauseRecording = () => invoke<void>("pause_recording");
 export const resumeRecording = () => invoke<void>("resume_recording");
 export const quitRecording = (stopAndSave: boolean) => invoke<void>("quit", { stopAndSave });
 export const dismissProblem = (id: number) => invoke<void>("dismiss_problem", { id });
@@ -35,6 +36,7 @@ export async function onNotice(callback: (notice: string) => void) {
 
 export const setCompanionSize = (size: "Pill" | "Dot" | "Sidecar" | "Tucked") => invoke<void>("set_companion_size", { size });
 export const companionReady = () => invoke<void>("companion_ready");
+export const takeNote = () => invoke<void>("take_note");
 export const resumeRemainingMs = () => invoke<number>("resume_remaining_ms");
 export const notificationPermission = (request = false) => invoke<boolean>("notification_permission", { request });
 

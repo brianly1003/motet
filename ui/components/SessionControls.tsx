@@ -4,15 +4,20 @@ import * as ipc from "@/lib/ipc";
 import { elapsedLabel, problemMessage } from "@/lib/session";
 import { strings as s } from "@/lib/strings";
 
-export default function SessionControls() {
+// hideActive: on any meeting page; the live meeting's page shows its bar and the sidebar chip
+// (Recording, Paused, Writing notes) already says what the live one is doing (owner, 2026-10-20).
+export default function SessionControls({ hideActive = false }: { hideActive?: boolean }) {
   const { state, stage, notice, setNotice, pending, act } = useSession();
   const recording = state?.state.type === "Recording";
+  const paused = state?.state.type === "Paused";
   const stopped = state?.state.type === "Stopped";
   const finishing = state?.state.type === "Finishing";
   return <>
-    {(recording || stopped || finishing) && <div className={`banner session-banner${recording ? " is-recording" : ""}`} role="status">
-      <span>{recording ? s.recording : stopped ? s.stopped : stage?.type === "Transcribing" ? s.transcribing : s.processing} {state && !finishing && <time>{elapsedLabel(state.elapsed_ms)}</time>}</span>
-      {recording && <button className="quiet" disabled={pending} onClick={() => act(ipc.stopRecording)}>{s.stop}</button>}
+    {(recording || paused || stopped || finishing) && !hideActive && <div className={`banner session-banner${recording ? " is-recording" : ""}`} role="status">
+      <span>{recording ? s.recording : paused ? s.pillPaused : stopped ? s.stopped : stage?.type === "Transcribing" ? s.transcribing : s.processing} {state && !finishing && <time>{elapsedLabel(state.elapsed_ms)}</time>}</span>
+      {recording && <button className="quiet" disabled={pending} onClick={() => act(ipc.pauseRecording)}>{s.pause}</button>}
+      {paused && <button className="quiet" disabled={pending} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>}
+      {(recording || paused) && <button className="quiet" disabled={pending} onClick={() => act(ipc.stopRecording)}>{s.stop}</button>}
       {stopped && <button className="quiet" disabled={pending} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>}
     </div>}
     {state?.quit_pending && <div className="banner" role="alert">

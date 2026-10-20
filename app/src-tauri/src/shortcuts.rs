@@ -32,7 +32,7 @@ fn handle(app: &tauri::AppHandle, key: &str) -> Result<(), String> {
     let state = controller.state()?;
     if key == "S" {
         return controller.action(match state.state {
-            SessionState::Recording => Action::Stop,
+            SessionState::Recording | SessionState::Paused => Action::Stop,
             SessionState::Stopped { .. } => Action::Resume,
             SessionState::Idle => Action::Start,
             _ => return Ok(()),

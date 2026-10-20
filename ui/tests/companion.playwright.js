@@ -14,7 +14,7 @@ async (page) => {
     await p.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
     await reference.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
     await reference.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
-    await p.setViewportSize({width: 420, height: 560});
+    await p.setViewportSize({width: 460, height: 560});
     await p.addInitScript(() => {
       let next = 0;
       const callbacks = {}, listeners = {};
@@ -47,6 +47,7 @@ async (page) => {
           if (command === 'pin_companion') { state.companion = {...state.companion, pinned: args.pinned}; publish(); }
           if (command === 'stop_recording') { state.state = {type: 'Stopped', resume_until_ms: 10000}; state.companion.size = 'Pill'; publish(); }
           if (command === 'resume_recording') { state.state = {type: 'Recording'}; publish(); }
+          if (command === 'pause_recording') { state.state = {type: 'Paused'}; publish(); }
           if (command === 'quit') { state.quit_pending = false; publish(); }
           return null;
         }
@@ -73,39 +74,47 @@ async (page) => {
       });
       if (!dragRegion) throw Error(`Dragging is blocked over ${selector}`);
     }
-    await p.getByRole('button', {name: 'Change size'}).click();
-    const menuBounds = await p.getByRole('menu').boundingBox();
-    const pillBounds = await p.locator('.pill').boundingBox();
-    if (menuBounds.y < pillBounds.y + pillBounds.height + 6 || menuBounds.y + menuBounds.height > 300) throw Error('Menu overlaps the Pill or exceeds its native window');
-    await p.screenshot({path: `.playwright-out/parity-size-menu-${theme}.png`});
-    // A press outside the menu closes it and shrinks the window: on the clear area, then on the Pill.
-    for (const [x, y] of [[40, 500], [30, 22]]) {
-      const before = await p.evaluate(() => window.testCalls.length);
-      await p.mouse.click(x, y);
-      if (await p.getByRole('menu').count()) throw Error(`Size menu stayed open after a click at ${x},${y}`);
-      if (!await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'companion_menu' && c.args.open === false), before)) throw Error('Window did not shrink after closing the menu');
-      await p.getByRole('button', {name: 'Change size'}).click();
-    }
-    await p.getByRole('menu').click({position: {x: 5, y: 5}});
-    if (!await p.getByRole('menu').count()) throw Error('A click inside the menu closed it');
-    await p.getByRole('menuitemradio', {name: 'Notes and live transcript'}).click();
+    // No size menu (owner 2026-10-20): ✎ opens the Sidecar.
+    if (await p.getByRole('button', {name: 'Change size'}).count()) throw Error('The size menu is still there');
+    await p.getByRole('button', {name: 'Open my notes', exact: true}).click();
+    // ✎ is the only way in that sends the library to the Dock (owner 2026-10-20).
+    await p.waitForFunction(() => window.testCalls.some(c => c.command === 'take_note'));
     const editor = p.getByRole('textbox', {name: 'My notes. Each line keeps the time you wrote it.'});
     await editor.waitFor();
     await editor.click(); await p.keyboard.press('End'); await p.keyboard.type(' tomorrow');
     await p.waitForTimeout(450);
     if (!await p.evaluate(() => window.testCalls.some(call => call.command === 'save_my_notes' && call.args.text.includes('tomorrow')))) throw Error('My notes did not save');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-sidecar-${theme}.png`});
-    // Owner's direction 2026-10-20: focus leaving keeps the Sidecar open; Esc tucks it unless pinned.
+    if (await p.locator('.duet').count()) { if (await p.locator('.duet').isVisible()) throw Error('Sidecar still shows the Duet (mockup hides it)'); }
+    const sideBar = await p.locator('.pillbar').evaluate(e => [e.scrollWidth, e.clientWidth]);
+    if (sideBar[0] > sideBar[1]) throw Error(`Sidecar bar overflows: ${sideBar}`);
+    // Controls sit at the right edge (owner 2026-10-20), not bunched after the time.
+    const edge = await p.locator('.pillbar').evaluate(e => e.getBoundingClientRect().right - e.lastElementChild.getBoundingClientRect().right);
+    if (edge > 8) throw Error(`Sidecar controls are not right-aligned: ${edge}px left over`);
+    // Owner's direction 2026-10-20: a click outside slides an unpinned Sidecar out and tucks it;
+    // Keep open ignores both the click outside and Esc.
     const sizedBefore = await p.evaluate(() => window.testCalls.length);
+    const collapsed = n => p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size'), n);
+    await p.getByRole('button', {name: 'Keep open'}).click();
     await p.evaluate(() => window.fixtureEmit('tauri://blur'));
-    await p.waitForTimeout(200);
-    if (await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size'), sizedBefore)) throw Error('Sidecar collapsed when focus left');
-    await p.getByRole('button', {name: 'Keep open'}).click();
+    await p.waitForTimeout(300);
+    if (await collapsed(sizedBefore)) throw Error('Pinned Sidecar collapsed when focus left');
     await editor.click(); await p.keyboard.press('Escape'); await p.waitForTimeout(200);
-    if (await p.evaluate(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size'), sizedBefore)) throw Error('Pinned Sidecar collapsed on Esc');
+    if (await collapsed(sizedBefore)) throw Error('Pinned Sidecar collapsed on Esc');
     await p.getByRole('button', {name: 'Keep open'}).click();
-    await editor.click(); await p.keyboard.press('Escape');
+    await p.emulateMedia({colorScheme: theme, reducedMotion: 'no-preference'});
+    await p.evaluate(() => window.fixtureEmit('tauri://blur'));
+    await p.locator('.pill[data-leaving]').waitFor();
+    if (await p.locator('.pill').evaluate(e => getComputedStyle(e).animationName) !== 'slide-out') throw Error('No slide-out when focus left');
     await p.waitForFunction(() => window.testCalls.some(c => c.command === 'set_companion_size' && c.args.size === 'Tucked'));
+    await p.locator('.pill[data-size="tucked"]:not([data-leaving])').waitFor();
+    if (await p.locator('.pill').evaluate(e => getComputedStyle(e).animationName) !== 'slide-in') throw Error('Tucked capsule did not slide in');
+    await p.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
+    await p.evaluate(() => window.fixtureState({companion: {visible: true, size: 'Sidecar', pinned: false, peeking: false, display_id: null}}));
+    await editor.waitFor();
+    const escFrom = await p.evaluate(() => window.testCalls.length);
+    await editor.click(); await p.keyboard.press('Escape');
+    await p.waitForFunction(n => window.testCalls.slice(n).some(c => c.command === 'set_companion_size' && c.args.size === 'Tucked'), escFrom);
     await p.evaluate(() => window.fixtureState({companion: {visible: true, size: 'Sidecar', pinned: false, peeking: false, display_id: null}}));
     await editor.waitFor();
     await p.evaluate(() => { window.fixtureTranscript = Array.from({length:30},(_,i)=>`[05:${String(i).padStart(2,'0')}] Me: Live message ${i}`).join('\n'); });
@@ -143,6 +152,22 @@ async (page) => {
     if (!await p.locator('.caption').isVisible()) throw Error('Stopped Pill lost its caption row (mockup keeps it)');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-stopped-${theme}.png`});
     await p.getByRole('button', {name: 'Resume', exact: true}).click();
+    // Pause (owner 2026-10-20): not recording, so no red dot, frozen time, Resume and Stop.
+    await p.getByRole('button', {name: 'Pause recording', exact: true}).click();
+    await p.getByText('Paused · not recording').waitFor();
+    if (await p.locator('.pillbar .dot.pulse').count()) throw Error('Paused bar still shows the recording dot');
+    if (!await p.getByRole('button', {name: 'Resume', exact: true}).isVisible() || !await p.getByRole('button', {name: 'Stop', exact: true}).isVisible()) throw Error('Paused bar lacks Resume or Stop');
+    const [resumeBox, stopBox] = await Promise.all(['Resume', 'Stop'].map(name => p.getByRole('button', {name, exact: true}).boundingBox()));
+    if (Math.abs(resumeBox.height - stopBox.height) > 0.5) throw Error(`Resume ${resumeBox.height}px and Stop ${stopBox.height}px differ`);
+    if (await p.locator('.line.pending').count()) throw Error('Listening row shown while paused');
+    await p.locator('.pill').screenshot({path: `.playwright-out/parity-paused-${theme}.png`});
+    await p.getByRole('button', {name: 'Resume', exact: true}).click();
+    await p.getByRole('button', {name: 'Pause recording', exact: true}).waitFor();
+    const pillBar = await p.locator('.pillbar').evaluate(e => [e.scrollWidth, e.clientWidth]);
+    if (pillBar[0] > pillBar[1]) throw Error(`Pill bar overflows with Pause: ${pillBar}`);
+    await p.getByRole('button', {name: 'Open my notes', exact: true}).click();
+    await p.locator('.line.gap').waitFor();
+    if (!(await p.locator('.line.gap').innerText()).includes('Paused for')) throw Error('No gap line after the pause');
     await p.evaluate(() => window.fixtureState({quit_pending: true}));
     await p.getByRole('button', {name: 'Keep recording', exact: true}).waitFor();
     if (!await p.locator('.caption').isVisible()) throw Error('Quit question lost its caption row (mockup keeps it)');

@@ -4,6 +4,8 @@ use crate::events::*;
 
 const GRACE_MS: u64 = 10_000;
 const ASK_MS: u64 = 60_000;
+/// One reminder when a pause runs this long, so a forgotten pause doesn't lose the meeting.
+const PAUSE_REMIND_MS: u64 = 15 * 60_000;
 const GB: u64 = 1_000_000_000;
 
 /// No clock or I/O is read by the reducer. `since` is a caller-supplied wall-clock timestamp.
@@ -29,6 +31,7 @@ pub enum Effect {
     NotifyShort {
         seconds: u32,
     },
+    NotifyStillPaused,
     StartCapture {
         meeting_id: String,
         resume: bool,
@@ -90,6 +93,7 @@ pub struct Session {
     idle_since: Option<u64>,
     peek_until: Option<u64>,
     before_share: CompanionSize,
+    pause_remind_at: Option<u64>,
 }
 
 impl Session {
@@ -109,6 +113,7 @@ impl Session {
             idle_since: None,
             peek_until: None,
             before_share: CompanionSize::Pill,
+            pause_remind_at: None,
         }
     }
 
@@ -127,6 +132,7 @@ impl Session {
         self.call = None;
         self.apps.clear();
         self.idle_since = None;
+        self.pause_remind_at = None;
     }
 
     fn problem(&mut self, problem: Problem, since: &str) -> u64 {
@@ -241,6 +247,14 @@ impl Session {
     }
 
     fn stop(&mut self, now: u64, effects: &mut Vec<Effect>) {
+        if self.app.state == SessionState::Paused {
+            // Capture already stopped at Pause; Stop only starts the usual Resume window.
+            self.pause_remind_at = None;
+            self.app.state = SessionState::Stopped {
+                resume_until_ms: now.saturating_add(GRACE_MS),
+            };
+            return;
+        }
         if self.app.state != SessionState::Recording {
             return;
         }
@@ -259,6 +273,7 @@ impl Session {
         if self.can_start(false, false, since, effects) {
             self.app.state = SessionState::Recording;
             self.idle_since = None;
+            self.pause_remind_at = None;
             if let (Some(meeting_id), Some(reason)) =
                 (self.app.meeting_id.clone(), self.app.started_by.clone())
             {
@@ -283,6 +298,12 @@ impl Session {
             }
         }
         self.last_ms = now;
+        if self.app.state == SessionState::Paused
+            && self.pause_remind_at.is_some_and(|at| now >= at)
+        {
+            self.pause_remind_at = None;
+            effects.push(Effect::NotifyStillPaused);
+        }
         if self.ask.as_ref().is_some_and(|a| now >= a.until_ms) {
             self.idle();
         }
@@ -400,6 +421,14 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             }
         }
         Command::StopRecording => session.stop(now, &mut effects),
+        Command::PauseRecording
+            if session.app.state == SessionState::Recording && session.audio() =>
+        {
+            effects.push(Effect::StopCapture);
+            session.app.state = SessionState::Paused;
+            session.idle_since = None;
+            session.pause_remind_at = Some(now.saturating_add(PAUSE_REMIND_MS));
+        }
         Command::MicActivity { active }
             if session.app.state == SessionState::Recording && session.audio() =>
         {
@@ -415,8 +444,10 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             session.stop(now, &mut effects)
         }
         Command::ResumeRecording
-            if matches!(session.app.state, SessionState::Stopped { .. })
-                && session.app.never_pending.is_none() =>
+            if matches!(
+                session.app.state,
+                SessionState::Stopped { .. } | SessionState::Paused
+            ) && session.app.never_pending.is_none() =>
         {
             session.resume(&input.since, &mut effects)
         }
@@ -453,7 +484,12 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 session.resume(&input.since, &mut effects);
             }
         }
-        Command::SetCompanionSize(size) if session.app.state == SessionState::Recording => {
+        Command::SetCompanionSize(size)
+            if matches!(
+                session.app.state,
+                SessionState::Recording | SessionState::Paused
+            ) =>
+        {
             if session.app.sharing.is_some() {
                 if size == CompanionSize::Sidecar {
                     session.app.companion.peeking = true;
@@ -469,7 +505,12 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             }
         }
         Command::SetCompanionPinned(pinned) => session.app.companion.pinned = pinned,
-        Command::SetSharing(active) if session.app.state == SessionState::Recording => {
+        Command::SetSharing(active)
+            if matches!(
+                session.app.state,
+                SessionState::Recording | SessionState::Paused
+            ) =>
+        {
             if active && session.app.sharing.is_none() {
                 session.before_share = session.app.companion.size;
                 session.app.sharing = Some(Sharing {
@@ -487,6 +528,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
         }
         Command::RequestQuit => match session.app.state {
             SessionState::Recording
+            | SessionState::Paused
             | SessionState::Stopped { .. }
             | SessionState::Finishing { .. } => {
                 session.app.quit_pending = true;
@@ -501,7 +543,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 session.app.quit_pending = false;
             } else if matches!(
                 session.app.state,
-                SessionState::Recording | SessionState::Stopped { .. }
+                SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. }
             ) {
                 if session.app.state == SessionState::Recording && session.audio() {
                     effects.push(Effect::StopCapture);
@@ -635,10 +677,14 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
     session.app.companion.visible = match session.app.state {
         SessionState::Idle => false,
         SessionState::Asking { .. } => session.app.dnd_active,
-        SessionState::Recording | SessionState::Stopped { .. } => true,
+        SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => true,
         SessionState::Finishing { .. } => session.app.quit_pending,
     };
-    if !matches!(session.app.state, SessionState::Recording) || session.app.quit_pending {
+    if !matches!(
+        session.app.state,
+        SessionState::Recording | SessionState::Paused
+    ) || session.app.quit_pending
+    {
         session.app.companion.size = CompanionSize::Pill;
     }
     session.problems.sort_by_key(|p| priority(&p.problem));

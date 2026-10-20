@@ -12,6 +12,7 @@ use tauri::{Emitter, Manager};
 
 pub(crate) fn show(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -42,10 +43,12 @@ pub fn run() {
             mark_moment,
             start_recording,
             stop_recording,
+            pause_recording,
             resume_recording,
             quit,
             dismiss_problem,
             set_companion_size,
+            take_note,
             companion_ready,
             crate::companion::companion_menu,
             crate::companion::pin_companion,
@@ -101,6 +104,7 @@ pub fn run() {
                     "open" => show(app),
                     "record" => dispatch(app.clone(), Action::Start),
                     "resume" => dispatch(app.clone(), Action::Resume),
+                    "pause" => dispatch(app.clone(), Action::Pause),
                     "stop" => dispatch(app.clone(), Action::Stop),
                     "mark" => {
                         let app = app.clone();
@@ -164,6 +168,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("could not build Motet")
         .run(|app, event| {
+            // The visible companion stops macOS restoring the library on a Dock click; do it here.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show(app);
+            }
             if let tauri::RunEvent::ExitRequested { api, .. } = event {
                 let state = app.state::<Library>();
                 if !state.allow_exit.load(Ordering::SeqCst) {
@@ -208,6 +217,10 @@ async fn start_recording(app: tauri::AppHandle, notes_only: Option<bool>) -> Res
 #[tauri::command]
 async fn stop_recording(app: tauri::AppHandle) -> Result<(), String> {
     act(app, Action::Stop).await
+}
+#[tauri::command]
+async fn pause_recording(app: tauri::AppHandle) -> Result<(), String> {
+    act(app, Action::Pause).await
 }
 #[tauri::command]
 async fn resume_recording(app: tauri::AppHandle) -> Result<(), String> {
@@ -269,16 +282,19 @@ impl Host for Desktop {
             )?;
             if let Some(tray) = self.app.tray_by_id("motet") {
                 let seconds = state.elapsed_ms / 1000;
-                let title = if state.state == SessionState::Recording {
-                    format!("● {:02}:{:02}", seconds / 60, seconds % 60)
-                } else {
-                    String::new()
+                // Paused shows the frozen time without the recording dot.
+                let title = match state.state {
+                    SessionState::Recording => format!("● {:02}:{:02}", seconds / 60, seconds % 60),
+                    SessionState::Paused => format!("❚❚ {:02}:{:02}", seconds / 60, seconds % 60),
+                    _ => String::new(),
                 };
                 crate::window_native::tray_title(&tray, title).map_err(|e| e.to_string())?;
-                tray.set_tooltip(Some(if state.state == SessionState::Recording {
-                    "Motet - Recording microphone and system audio; Stop in this menu"
-                } else {
-                    "Motet - On this computer"
+                tray.set_tooltip(Some(match state.state {
+                    SessionState::Recording => {
+                        "Motet - Recording microphone and system audio; Stop in this menu"
+                    }
+                    SessionState::Paused => "Motet - Paused, not recording; Resume in this menu",
+                    _ => "Motet - On this computer",
                 }))
                 .map_err(|e| e.to_string())?;
             }
@@ -321,6 +337,12 @@ impl Host for Desktop {
             .map_err(|_| "Recording worker stopped".into())
     }
     fn notice(&self, message: &str) {
+        if message == crate::controller::STILL_PAUSED {
+            // A reminder, not a problem: notify without pulling the library forward.
+            crate::notifications::send(&self.app, "Recording paused", message);
+            let _ = self.app.emit("motet://notice", message);
+            return;
+        }
         if message.starts_with("Recording under ") {
             crate::notifications::send(&self.app, "Recording discarded", message);
         }
@@ -358,6 +380,24 @@ async fn set_companion_size(
     size: motet_core::events::CompanionSize,
 ) -> Result<(), String> {
     act(app, Action::Size(size)).await
+}
+/// ✎ Take a note: open the Sidecar and send the library to the Dock / taskbar (owner, 2026-10-20).
+/// Only this button minimizes; a Dock click or any other way in shows the library again.
+#[tauri::command]
+async fn take_note(window: tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() != "companion" {
+        return Err("Only the companion can take a note".into());
+    }
+    let app = window.app_handle().clone();
+    act(
+        app.clone(),
+        Action::Size(motet_core::events::CompanionSize::Sidecar),
+    )
+    .await?;
+    if let Some(main) = app.get_webview_window("main") {
+        main.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 #[tauri::command]
 fn companion_ready(window: tauri::WebviewWindow) -> Result<(), String> {

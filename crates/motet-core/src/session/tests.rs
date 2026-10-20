@@ -860,3 +860,102 @@ fn unverified_sharing_hides_text_and_peek_expires_even_when_pinned() {
     assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
     assert!(s.app.sharing.is_none());
 }
+
+#[test]
+fn pause_stops_capture_keeps_the_meeting_and_freezes_the_clock() {
+    let s = step(
+        start(fresh(), false),
+        0,
+        Command::SetCompanionSize(CompanionSize::Sidecar),
+    )
+    .0;
+    let (s, effects) = step(s, 20_000, Command::PauseRecording);
+    assert_eq!(s.app.state, SessionState::Paused);
+    assert_eq!(work(effects), vec![Effect::StopCapture]);
+    // Still visible and still a Sidecar: Pause is not the end of the call.
+    assert!(s.app.companion.visible);
+    assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
+    // No Resume deadline: an hour later it is still paused, and paused time is not counted.
+    let s = step(s, 3_620_000, Command::Tick).0;
+    assert_eq!(s.app.state, SessionState::Paused);
+    assert_eq!(s.app.elapsed_ms, 20_000);
+    let (s, effects) = step(s, 3_620_000, Command::ResumeRecording);
+    assert_eq!(s.app.state, SessionState::Recording);
+    assert_eq!(s.app.meeting_id.as_deref(), Some("m1"));
+    assert!(effects.contains(&Effect::StartCapture {
+        meeting_id: "m1".into(),
+        resume: true
+    }));
+    assert_eq!(step(s, 3_625_000, Command::Tick).0.app.elapsed_ms, 25_000);
+}
+
+#[test]
+fn stop_while_paused_starts_the_resume_window_without_stopping_capture_twice() {
+    let s = step(start(fresh(), false), 30_000, Command::PauseRecording).0;
+    let (s, effects) = step(s, 40_000, Command::StopRecording);
+    assert_eq!(
+        s.app.state,
+        SessionState::Stopped {
+            resume_until_ms: 50_000
+        }
+    );
+    assert!(work(effects).is_empty());
+    let (s, effects) = step(s, 50_000, Command::Tick);
+    assert!(matches!(s.app.state, SessionState::Finishing { .. }));
+    assert!(effects.contains(&Effect::Finish {
+        meeting_id: "m1".into(),
+        notes_only: false
+    }));
+}
+
+#[test]
+fn a_long_pause_reminds_once_at_fifteen_minutes() {
+    let s = step(start(fresh(), false), 0, Command::PauseRecording).0;
+    let (s, effects) = step(s, 899_999, Command::Tick);
+    assert!(!effects.contains(&Effect::NotifyStillPaused));
+    let (s, effects) = step(s, 900_000, Command::Tick);
+    assert!(effects.contains(&Effect::NotifyStillPaused));
+    let (s, effects) = step(s, 1_900_000, Command::Tick);
+    assert!(!effects.contains(&Effect::NotifyStillPaused));
+    // A new pause gets a new reminder.
+    let s = step(s, 1_900_000, Command::ResumeRecording).0;
+    let s = step(s, 1_910_000, Command::PauseRecording).0;
+    assert!(
+        step(s, 2_810_000, Command::Tick)
+            .1
+            .contains(&Effect::NotifyStillPaused)
+    );
+}
+
+#[test]
+fn pause_is_ignored_outside_recording_and_calls_do_not_start_while_paused() {
+    let (s, effects) = step(fresh(), 0, Command::PauseRecording);
+    assert_eq!(s.app.state, SessionState::Idle);
+    assert!(work(effects).is_empty());
+    let notes_only = start(fresh(), true);
+    assert_eq!(
+        step(notes_only, 1_000, Command::PauseRecording).0.app.state,
+        SessionState::Recording
+    );
+    let mut s = step(start(fresh(), false), 1_000, Command::PauseRecording).0;
+    s.app.auto_start = true;
+    let (s, effects) = detect(s, Mode::Auto);
+    assert_eq!(s.app.state, SessionState::Paused);
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::StartCapture { .. }))
+    );
+    // Quitting while paused asks first, and Stop and save finishes without stopping capture again.
+    let s = step(s, 2_000, Command::RequestQuit).0;
+    assert!(s.app.quit_pending);
+    let (s, effects) = step(
+        s,
+        2_000,
+        Command::Quit {
+            stop_and_save: true,
+        },
+    );
+    assert!(matches!(s.app.state, SessionState::Finishing { .. }));
+    assert!(!effects.contains(&Effect::StopCapture));
+}

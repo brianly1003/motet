@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { noteSections, taskLine } from '@/lib/document';
-import { renderNotes } from '@/lib/md';
+import { renderInline, renderNotes } from '@/lib/md';
 import * as ipc from '@/lib/ipc';
+
+// Mockup: these sections take the small label heading wherever they appear; topics take the serif one.
+const LABELS = /^(action items|overview|open questions|my notes|your jots)$/i;
+const MY_NOTES = /^my notes$/i;
 
 export default function NotesView({id, markdown, onChange, onError, sourceTimes, onSeek}: {id:string; markdown:string; onChange:(text:string)=>void; onError:(error:string)=>void; sourceTimes:number[]; onSeek?:(ms:number)=>void}) {
   const [saving, setSaving] = useState(false);
@@ -14,7 +18,12 @@ export default function NotesView({id, markdown, onChange, onError, sourceTimes,
   const render = (text:string)=>renderNotes(text,onSeek?sourceTimes:[]);
   return <div className="notes" onClick={event=>{const chip=(event.target as HTMLElement).closest<HTMLButtonElement>('button.src');if(chip){event.preventDefault();onSeek?.(Number(chip.dataset.ms));}}}>{noteSections(markdown).map((section,index)=>{
     const tasks = section.lines.filter(line=>taskLine(line.text));
-    const Heading = index < 2 ? 'h3' : 'h4';
+    const Heading = LABELS.test(section.title) ? 'h3' : 'h4';
+    // The user's own lines, as the mockup's jots: ✎, the line, then its time.
+    if (MY_NOTES.test(section.title)) return <section key={index}><h3>{section.title}</h3><ul>{section.lines.filter(line=>line.text.trim()).map(line=>{
+      const [, time, text] = /^\s*(?:\[(\d+:\d{2})\]\s*)?(.*)$/.exec(line.text)!;
+      return <li key={line.line}><span className="jotmark" aria-label="Your note">✎</span><span dangerouslySetInnerHTML={{__html:renderInline(text)}}/>{time&&<> <span className="tip">{time}</span></>}</li>;
+    })}</ul></section>;
     return <section key={index}>{section.title && <Heading>{section.title}</Heading>}
       {tasks.length ? <><ul className="todo">{tasks.map(line=>{
         const task = taskLine(line.text)!;

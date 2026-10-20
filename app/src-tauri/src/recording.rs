@@ -50,6 +50,8 @@ pub fn spawn(
                             continue;
                         };
                         let result = capture_part(&root, record, offset_ms, stop, |base, stop| {
+                            // The meeting exists from its first second: list it before capture.
+                            let _ = app.emit("motet://library-changed", ());
                             crate::live::start(
                                 app.clone(),
                                 id.clone(),
@@ -239,21 +241,23 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
         stage(Stage::Summarizing { part: 1, of: 1 });
         let started = std::time::Instant::now();
         let spellings = library::used_spellings();
-        summarize::notes(&dir.join("notes").to_string_lossy(), &text)?;
+        let my_notes = dir.join("my-notes.md");
+        let mine = if my_notes.exists() {
+            library::text(&my_notes)?
+        } else {
+            String::new()
+        };
+        summarize::notes(&dir.join("notes").to_string_lossy(), &text, &mine)?;
         let mut metadata = library::summary(root, &record.id)?;
         metadata.notes_ms = Some(started.elapsed().as_millis() as u64);
         metadata.spellings = spellings;
         library::save(root, &metadata)?;
-        let my_notes = dir.join("my-notes.md");
-        if my_notes.exists() {
-            let text = library::text(&my_notes)?;
-            if !text.trim().is_empty() {
-                use std::io::Write;
-                let mut file = fs::OpenOptions::new()
-                    .append(true)
-                    .open(dir.join("notes.md"))?;
-                write!(file, "\n### My notes\n\n{text}\n")?;
-            }
+        if !mine.trim().is_empty() {
+            use std::io::Write;
+            let mut file = fs::OpenOptions::new()
+                .append(true)
+                .open(dir.join("notes.md"))?;
+            write!(file, "\n### My notes\n\n{mine}\n")?;
         }
         stage(Stage::Saving);
         Ok(())

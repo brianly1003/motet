@@ -15,7 +15,8 @@ export default function LibraryHome({version, onOpen, onImport, onDone, onError,
     let active = true;
     ipc.openActionItems().then(open => {
       if (!active) return;
-      setItems(open.flatMap(([meeting, notes]) => noteSections(notes).flatMap(section => section.lines.flatMap(line => {
+      // Anything but a list (an older backend without this command) means nothing open.
+      setItems((Array.isArray(open) ? open : []).flatMap(([meeting, notes]) => noteSections(notes).flatMap(section => section.lines.flatMap(line => {
         const task = taskLine(line.text);
         if (!task || task.done) return [];
         const src = /\[(\d+:\d{2})\]\s*$/.exec(task.text)?.[1] ?? "";

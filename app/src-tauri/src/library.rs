@@ -287,7 +287,7 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
         };
         let started = std::time::Instant::now();
         let spellings = used_spellings();
-        motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input)?;
+        motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input, "")?;
         summary.notes_ms = Some(started.elapsed().as_millis() as u64);
         summary.spellings = spellings;
         Ok(())

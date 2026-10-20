@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Duet from "@/components/MotetMark";
-import DeletedMeeting from "@/components/DeletedMeeting";
+import RecentlyDeleted from "@/components/RecentlyDeleted";
 import MeetingDocument from "@/components/MeetingDocument";
 import { notesText, deletable } from "@/components/MeetingActions";
 import { Dots, MenuIcon, MenuItem } from "@/components/MenuIcon";
-import {meetingDate,meetingGroup,durationLabel,fileSize} from "@/lib/document";
+import {meetingDate,meetingGroup,meetingTitle,durationLabel,fileSize} from "@/lib/document";
+import { useSession } from "@/lib/useSession";
 import CommandPalette from "@/components/CommandPalette";
 import NotificationPermission from "@/components/NotificationPermission";
 import SessionControls from "@/components/SessionControls";
@@ -18,6 +19,8 @@ import type { MeetingSummary } from "@/lib/bindings/MeetingSummary";
 const GROUPS=["Today","This week","Earlier"];
 
 export default function Main(){
+  const session=useSession();
+  const live=session.state;
   const [deleted,setDeleted]=useState<MeetingSummary[]>([]);
   const [meetings,setMeetings]=useState<MeetingSummary[]>([]);
   const [bytes,setBytes]=useState(0);
@@ -40,6 +43,9 @@ export default function Main(){
   const toastTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
   const menuRef=useRef<HTMLDivElement>(null);
   const selection=useRef(0);
+  const openId=useRef<string|null>(null);
+  openId.current=selected?.summary.id??null;
+  const pendingOpen=useRef<string|null>(null);
   // Search results refresh 150 ms after the list; never show a meeting that has just been deleted.
   const shown=query.trim()?matches.filter(match=>meetings.some(meeting=>meeting.id===match.id)):meetings;
   // Sidebar order, so a deleted meeting is followed by the one below it.
@@ -111,10 +117,24 @@ export default function Main(){
     if(!available){setLoading(false);return;}
     let active=true;const cleanups:Array<()=>void>=[];
     const subscribe=async(name:string,callback:()=>void)=>{const off=await ipc.subscribe(name,callback);if(active)cleanups.push(off);else off();};
-    Promise.all([ipc.onOpenMeeting(id=>{if(active){setQuery("");void select(id);}}).then(off=>{if(active)cleanups.push(off);else off();}),refresh(),subscribe("motet://library-changed",()=>{void refresh();}),subscribe("motet://quit-pending",()=>setQuitPending(true))])
+    Promise.all([ipc.onOpenMeeting(id=>{if(active){setQuery("");void select(id);}}).then(off=>{if(active)cleanups.push(off);else off();}),refresh(),subscribe("motet://library-changed",()=>{void refresh().then(()=>{if(pendingOpen.current)void tryOpen(pendingOpen.current);else if(openId.current)void reread(openId.current);});}),subscribe("motet://quit-pending",()=>setQuitPending(true))])
       .catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;selection.current++;cleanups.forEach(off=>off());};
   },[]);
+  // A new recording always opens (owner's direction 2026-10-20, DESIGN 4.8). Its folder can appear
+  // a moment after the state, so it opens on the worker's library-changed if not yet there.
+  const liveId=live&&["Recording","Paused","Stopped"].includes(live.state.type)?live.meeting_id:null;
+  // Re-read the open meeting; a short recording that was discarded simply closes.
+  async function reread(id:string){const request=++selection.current;try{const meeting=await ipc.getMeeting(id);if(request===selection.current)setSelected(meeting);}catch{if(request===selection.current&&openId.current===id)setSelected(null);}}
+  async function tryOpen(id:string){try{const meeting=await ipc.getMeeting(id);pendingOpen.current=null;setRename(null);setTrashOpen(false);selection.current++;setSelected(meeting);}catch{/* not created yet */}}
+  useEffect(()=>{
+    if(!liveId)return;
+    pendingOpen.current=liveId;
+    void refresh().then(()=>tryOpen(liveId));
+  },[liveId]);
+  // The live meeting's page follows the session: Stopped, then Writing the notes, then Ready.
+  useEffect(()=>{if(openId.current&&openId.current===live?.meeting_id)void reread(openId.current);},[live?.state.type]);
+  async function recordNow(){setTrashOpen(false);await session.act(ipc.startRecording);}
   async function importRecording(){setError("");setBusy(true);try{const meeting=await ipc.importAudio();await refresh();if(meeting)await select(meeting.id);}catch(e){setError(String(e));await refresh();}finally{setBusy(false);}}
   const menuMeeting=rowMenu?shown.find(meeting=>meeting.id===rowMenu.id):undefined;
   return <>{mac&&<header className="window-titlebar" data-tauri-drag-region><span className="title-brand"><Duet className="mark"/><span>Motet</span></span></header>}<main className="shell">
@@ -122,28 +142,31 @@ export default function Main(){
       <label className="search"><span className="sr-only">{s.search}</span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input placeholder={s.search} value={query} onChange={e=>setQuery(e.target.value)}/><button className="search-key" aria-label="Command palette" onClick={event=>{event.preventDefault();setPalette(true);}}><kbd>⌘K</kbd></button></label>
       <nav className="meeting-list" aria-label={s.meetings}>
         {GROUPS.map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=>{const current=!trashOpen&&selected?.summary.id===meeting.id;return <div key={meeting.id} className={`mrow${rowMenu?.id===meeting.id?" open":""}`}>
-          <button className={`meeting-row ${current?"selected":""}`} aria-current={current?"page":undefined} onClick={()=>select(meeting.id)}><strong title={meeting.title}>{meeting.title}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${durationLabel(meeting.duration_ms)}`:""}<i className={meeting.status==="Ready"?"ready":"attention"}>{meeting.status==="Ready"?s.ready:meeting.status==="Finishing"?s.finishing:s.failed}</i></span></button>
-          <button className="rowmore" aria-label={`${s.rowActions} ${meeting.title}`} aria-haspopup="menu" aria-expanded={rowMenu?.id===meeting.id} onClick={event=>{
+          <button className={`meeting-row ${current?"selected":""}`} aria-current={current?"page":undefined} onClick={()=>select(meeting.id)}><strong title={meetingTitle(meeting)}>{meetingTitle(meeting)}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${durationLabel(meeting.duration_ms)}`:""}{(()=>{const type=live?.meeting_id===meeting.id?live.state.type:null;
+            const [cls,label]=type==="Recording"?["rec",s.chipRecording]:type==="Paused"?["plain",s.paused]:type==="Stopped"?["plain",s.chipStopped]:meeting.status==="Ready"?["ready",s.ready]:meeting.status==="Finishing"||type==="Finishing"?["attention",s.finishing]:["attention",s.failed];
+            return <i className={cls}>{label}</i>;})()}</span></button>
+          <button className="rowmore" aria-label={`${s.rowActions} ${meetingTitle(meeting)}`} aria-haspopup="menu" aria-expanded={rowMenu?.id===meeting.id} onClick={event=>{
             if(rowMenu?.id===meeting.id){setRowMenu(null);return;}
             const row=event.currentTarget.parentElement!.getBoundingClientRect();setRowMenu({id:meeting.id,left:row.right+14,top:row.top});
           }}><Dots/></button></div>;})}</div>:null;})}
         {query&&!shown.length&&<p className="list-empty">{s.none}</p>}
       </nav>
       {deleted.length>0&&<button className="trash" aria-current={trashOpen?"page":undefined} onClick={()=>{selection.current++;setSelected(null);setTrashOpen(true);}}><MenuIcon name="trash"/><span>{s.deletedMeetings}</span><span className="n">{deleted.length}</span></button>}
-      <div className="privacy"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3"/></svg>{s.privacy} · {meetings.length} {meetings.length===1?s.meeting:s.meetings.toLowerCase()}{bytes>0?` · ${fileSize(bytes)}`:""}</div>
+      <div className="privacy"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="8" width="10" height="9" rx="2"/><path d="M7 8V5a3 3 0 0 1 6 0v3"/></svg>{(()=>{const text=`${s.privacy} · ${meetings.length} ${meetings.length===1?s.meeting:s.meetings.toLowerCase()}${bytes>0?` · ${fileSize(bytes)}`:""}`;return <span title={text}>{text}</span>;})()}</div>
     </aside>
     <section className="workspace" aria-busy={loading||busy}>
-      <NotificationPermission/><SessionControls/>
+      <NotificationPermission/><SessionControls hideActive={!!selected}/>
       {error&&<div className="banner" role="alert"><strong>{s.error}</strong><p>{error}</p><button className="quiet" onClick={()=>setError("")}>{s.dismiss}</button></div>}
       {quitPending&&<div className="banner" role="status">{s.quitPending}</div>}
       {busy?<div className="empty processing" role="status"><Duet/><h1>{s.processing}</h1><p>{s.processingBody}</p><div className="progress"/></div>:loading?<div className="empty" role="status"><p>{s.loading}</p></div>
-        :trashOpen?<div className="trashview"><h1>{s.deletedMeetings}</h1><p className="lead">{s.deletedLead}</p><div className="trashlist">{deleted.map(meeting=><DeletedMeeting key={meeting.id} meeting={meeting} onError={setError} onChanged={async action=>{await refresh();notify(action==="restore"?s.restored:s.purged);}}/>)}</div></div>
-        :selected?<MeetingDocument key={selected.summary.id} meeting={selected} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
+        :trashOpen?<RecentlyDeleted deleted={deleted} refresh={refresh} notify={notify} onError={setError}/>
+        :selected?<MeetingDocument key={selected.summary.id} session={session} meeting={selected} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
         :meetings.length?<LibraryHome version={version} onOpen={id=>void select(id)} onImport={importRecording} onError={setError} disabled={!desktop} onDone={undo=>notify(s.itemDone,undo)}/>
-        :<div className="home"><h1>{s.meetings}</h1><div className="empty"><b>{meetings.length?s.libraryTitle:s.emptyTitle}</b><span>{meetings.length?s.libraryBody:s.emptyBody}</span><button className="quiet" onClick={importRecording} disabled={!desktop}>{s.import}</button>{!desktop&&<span className="hint">{s.browser}</span>}</div></div>}
+        :<div className="home"><h1>{s.meetings}</h1><div className="empty"><Duet className="mark lg"/><b>{meetings.length?s.libraryTitle:s.emptyTitle}</b><span>{meetings.length?s.libraryBody:s.emptyBody}</span>
+          <div className="field">{!meetings.length&&<button className="btn" onClick={()=>void recordNow()} disabled={!desktop||live?.state.type!=="Idle"}>{s.recordNow}</button>}<button className="btn ghost" onClick={importRecording} disabled={!desktop}>{s.import}</button></div>{!desktop&&<span className="hint">{s.browser}</span>}</div></div>}
       {toast&&<div className="toast" role="status"><span>{toast.text}</span>{toast.undo&&<button onClick={()=>{const undo=toast.undo!;clearTimeout(toastTimer.current);setToast(null);void undo().catch(e=>setError(String(e)));}}>{s.undo}</button>}</div>}
     </section>
-    {rowMenu&&menuMeeting&&<div ref={menuRef} className="gmenu rowmenu" role="menu" aria-label={`${s.rowActions} ${menuMeeting.title}`} style={{left:rowMenu.left,top:rowMenu.top}} onKeyDown={event=>{
+    {rowMenu&&menuMeeting&&<div ref={menuRef} className="gmenu rowmenu" role="menu" aria-label={`${s.rowActions} ${meetingTitle(menuMeeting)}`} style={{left:rowMenu.left,top:rowMenu.top}} onKeyDown={event=>{
       if(event.key==="Escape"){setRowMenu(null);document.querySelector<HTMLButtonElement>(`.mrow.open .rowmore`)?.focus();}
       if(["ArrowDown","ArrowUp"].includes(event.key)){event.preventDefault();const items=Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')??[]);const index=items.indexOf(document.activeElement as HTMLButtonElement);items[(index+(event.key==="ArrowUp"?-1:1)+items.length)%items.length]?.focus();}
     }}>

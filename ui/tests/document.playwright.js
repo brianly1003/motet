@@ -25,7 +25,7 @@ async (page) => {
     await p.addInitScript(()=>{
       Object.defineProperty(navigator,'platform',{value:'MacIntel'});
       const summary={id:'123',title:'FCM vs Pusher Beams',created_ms:Date.now(),status:'Ready',marks_ms:[74000],duration_ms:87000,notes_ms:48000,spellings:['FCM','IGB']};
-      const meeting={summary,notes_md:'### Action items\n- [ ] You: Share the device table design before Thursday [01:20]\n- [ ] Kevin: Check whether the 2021 Firebase project is still active [00:56]\n- [x] Book a follow-up on the IGB notification table [01:14]\n\n### Overview\n- Compared **FCM** with push beams for Android push in the IGB app.\n- Decided to **keep FCM** and build device management ourselves.\n\n### Push beams on top of FCM\n- Pusher beams relies on **FCM** for Android delivery and adds device management and reporting. [00:16]\n- Its device management is hard to fit into the current **IGB back office** flows. [00:36]\n\n### Cost\n- **FCM has no messaging fee.** [01:00]',transcript:'[00:16] Me: Pusher beams relies on FCM.\n[00:36] Them: Existing back office flows.\n[00:56] Them: Check the Firebase project.\n[01:00] Me: FCM has no messaging fee.\n[01:14] Them: Book a follow-up.\n[01:20] Me: I will share the device table design.'};
+      const meeting={summary,notes_md:'### Action items\n- [ ] You: Share the device table design before Thursday [01:20]\n- [ ] Kevin: Check whether the 2021 Firebase project is still active [00:56]\n- [x] Book a follow-up on the IGB notification table [01:14]\n- [ ] You: Ask Kevin about the Firebase decision [01:01]\n\n### Overview\n- Compared **FCM** with push beams for Android push in the IGB app.\n- Decided to **keep FCM** and build device management ourselves.\n\n### Push beams on top of FCM\n- Pusher beams relies on **FCM** for Android delivery and adds device management and reporting. [00:16]\n- Its device management is hard to fit into the current **IGB back office** flows. [00:36]\n\n### Cost\n- **FCM has no messaging fee.** [01:00]\n\n### Open questions\n- Is the 2021 Firebase project still usable, or do we need a new account?\n\n<details><summary>Transcript</summary>\n\n[00:16] Me: Pusher beams relies on FCM.\n\n</details>\n\n### My notes\n\n[01:01] Kevin decides on Firebase.',transcript:'[00:16] Me: Pusher beams relies on FCM.\n[00:36] Them: Existing back office flows.\n[00:56] Them: Check the Firebase project.\n[01:00] Me: FCM has no messaging fee.\n[01:14] Them: Book a follow-up.\n[01:20] Me: I will share the device table design.'};
       const tracks=['You','Them'].map((speaker,index)=>({path:`/fixture${index}.wav`,name:index?'system.wav':'mic.wav',speaker,offset_ms:0,duration_ms:87000,bytes:2100000,waveform:Array.from({length:200},(_,i)=>i%40<(index?10:30)?.65:0)}));
       let next=0;window.testCalls=[];
       window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
@@ -52,7 +52,11 @@ async (page) => {
     await p.waitForFunction(()=>window.testCalls.some(c=>c.command==='set_action_item_done'&&c.args.done));
     await p.getByRole('checkbox').first().uncheck();
     const differences=[];
-    const pairs=[['.dochead','.dochead'],['.document-meta','.meta'],['.docbody','.docbody'],['.notes','.notes'],['.notes h3','.notes h3'],['.notes h4','.notes h4'],['.todo','.todo'],['.todo input','.todo input'],['.owner','.owner'],['.src','.src'],['.meeting-aside','.aside'],['.panel','.panel'],['.panel h5','.panel h5'],['.kv','.kv'],['.tl','.tl'],['.tl svg','.tl svg'],['.tl-legend','.tl-legend']];
+    const pairs=[['.dochead','.dochead'],['.document-meta','.meta'],['.docbody','.docbody'],['.notes','.notes'],['.notes h3','.notes h3'],['.notes h4','.notes h4'],['.todo','.todo'],['.todo input','.todo input'],['.owner','.owner'],['.src','.src'],['.meeting-aside','.aside'],['.panel','.panel'],['.panel h5','.panel h5'],['.kv','.kv'],['.tl','.tl'],['.tl svg','.tl svg'],['.tl-legend','.tl-legend'],['.notes li:has(.jotmark)','.notes li:has(.jotmark)'],['.jotmark','.jotmark'],['.notes li:has(.jotmark) .tip','.notes li:has(.jotmark) .tip']];
+    // Labels stay labels wherever they fall (owner 2026-10-20); topics take the serif heading.
+    const levels=await p.locator('.notes section > :is(h3,h4)').evaluateAll(hs=>hs.map(h=>`${h.tagName}:${h.textContent}`).join('|'));
+    if(levels!=='H3:Action items|H3:Overview|H4:Push beams on top of FCM|H4:Cost|H3:Open questions|H3:My notes')differences.push(`headings: ${levels}`);
+    if(await p.locator('.notes li:has(.jotmark)').innerText()!=='✎Kevin decides on Firebase. 01:01')differences.push('My notes line is not a jot');
     const properties=['padding','gap','fontSize','fontWeight','lineHeight','borderRadius','backgroundColor','color','borderColor','display'];
     for(const [actualSelector,sourceSelector] of pairs){
       const actual=await p.locator(actualSelector).first().evaluate((e,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]])),properties);
@@ -68,7 +72,13 @@ async (page) => {
         audio.addEventListener('seeking',()=>window.audioSeeks[index]++);
       });
     });
+    // A time the user typed (01:01, no transcript line) is a chip like a transcript time (owner 2026-10-20).
+    if(!await p.locator('.todo .src',{hasText:'01:01'}).count())differences.push('My notes time is not a chip');
+    if(await p.locator('.src').first().getAttribute('title')!=='Play from 01:20')differences.push('Time chip lacks the mockup tooltip');
     await p.locator('.src').first().click();
+    // As in the mockup, a time in the notes opens the Transcript and plays from that line.
+    await p.waitForFunction(()=>document.getElementById('tab-Transcript')?.getAttribute('aria-selected')==='true');
+    await p.waitForFunction(()=>document.querySelector('.tline.playing')?.textContent.includes('share the device table design'));
     await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=80);
     await p.waitForFunction(()=>[...document.querySelectorAll('audio')].every(a=>!a.seeking&&!a.paused));
     await p.evaluate(()=>{window.audioSeeks=[0,0];});
@@ -77,6 +87,7 @@ async (page) => {
     if(playback.seeks[0]!==0 || Math.abs(playback.position-playback.audio)>.15)throw Error(`Playback chases wall clock: ${JSON.stringify(playback)}`);
     await p.getByRole('button',{name:'❚❚ Pause',exact:true}).click();
     await p.evaluate(()=>document.querySelectorAll('audio').forEach(a=>a.playbackRate=1));
+    await p.getByRole('tab',{name:'Notes',exact:true}).click();
     if(await p.getByRole('checkbox').first().isChecked())throw Error('Source chip toggled task');
     // Clicking the voice wave selects Transcript and plays from that point, as in the mockup.
     const wave=await p.locator('.timeline-wave input').boundingBox();

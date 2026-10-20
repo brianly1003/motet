@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import type { Meeting } from "@/lib/bindings/Meeting";
 import { meetingAction } from "@/lib/ipc";
 import { renderNotes } from "@/lib/md";
+import { withoutTranscript } from "@/lib/document";
 import { strings as s } from "@/lib/strings";
 import { MenuItem } from "@/components/MenuIcon";
 
 /** Text for Copy: the whole notes as Markdown or plain text, or only the action items. */
 export function notesText(notes_md: string, kind: "items" | "markdown" | "plain") {
-  let text = notes_md.split("<details><summary>Transcript</summary>")[0].trim();
+  let text = withoutTranscript(notes_md).trim();
   if (kind === "items") text = text.match(/^#{1,6}\s+Action items\s*\n([\s\S]*?)(?=^#{1,6}\s|$(?![\s\S]))/im)?.[1]?.trim() ?? "";
   if (kind !== "markdown") {
     const document = new DOMParser().parseFromString(renderNotes(text), "text/html");

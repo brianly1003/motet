@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import * as ipc from "@/lib/ipc";
 import { elapsedLabel } from "@/lib/session";
 
-export function MyNotes({ meetingId, elapsed, registerFlush }: { meetingId: string; elapsed: number; registerFlush: (flush: () => Promise<void>) => void }) {
+export function MyNotes({ meetingId, elapsed, registerFlush, hints = true }: { meetingId: string; elapsed: number; registerFlush: (flush: () => Promise<void>) => void; hints?: boolean }) {
   const editor = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Loading…");
   const [ready, setReady] = useState(false);
@@ -76,9 +76,10 @@ export function MyNotes({ meetingId, elapsed, registerFlush }: { meetingId: stri
     setStatus("Saving…"); clearTimeout(timer.current);
     timer.current = setTimeout(() => { void flush().catch(() => {}); }, 300);
   }
-  return <><div className="panehead mine"><span>My notes</span><span className="tip" role="status">{status}</span></div><div ref={editor} className="editor" contentEditable={ready} suppressContentEditableWarning spellCheck={false} role="textbox" aria-multiline="true" aria-label="My notes. Each line keeps the time you wrote it." onInput={changed} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); newLine(); } }} onBlur={() => { void flush().catch(() => {}); }} onPaste={event => {
+  // On the recording page the tab already names it (mockup); the status stays for screen readers.
+  return <>{hints ? <div className="panehead mine"><span>My notes</span><span className="tip" role="status">{status}</span></div> : <span className="sr-only" role="status">{status}</span>}<div ref={editor} className="editor" contentEditable={ready} suppressContentEditableWarning spellCheck={false} role="textbox" aria-multiline="true" aria-label="My notes. Each line keeps the time you wrote it." onInput={changed} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); newLine(); } }} onBlur={() => { void flush().catch(() => {}); }} onPaste={event => {
     event.preventDefault();
     event.clipboardData.getData("text/plain").split(/\r?\n/).forEach((line, index) => { if (index) newLine(); document.execCommand("insertText", false, line); });
     changed();
-  }} /><div className="hints"><code>[]</code> action <code>!</code> decision <code>?</code> question <code>#</code> topic <span>· <kbd>Esc</kbd> back to the call</span></div></>;
+  }} />{hints && <div className="hints"><code>[]</code> action <code>!</code> decision <code>?</code> question <code>#</code> topic <span>· <kbd>Esc</kbd> back to the call</span></div>}</>;
 }

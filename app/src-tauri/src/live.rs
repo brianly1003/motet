@@ -39,7 +39,8 @@ pub fn start(
     offset: u64,
     stop: Stop,
 ) -> Result<(), String> {
-    {
+    // Lines from earlier parts (before a Pause or Stop) stay; this part's lines follow them.
+    let earlier = {
         let state = app.state::<State>();
         let mut text = state
             .transcript
@@ -48,7 +49,9 @@ pub fn start(
         if text.0 != id {
             *text = (id.clone(), String::new(), String::new());
         }
-    }
+        text.2.clear();
+        text.1.clone()
+    };
     std::thread::Builder::new()
         .name("motet-live-transcript".into())
         .spawn(move || {
@@ -145,7 +148,7 @@ pub fn start(
                         if let Ok(mut current) = state.transcript.lock()
                             && current.0 == id
                         {
-                            current.1 = text;
+                            current.1 = format!("{earlier}{text}");
                             // Only the recent preview is retained here; final processing keeps the full call.
                             if current.1.len() > 32_768
                                 && let Some(end) = current.1.as_bytes()[16_384..]

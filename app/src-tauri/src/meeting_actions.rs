@@ -1,5 +1,6 @@
 //! Local document actions. Deleted meetings remain recoverable; regeneration preserves notes.
-use crate::{library, library_commands::Library};
+use crate::{controller::Controller, library, library_commands::Library};
+use motet_core::events::{AppState, SessionState};
 use std::{fs, path::Path, sync::atomic::Ordering};
 use tauri::{Emitter, Manager};
 
@@ -63,18 +64,24 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
     let result = (|| -> Result<(), String> {
         let started = std::time::Instant::now();
         let spellings = library::used_spellings();
-        motet_core::summarize::notes(&staging.join("notes").to_string_lossy(), &transcript)
-            .map_err(|e| e.to_string())?;
-        if folder.join("my-notes.md").exists() {
+        let notes = if folder.join("my-notes.md").exists() {
+            library::text(&folder.join("my-notes.md"))?
+        } else {
+            String::new()
+        };
+        motet_core::summarize::notes(
+            &staging.join("notes").to_string_lossy(),
+            &transcript,
+            &notes,
+        )
+        .map_err(|e| e.to_string())?;
+        if !notes.trim().is_empty() {
             use std::io::Write;
-            let notes = library::text(&folder.join("my-notes.md"))?;
-            if !notes.trim().is_empty() {
-                let mut output = fs::OpenOptions::new()
-                    .append(true)
-                    .open(staging.join("notes.md"))
-                    .map_err(|e| e.to_string())?;
-                write!(output, "\n\n## My notes\n\n{notes}").map_err(|e| e.to_string())?;
-            }
+            let mut output = fs::OpenOptions::new()
+                .append(true)
+                .open(staging.join("notes.md"))
+                .map_err(|e| e.to_string())?;
+            write!(output, "\n\n## My notes\n\n{notes}").map_err(|e| e.to_string())?;
         }
         if library::read(root, id)?.notes_md != meeting.notes_md {
             return Err(
@@ -129,6 +136,46 @@ pub fn rename_meeting(
     Ok(summary)
 }
 
+fn run(root: &Path, id: &str, action: &str) -> Result<(), String> {
+    match action {
+        "delete" => move_meeting(root, id, false),
+        "restore" => move_meeting(root, id, true),
+        "purge" => purge_meeting(root, id),
+        "reveal" => {
+            let folder = library::folder(root, id)?;
+            #[cfg(target_os = "macos")]
+            let status = std::process::Command::new("/usr/bin/open")
+                .arg("-R")
+                .arg(folder)
+                .status();
+            #[cfg(target_os = "windows")]
+            let status = std::process::Command::new("explorer.exe")
+                .arg(folder)
+                .status();
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let status = std::process::Command::new("xdg-open").arg(folder).status();
+            if status.map_err(|e| e.to_string())?.success() {
+                Ok(())
+            } else {
+                Err("Could not open the meeting folder".into())
+            }
+        }
+        "regenerate" => regenerate(root, id),
+        _ => Err("Unknown meeting action".into()),
+    }
+}
+
+/// The meeting a call is recording or writing notes for; the controller holds `busy` meanwhile.
+fn live_id(state: &AppState) -> Option<&str> {
+    match &state.state {
+        SessionState::Finishing { meeting_id } => Some(meeting_id),
+        SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => {
+            state.meeting_id.as_deref()
+        }
+        _ => None,
+    }
+}
+
 #[tauri::command]
 pub async fn meeting_action(
     app: tauri::AppHandle,
@@ -136,42 +183,32 @@ pub async fn meeting_action(
     action: String,
 ) -> Result<(), String> {
     let state = app.state::<Library>();
+    let root = state.root.clone();
+    // Delete, restore, purge and reveal touch one folder, so other meetings stay manageable
+    // while a call records or writes its notes; that call's own meeting does not (owner, 2026-10-20).
+    // only the live meeting is locked; lock per meeting if imports ever run beside a call.
+    let session = app.state::<Controller>().state()?;
+    if action != "regenerate"
+        && let Some(live) = live_id(&session)
+    {
+        if live == id {
+            return Err("This meeting is still recording or writing its notes".into());
+        }
+        let result = tauri::async_runtime::spawn_blocking(move || run(&root, &id, &action))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r);
+        let _ = app.emit("motet://library-changed", ());
+        return result;
+    }
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("Finish recording or processing before changing a meeting".into());
     }
     state.importing.store(true, Ordering::SeqCst);
-    let root = state.root.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        match action.as_str() {
-            "delete" => move_meeting(&root, &id, false),
-            "restore" => move_meeting(&root, &id, true),
-            "purge" => purge_meeting(&root, &id),
-            "reveal" => {
-                let folder = library::folder(&root, &id)?;
-                #[cfg(target_os = "macos")]
-                let status = std::process::Command::new("/usr/bin/open")
-                    .arg("-R")
-                    .arg(folder)
-                    .status();
-                #[cfg(target_os = "windows")]
-                let status = std::process::Command::new("explorer.exe")
-                    .arg(folder)
-                    .status();
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                let status = std::process::Command::new("xdg-open").arg(folder).status();
-                if status.map_err(|e| e.to_string())?.success() {
-                    Ok(())
-                } else {
-                    Err("Could not open the meeting folder".into())
-                }
-            }
-            "regenerate" => regenerate(&root, &id),
-            _ => Err("Unknown meeting action".into()),
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())
-    .and_then(|r| r);
+    let result = tauri::async_runtime::spawn_blocking(move || run(&root, &id, &action))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
     state.importing.store(false, Ordering::SeqCst);
     state.busy.store(false, Ordering::SeqCst);
     let _ = app.emit("motet://library-changed", ());
@@ -185,6 +222,22 @@ pub async fn meeting_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_the_call_in_progress_is_live() {
+        let mut state = AppState {
+            meeting_id: Some("123".into()),
+            ..AppState::default()
+        };
+        assert_eq!(live_id(&state), None);
+        for session in [SessionState::Recording, SessionState::Paused] {
+            state.state = session;
+            assert_eq!(live_id(&state), Some("123"));
+        }
+        state.state = SessionState::Finishing {
+            meeting_id: "456".into(),
+        };
+        assert_eq!(live_id(&state), Some("456"));
+    }
     #[test]
     fn permanent_delete_only_removes_deleted_meetings() {
         let root = std::env::temp_dir().join(format!("motet-purge-{}", std::process::id()));

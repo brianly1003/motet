@@ -16,7 +16,7 @@ pub fn create(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(State::default());
     let window = WebviewWindowBuilder::new(app, "companion", WebviewUrl::App("companion/".into()))
         .title("Motet recording controls")
-        .inner_size(420.0, 72.0)
+        .inner_size(460.0, 72.0)
         .decorations(false)
         .transparent(true)
         .resizable(false)
@@ -74,7 +74,7 @@ pub fn update(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
     let next = (
         state.companion.visible,
         state.companion.size,
-        state.quit_pending || state.state != motet_core::events::SessionState::Recording,
+        compact(state),
     );
     if *previous == Some(next) {
         return Ok(());
@@ -82,10 +82,7 @@ pub fn update(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
     let window = app
         .get_webview_window("companion")
         .ok_or("Recording controls are unavailable")?;
-    let (width, height) = dimensions(
-        next.1,
-        !matches!(state.state, motet_core::events::SessionState::Recording) || state.quit_pending,
-    );
+    let (width, height) = dimensions(next.1, next.2);
     let result = (|| -> tauri::Result<()> {
         resize(&window, width, height)?;
         if next.1 == CompanionSize::Tucked && !next.2 {
@@ -181,10 +178,20 @@ pub fn snap_companion(window: tauri::WebviewWindow) -> Result<(), String> {
     snap_to_edge(&window).map_err(|e| e.to_string())
 }
 
+/// The plain Pill (with its caption row) unless recording; paused keeps an open Sidecar for notes.
+fn compact(state: &AppState) -> bool {
+    use motet_core::events::SessionState;
+    state.quit_pending
+        || match state.state {
+            SessionState::Recording => false,
+            SessionState::Paused => state.companion.size != CompanionSize::Sidecar,
+            _ => true,
+        }
+}
 fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
     if compact {
         // Stopped and the quit question show a Pill with its caption row, as in the mockup.
-        return (420.0, 72.0);
+        return (460.0, 72.0);
     }
     match size {
         CompanionSize::Dot => (40.0, 40.0),
@@ -192,7 +199,7 @@ fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
         // Fills the work area 16 px from top and bottom, as in the mockup (DESIGN 4.3: 40-100 %);
         // resize() clamps it. no splitter or saved height yet (SPEC sidecar_height_pct).
         CompanionSize::Sidecar => (340.0, f64::INFINITY),
-        CompanionSize::Pill => (420.0, 72.0),
+        CompanionSize::Pill => (460.0, 72.0),
     }
 }
 #[tauri::command]
@@ -201,13 +208,10 @@ pub fn companion_menu(window: tauri::WebviewWindow, open: bool) -> Result<(), St
         return Err("Only recording controls can resize this window".into());
     }
     let state = window.state::<crate::controller::Controller>().state()?;
-    let (width, height) = dimensions(
-        state.companion.size,
-        state.quit_pending || state.state != motet_core::events::SessionState::Recording,
-    );
+    let (width, height) = dimensions(state.companion.size, compact(&state));
     resize(
         &window,
-        if open { width.max(420.0) } else { width },
+        if open { width.max(460.0) } else { width },
         if open { height.max(300.0) } else { height },
     )
     .map_err(|e| e.to_string())

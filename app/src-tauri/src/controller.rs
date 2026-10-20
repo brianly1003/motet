@@ -14,6 +14,7 @@ pub enum Action {
     Start,
     Stop,
     StopMeeting(String),
+    Pause,
     Resume,
     Size(CompanionSize),
     Pin(bool),
@@ -252,8 +253,11 @@ impl<H: Host> Engine<H> {
                             .into(),
                     );
                 }
-                if !matches!(self.session.app.state, SessionState::Stopped { .. }) {
-                    return Err("There is no stopped recording to resume".into());
+                if !matches!(
+                    self.session.app.state,
+                    SessionState::Stopped { .. } | SessionState::Paused
+                ) {
+                    return Err("There is no paused or stopped recording to resume".into());
                 }
                 let readiness = self.host.readiness()?;
                 self.apply(Command::ReadinessChanged(readiness), now);
@@ -269,6 +273,12 @@ impl<H: Host> Engine<H> {
                 Command::StopRecording
             }
             Action::Stop => Command::StopRecording,
+            Action::Pause => {
+                if self.session.app.state != SessionState::Recording {
+                    return Err("There is no recording to pause".into());
+                }
+                Command::PauseRecording
+            }
             Action::RequestQuit => {
                 if self.busy.load(Ordering::SeqCst) && !self.owns_busy {
                     return Err(
@@ -345,6 +355,10 @@ impl<H: Host> Engine<H> {
                     ));
                     Ok(())
                 }
+                Effect::NotifyStillPaused => {
+                    self.host.notice(STILL_PAUSED);
+                    Ok(())
+                }
                 Effect::NotifyProblem { .. } => {
                     self.host
                         .notice("Recording could not start. Check the problem shown in Motet.");
@@ -397,6 +411,8 @@ impl<H: Host> Engine<H> {
         }
     }
 }
+pub(crate) const STILL_PAUSED: &str =
+    "Still paused. Nothing has been recorded for 15 minutes. Resume or stop the recording.";
 fn timestamp() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

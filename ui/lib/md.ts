@@ -10,11 +10,12 @@ md.renderer.rules.text = (tokens, index, _options, env) => {
   return text.split(/(\[\d+:\d{2}\])/g).map(part => {
     const match = /^\[(\d+):(\d{2})\]$/.exec(part);
     const ms = match ? (Number(match[1])*60+Number(match[2]))*1000 : -1;
-    return match && times.includes(ms) ? `<button type="button" class="src" data-ms="${ms}" aria-label="Play from ${match[1]}:${match[2]}">${match[1]}:${match[2]}</button>` : md.utils.escapeHtml(part);
+    return match && times.includes(ms) ? `<button type="button" class="src" data-ms="${ms}" aria-label="Play from ${match[1]}:${match[2]}" title="Play from ${match[1]}:${match[2]}">${match[1]}:${match[2]}</button>` : md.utils.escapeHtml(part);
   }).join('');
 };
 export function renderNotes(notes: string, sourceTimes: number[] = []) {
-  return md.render(notes.split("<details><summary>Transcript</summary>")[0], {sourceTimes});
+  // Same as document.ts withoutTranscript (kept import-free for the node tests).
+  return md.render(notes.replace(/<details><summary>Transcript<\/summary>[\s\S]*?(<\/details>|$)/, ""), {sourceTimes});
 }
 // One line (an action item) without a wrapping paragraph; same escaping as the notes.
 export function renderInline(text: string) {

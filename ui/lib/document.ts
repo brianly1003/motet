@@ -4,6 +4,12 @@ export function meetingGroup(time: number, now = new Date()) {
   week.setDate(today.getDate() - (today.getDay() + 6) % 7);
   return time >= today.getTime() ? 'Today' : time >= week.getTime() ? 'This week' : 'Earlier';
 }
+// A recording keeps its placeholder until someone names it; show when it started instead.
+export function meetingTitle(meeting: {title: string; created_ms: number}) {
+  if (meeting.title !== 'Recorded meeting') return meeting.title;
+  const time = new Intl.DateTimeFormat(undefined, {hour:'2-digit', minute:'2-digit', hour12:false}).format(new Date(meeting.created_ms));
+  return `Meeting at ${time}`;
+}
 export function meetingDate(time: number, now = new Date()) {
   const date = new Date(time);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -25,11 +31,23 @@ export function durationLabel(ms: number) {
 export function fileSize(bytes: number) {
   return bytes >= 1e9 ? `${(bytes/1e9).toFixed(1)} GB` : bytes >= 1e6 ? `${(bytes/1e6).toFixed(1)} MB` : `${(bytes/1e3).toFixed(1)} KB`;
 }
+// notes.md holds the transcript in a <details> block; My notes may follow it (recording.rs).
+export function withoutTranscript(markdown: string) {
+  return markdown.replace(/<details><summary>Transcript<\/summary>[\s\S]*?(<\/details>|$)/, '');
+}
+// Times the user typed in My notes are real call times, so they may seek like transcript times.
+export function myNoteTimes(markdown: string) {
+  const mine = /^#{2,3} My notes[ \t]*$([\s\S]*)/m.exec(withoutTranscript(markdown))?.[1] ?? '';
+  return [...mine.matchAll(/^\s*\[(\d+):(\d{2})\]/gm)].map(match => (Number(match[1])*60+Number(match[2]))*1000);
+}
 export function noteSections(markdown: string) {
   const sections: {title:string; lines:{text:string; line:number}[]}[] = [];
   let section = {title:'', lines:[] as {text:string; line:number}[]};
-  let fence = false;
-  markdown.split('<details><summary>Transcript</summary>')[0].split('\n').forEach((text, line) => {
+  let fence = false, transcript = false;
+  // Skip the transcript block but keep line numbers: ticking a task rewrites its original line.
+  markdown.split('\n').forEach((text, line) => {
+    if (text.includes('<details><summary>Transcript</summary>')) transcript = true;
+    if (transcript) { if (text.includes('</details>')) transcript = false; return; }
     if (/^\s*(```|~~~)/.test(text)) fence = !fence;
     const heading = !fence && /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(text);
     if (heading) { if(section.title || section.lines.length) sections.push(section); section = {title:heading[1],lines:[]}; }

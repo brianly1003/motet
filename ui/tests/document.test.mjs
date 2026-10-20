@@ -1,6 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {meetingGroup, meetingDate, noteSections, taskLine, timeLabel, durationLabel} from '../lib/document.ts';
+import {meetingGroup, meetingDate, noteSections, taskLine, timeLabel, durationLabel, myNoteTimes, withoutTranscript} from '../lib/document.ts';
+test('My notes after the transcript block still show, and their times may seek',()=>{
+ const md='### Action items\n- [ ] You: Brush [01:00]\n\n<details><summary>Transcript</summary>\n\n[00:12] Me: hi\n### Not a section\n\n</details>\n\n### My notes\n\n[00:28] > quote\n[01:00] [] Brush\n';
+ const sections=noteSections(md);
+ assert.deepEqual(sections.map(s=>s.title),['Action items','My notes']);
+ assert.equal(sections[1].lines.find(l=>l.text.startsWith('[01:00]')).line,13);
+ assert.deepEqual(myNoteTimes(md),[28000,60000]);
+ assert.doesNotMatch(withoutTranscript(md),/Me: hi/);
+ assert.deepEqual(myNoteTimes('### Overview\n- [00:05] made up'),[]);
+});
 test('calendar groups use local midnight and Monday week boundaries',()=>{
  const now=new Date(2026,9,21,12);
  assert.equal(meetingGroup(new Date(2026,9,21).getTime(),now),'Today');

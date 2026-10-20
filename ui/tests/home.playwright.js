@@ -63,5 +63,50 @@ async (page) => {
     out.push({theme, differences, errors});
     await p.close(); await ref.close();
   }
+  // The empty library (no meetings) against the mockup's first-launch state.
+  for (const theme of ['dark', 'light']) {
+    const ref = await page.context().newPage();
+    await ref.route('https://**/*', r => r.abort());
+    await ref.emulateMedia({colorScheme: theme});
+    await ref.setViewportSize({width: 1400, height: 1000});
+    await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+    await ref.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
+    await ref.getByRole('button', {name: 'macOS', exact: true}).click();
+    await ref.getByRole('button', {name: 'Library', exact: true}).click();
+    await ref.locator('#toggleEmpty').click();
+    const p = await page.context().newPage();
+    const errors = []; p.on('pageerror', e => errors.push(e.message));
+    await p.emulateMedia({colorScheme: theme});
+    await p.setViewportSize({width: 1048, height: 664});
+    await p.addInitScript(() => {
+      Object.defineProperty(navigator, 'platform', {value: 'MacIntel'});
+      window.calls = []; let next = 0;
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
+      window.__TAURI_INTERNALS__ = {metadata: {currentWindow: {label: 'main'}, currentWebview: {windowLabel: 'main', label: 'main'}}, transformCallback: () => ++next, unregisterCallback: () => {}, invoke: async (c, a) => {
+        window.calls.push({c, a});
+        if (c === 'plugin:event|listen') return next;
+        if (c === 'get_state') return {state: {type: 'Idle'}, meeting_id: null, companion: {visible: false, size: 'Pill'}, elapsed_ms: 0, quit_pending: false};
+        if (c === 'notification_permission') return true;
+        if (c === 'list_meetings' || c === 'deleted_meetings') return []; if (c === 'library_bytes') return 0;
+        return null; }};
+    });
+    await p.goto('http://127.0.0.1:3000/main/');
+    await p.getByText('Your first meeting will appear here.').waitFor();
+    const differences = [];
+    const props = ['padding', 'gap', 'fontSize', 'fontWeight', 'fontFamily', 'borderRadius', 'backgroundColor', 'color', 'borderColor', 'borderStyle', 'borderWidth', 'display', 'width', 'height', 'opacity'];
+    for (const [a, b] of [['.home h1', '.home h2'], ['.empty', '.empty'], ['.empty .mark', '.empty .mark'], ['.empty b', '.empty b'], ['.empty > span', '.empty > span'], ['.empty .field', '.empty .field'], ['.empty .btn:not(.ghost)', '.empty [data-act="startManual"]'], ['.empty .btn.ghost', '.empty #import']]) {
+      const x = await p.locator(a).first().evaluate((e, ps) => Object.fromEntries(ps.map(k => [k, getComputedStyle(e)[k]])), props);
+      const y = await ref.locator('.mainwin ' + b).first().evaluate((e, ps) => Object.fromEntries(ps.map(k => [k, getComputedStyle(e)[k]])), props);
+      for (const k of props) if (x[k] !== y[k] && !(k === 'width' && !a.includes('mark')) && !(k === 'height' && !a.includes('mark'))) differences.push(`${a} ${k}: ${x[k]} != ${y[k]}`);
+    }
+    if ((await p.locator('.empty').innerText()) !== (await ref.locator('.mainwin .empty').innerText())) differences.push('empty-state text differs');
+    await p.screenshot({path: `.playwright-out/empty-app-${theme}.png`});
+    await ref.locator('.mainwin').screenshot({path: `.playwright-out/empty-ref-${theme}.png`});
+    await p.getByRole('button', {name: 'Record now'}).click();
+    await p.waitForFunction(() => window.calls.some(c => c.c === 'start_recording'));
+    if (differences.length || errors.length) throw Error(JSON.stringify({theme, empty: true, differences, errors}));
+    out.push({theme, empty: true, differences, errors});
+    await p.close(); await ref.close();
+  }
   return out;
 }

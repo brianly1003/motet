@@ -17,6 +17,8 @@ pub enum SessionState {
         app: String,
     },
     Recording,
+    /// Capture stopped by the user without ending the meeting; Resume starts a new part.
+    Paused,
     Stopped {
         #[ts(type = "number")]
         resume_until_ms: u64,
@@ -246,6 +248,7 @@ pub enum Command {
         record: bool,
     },
     StopRecording,
+    PauseRecording,
     ResumeRecording,
     MicActivity {
         active: bool,
