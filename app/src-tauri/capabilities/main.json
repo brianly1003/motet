@@ -3,7 +3,8 @@
   "description": "Local meeting window events only; file selection stays in Rust.",
   "windows": [
     "main",
-    "companion"
+    "companion",
+    "settings"
   ],
   "permissions": [
     "core:event:allow-listen",

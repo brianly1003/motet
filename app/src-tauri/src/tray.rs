@@ -121,6 +121,21 @@ fn menu(
         Action::Resume => vec![("resume", "Resume recording", "Ctrl+Alt+S")],
         Action::None => vec![],
     } {
+        let settings = app
+            .state::<crate::settings::Store>()
+            .get()
+            .unwrap_or_default();
+        let key = match id {
+            "record" | "stop" => Some("S"),
+            "resume" if !shortcut.is_empty() => Some("S"),
+            "mark" => Some("M"),
+            "jot" => Some("J"),
+            "notes" => Some("N"),
+            _ => None,
+        };
+        let shortcut = key
+            .and_then(|key| settings.shortcuts.get(key))
+            .map_or(shortcut, |s| s.as_str());
         let item = MenuItemBuilder::with_id(id, label);
         let item = if shortcut.is_empty() {
             item

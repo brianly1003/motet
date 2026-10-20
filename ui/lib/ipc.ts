@@ -96,3 +96,26 @@ export async function meetingMedia(id: string): Promise<MeetingMedia> {
 export const setActionItemDone = (id:string, line:number, done:boolean, expected:string) => invoke<string>('set_action_item_done',{id,line,done,expected});
 export const saveNotes = (id:string, markdown:string, expected:string) => invoke<string>('save_notes',{id,markdown,expected});
 export const saveTranscriptLine = (id:string, index:number, text:string) => invoke<string>('save_transcript_line',{id,index,text});
+
+import type { Settings } from './bindings/Settings';
+export type CallApp=Settings['apps'][number];
+export const getSettings=()=>invoke<Settings>('get_settings');
+export const saveSettings=(settings:Settings)=>invoke<Settings>('save_settings',{settings});
+export const openSettings=(tab='general')=>invoke<void>('open_settings',{tab});
+export const setAskOnCall=(on:boolean)=>invoke<void>('set_ask_on_call',{on});
+export const setAppMode=(appId:string,mode:'ask'|'off')=>invoke<void>('set_app_mode',{appId,mode});
+export const callApps=()=>invoke<CallApp[]>('call_apps');
+export const recentMicApps=()=>invoke<string[]>('recent_mic_apps');
+export const addApp=(appId:string)=>invoke<Settings>('add_app',{appId});
+export const installedModels=()=>invoke<{speech:string[];notes:string[];warning:string|null}>('installed_models');
+export const pickSpeechModel=()=>invoke<string|null>('pick_speech_model');
+export const runSpeedTest=()=>invoke<number>('run_speed_test');
+export type StorageSummary={meetings:number;audio:number;documents:number;free:number};
+export const storageSummary=()=>invoke<StorageSummary>('storage_summary');
+export const deleteAllMeetings=()=>invoke<void>('delete_all_meetings',{confirm:true});
+export const moveNotesFolder=()=>invoke<string|null>('move_notes_folder');
+export const about=()=>invoke<{version:string;licences:string;platform:string}>('about');
+export const openLogsFolder=()=>invoke<void>('open_logs_folder');
+export async function onSettingsTab(callback:(tab:string)=>void){
+  const {listen}=await import('@tauri-apps/api/event');return listen<string>('motet://settings-tab',event=>callback(event.payload));
+}

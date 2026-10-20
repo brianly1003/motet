@@ -8,22 +8,45 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 pub fn install(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    for key in ["S", "M", "J", "N", "Space", "H", "P"] {
-        app.global_shortcut().on_shortcut(
-            format!("Ctrl+Alt+{key}").as_str(),
-            move |app, _, event| {
+    let keys = app.state::<crate::settings::Store>().get()?.shortcuts;
+    register(app, &keys)?;
+    Ok(())
+}
+fn register(
+    app: &tauri::AppHandle,
+    keys: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    for (key, accelerator) in keys {
+        let key = key.clone();
+        app.global_shortcut()
+            .on_shortcut(accelerator.as_str(), move |app, _, event| {
                 if event.state != ShortcutState::Pressed {
                     return;
                 }
                 let app = app.clone();
+                let key = key.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    let result = handle(&app, key);
-                    if let Err(error) = result {
+                    if let Err(error) = handle(&app, &key) {
                         let _ = app.emit("motet://notice", error);
                     }
                 });
-            },
-        )?;
+            })
+            .map_err(|e| format!("Shortcut {accelerator} is unavailable. Choose another: {e}"))?;
+    }
+    Ok(())
+}
+pub fn replace(
+    app: &tauri::AppHandle,
+    old: &std::collections::BTreeMap<String, String>,
+    next: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    app.global_shortcut()
+        .unregister_all()
+        .map_err(|e| e.to_string())?;
+    if let Err(error) = register(app, next) {
+        let _ = app.global_shortcut().unregister_all();
+        register(app, old).map_err(|e| format!("{error}. Couldn't restore shortcuts: {e}"))?;
+        return Err(error);
     }
     Ok(())
 }

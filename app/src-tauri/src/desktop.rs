@@ -7,7 +7,7 @@ use crate::{
 use motet_core::events::{AppState, Event, Mode, Readiness, SessionState};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 use tauri::{Emitter, Manager};
 
 pub(crate) fn show(app: &tauri::AppHandle) {
@@ -65,11 +65,60 @@ pub fn run() {
             dont_ask_for_app,
             undo_dont_ask,
             hold_ask,
-            set_ask_on_call
+            set_ask_on_call,
+            crate::settings::open_settings,
+            crate::settings::get_settings,
+            crate::settings::save_settings,
+            crate::settings::set_app_mode,
+            crate::settings::call_apps,
+            crate::settings::recent_mic_apps,
+            crate::settings::add_app,
+            crate::settings_models::installed_models,
+            crate::settings_models::pick_speech_model,
+            crate::settings_models::run_speed_test,
+            crate::settings_storage::storage_summary,
+            crate::settings_storage::delete_all_meetings,
+            crate::settings_storage::move_notes_folder,
+            crate::settings_system::about,
+            crate::settings_system::open_logs_folder
         ])
         .setup(|app| {
-            let root = app.path().document_dir()?.join("Motet").join("imports");
+            let config = app.path().app_config_dir()?;
+            let mut settings = crate::settings::Settings::read(&config)?;
+            if settings.notes_folder.is_empty() {
+                settings.notes_folder = app
+                    .path()
+                    .document_dir()?
+                    .join("Motet")
+                    .join("imports")
+                    .to_string_lossy()
+                    .into_owned();
+            }
+            let root = PathBuf::from(&settings.notes_folder);
+            if !config.join("settings.json").exists()
+                && std::fs::read_dir(&root).is_ok_and(|mut entries| entries.next().is_some())
+            {
+                settings.keep_audio = "forever".into();
+            }
+            settings.save(&config)?;
+            motet_core::config::configure_desktop(config.join("settings.json"));
+            app.manage(crate::settings::Store {
+                dir: config.clone(),
+                value: std::sync::Mutex::new(settings),
+                recent: std::sync::Mutex::new(
+                    std::fs::read(config.join("recent-mic-apps.json"))
+                        .ok()
+                        .and_then(|text| serde_json::from_slice(&text).ok())
+                        .unwrap_or_default(),
+                ),
+            });
             std::fs::create_dir_all(&root)?;
+            if let Err(error) = crate::settings_storage::retain(
+                &root,
+                &app.state::<crate::settings::Store>().get()?.keep_audio,
+            ) {
+                eprintln!("Motet couldn't apply audio retention: {error}");
+            }
             // Nothing imports yet at launch, so any Finishing meeting was cut off by a quit or crash.
             if let Err(e) = library::recover_interrupted(&root) {
                 eprintln!("Motet: couldn't check for interrupted imports: {e}");
@@ -85,13 +134,10 @@ pub fn run() {
                 sender.clone(),
                 allow_exit.clone(),
             )?;
-            let config = app.path().app_config_dir()?;
             let host = Desktop {
                 app: app.handle().clone(),
                 root: root.clone(),
                 jobs,
-                settings: Mutex::new(crate::calls::Settings::load(&config)),
-                config,
             };
             app.manage(Controller::spawn(
                 host,
@@ -136,8 +182,9 @@ pub fn run() {
                         crate::shortcuts::open_notes(app, event.id().as_ref() == "jot")
                     }
                     "settings" => {
-                        show(app);
-                        let _ = app.emit("motet://open-settings", ());
+                        if let Err(error) = crate::settings::open(app, "general") {
+                            let _ = app.emit("motet://notice", error);
+                        }
                     }
                     "quit" => app.exit(0),
                     "ask-record" | "ask-no" => {
@@ -166,6 +213,11 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            if std::env::args().any(|arg| arg == "--background")
+                && let Some(window) = app.get_webview_window("main")
+            {
+                window.hide()?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -198,7 +250,8 @@ pub fn run() {
                             SessionState::Recording | SessionState::Stopped { .. }
                         )
                     });
-                if !active
+                if window.label() == "settings"
+                    || !active
                     || (window.label() == "main"
                         && crate::companion::available(window.app_handle()))
                 {
@@ -300,26 +353,22 @@ struct Desktop {
     app: tauri::AppHandle,
     root: PathBuf,
     jobs: mpsc::Sender<Job>,
-    /// app_config_dir: settings.json lives here.
-    config: PathBuf,
-    settings: Mutex<crate::calls::Settings>,
-}
-impl Desktop {
-    fn save(&self, change: impl FnOnce(&mut crate::calls::Settings)) -> Result<(), String> {
-        let mut settings = self
-            .settings
-            .lock()
-            .map_err(|_| "Settings are unavailable")?;
-        let mut next = settings.clone();
-        change(&mut next);
-        if next != *settings {
-            next.save(&self.config)?;
-            *settings = next;
-        }
-        Ok(())
-    }
 }
 impl Host for Desktop {
+    fn preferences(&self) -> (u32, u32, bool) {
+        self.app
+            .state::<crate::settings::Store>()
+            .get()
+            .map(|s| {
+                (
+                    s.idle_stop_s,
+                    s.discard_short_s,
+                    s.companion.default_size == "dot",
+                )
+            })
+            .unwrap_or((30, 20, false))
+    }
+
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
         crate::bookmarks::mark(&self.root, id, at_ms)
     }
@@ -353,6 +402,7 @@ impl Host for Desktop {
     fn event(&self, event: Event) -> Result<(), String> {
         crate::notifications::event(&self.app, &event);
         if let Event::StateChanged(state) = &event {
+            crate::settings_system::sound(&self.app, state.state == SessionState::Recording);
             crate::companion::update(&self.app, state)?;
             crate::tray::update(
                 &self.app,
@@ -445,10 +495,16 @@ impl Host for Desktop {
     }
     fn app_mode(&self, app_id: &str) -> Mode {
         let saved = self
-            .settings
-            .lock()
+            .app
+            .state::<crate::settings::Store>()
+            .get()
             .ok()
-            .and_then(|s| s.app_modes.get(app_id).copied());
+            .and_then(|s| {
+                s.rules()
+                    .into_iter()
+                    .find(|r| r.app_id == app_id)
+                    .map(|r| r.mode)
+            });
         saved.unwrap_or_else(|| {
             motet_core::watch::rules()
                 .into_iter()
@@ -457,9 +513,10 @@ impl Host for Desktop {
         })
     }
     fn set_app_mode(&self, app_id: &str, mode: Mode) -> Result<(), String> {
-        self.save(|s| {
+        self.app.state::<crate::settings::Store>().change(|s| {
             s.app_modes.insert(app_id.to_string(), mode);
         })?;
+        let _ = self.app.emit("motet://settings-changed", ());
         // The tray lists Off apps; rebuild it off this thread (the controller may hold the state).
         crate::tray::invalidate(&self.app);
         let app = self.app.clone();
@@ -467,10 +524,17 @@ impl Host for Desktop {
         Ok(())
     }
     fn ask_on_call(&self) -> bool {
-        self.settings.lock().is_ok_and(|s| s.ask_on_call)
+        self.app
+            .state::<crate::settings::Store>()
+            .get()
+            .is_ok_and(|s| s.ask_on_call)
     }
     fn set_ask_on_call(&self, on: bool) -> Result<(), String> {
-        self.save(|s| s.ask_on_call = on)
+        self.app
+            .state::<crate::settings::Store>()
+            .change(|s| s.ask_on_call = on)?;
+        let _ = self.app.emit("motet://settings-changed", ());
+        Ok(())
     }
 }
 

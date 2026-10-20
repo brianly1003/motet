@@ -43,7 +43,7 @@ impl Server {
             "-m",
             &model,
             "-l",
-            "auto",
+            config::call_language().as_deref().unwrap_or("auto"),
             // Per-slice language detection stays on; -nlp drops the server's second detection
             // pass (language_probabilities), which Motet never reads: ~4.8 s -> ~3.0 s per slice.
             "-nlp",
@@ -112,7 +112,9 @@ impl Server {
         stop: &motet_core::events::Stop,
     ) -> Result<Vec<whisper::Segment>, Box<dyn std::error::Error>> {
         self.empty_vad.store(false, Ordering::SeqCst);
-        let result = self.client.transcribe(audio, offset, None, prompt);
+        let result =
+            self.client
+                .transcribe(audio, offset, config::call_language().as_deref(), prompt);
         let mut exited = false;
         if result.is_err() {
             // A disconnected socket can reach us just before the OS reports process exit.

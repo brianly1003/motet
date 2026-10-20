@@ -70,7 +70,10 @@ pub fn notes(base: &str, transcript: &str, my_notes: &str) -> Result<(), Box<dyn
     } else {
         format!("{MY_NOTES}{my_notes}\n")
     };
-    let prompt = |text: &str| format!("{PROMPT}{terms}{mine}\nTRANSCRIPT:\n{text}");
+    let language = config::notes_language()
+        .map(|code| format!("Write the notes in {code}.\n"))
+        .unwrap_or_default();
+    let prompt = |text: &str| format!("{PROMPT}{language}{terms}{mine}\nTRANSCRIPT:\n{text}");
     let parts = split_lines(transcript, max_chars);
     let summary = if parts.len() <= 1 {
         println!("Summarizing with {llm}...");
@@ -83,7 +86,10 @@ pub fn notes(base: &str, transcript: &str, my_notes: &str) -> Result<(), Box<dyn
             partials.push(ask(&llm, &prompt(part))?);
         }
         println!("Merging {} part summaries...", parts.len());
-        ask(&llm, &format!("{MERGE}{}", partials.join("\n\n---\n\n")))?
+        ask(
+            &llm,
+            &format!("{MERGE}{language}{}", partials.join("\n\n---\n\n")),
+        )?
     };
     let summary = with_my_tasks(&summary, &my_notes);
     let (summary, transcript) = (defang(&summary), defang(transcript));

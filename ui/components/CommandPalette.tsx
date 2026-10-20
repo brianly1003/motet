@@ -26,6 +26,7 @@ export default function CommandPalette({onClose, onSelect, onImport}: {onClose: 
     ...(state?.state.type === "Idle" ? [{label: "Record now", run: ipc.startRecording}] : []),
     ...(state?.state.type === "Recording" ? [{label: "Stop recording", run: ipc.stopRecording}, {label: "Pause recording", run: ipc.pauseRecording}, {label: "Mark this moment", run: async () => { await ipc.markMoment(); }}, {label: "Open My notes", run: () => ipc.setCompanionSize("Sidecar")}] : []),
     ...(state?.state.type === "Paused" ? [{label: "Resume recording", run: ipc.resumeRecording}, {label: "Stop recording", run: ipc.stopRecording}] : []),
+    {label: "Open settings", run: () => ipc.openSettings()},
     {label: "Import a recording", run: async () => { onImport(); }},
   ].filter(action => action.label.toLowerCase().includes(query.toLowerCase()));
   const rows = [...meetings.map(meeting => ({label: meetingTitle(meeting), run: async () => onSelect(meeting.id)})), ...actions];

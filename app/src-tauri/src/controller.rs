@@ -71,6 +71,9 @@ pub enum Job {
 
 /// Native effects are injected so controller ordering can be tested without opening a microphone.
 pub trait Host: Send + 'static {
+    fn preferences(&self) -> (u32, u32, bool) {
+        (30, 20, false)
+    }
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String>;
     /// `request` may show the OS permission prompts; `false` only queries (a detected call).
     fn readiness(&self, request: bool) -> Result<Readiness, String>;
@@ -298,7 +301,10 @@ impl<H: Host> Engine<H> {
             Action::UndoDontAsk { app_id } => Command::UndoDontAsk { app_id },
             Action::AppMode { app_id, mode } => return self.host.set_app_mode(&app_id, mode),
             Action::HoldAsk(hold) => Command::HoldAsk(hold),
-            Action::AskOnCall(on) => Command::SetAskOnCall(on),
+            Action::AskOnCall(on) => {
+                self.host.set_ask_on_call(on)?;
+                Command::SetAskOnCall(on)
+            }
             Action::Resume => {
                 if self.capture_failed {
                     return Err(
@@ -436,6 +442,13 @@ impl<H: Host> Engine<H> {
         let now = self
             .clock
             .map_or(now, |origin| (origin.elapsed().as_millis() as u64).max(now));
+        let (idle, discard, _) = self.host.preferences();
+        self.session.idle_stop_s = idle;
+        self.session.discard_short_s = discard;
+        let starting = matches!(
+            self.session.app.state,
+            SessionState::Idle | SessionState::Asking { .. }
+        );
         let (session, effects) = session::next(
             self.session.clone(),
             Input {
@@ -449,6 +462,12 @@ impl<H: Host> Engine<H> {
             *state = self.session.app.clone();
         }
         self.effects(effects, now);
+        if starting
+            && self.session.app.state == SessionState::Recording
+            && self.host.preferences().2
+        {
+            self.apply(Command::SetCompanionSize(CompanionSize::Dot), now);
+        }
         if let Ok(mut state) = self.shared.lock() {
             *state = self.session.app.clone();
         }

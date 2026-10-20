@@ -18,7 +18,6 @@ use std::{
     },
 };
 use tauri::Emitter;
-#[cfg(target_os = "macos")]
 use tauri::Manager;
 
 pub fn spawn(
@@ -109,6 +108,23 @@ pub fn spawn(
                             && let Err(e) = status(&root, &id, "NeedsAttention")
                         {
                             reason.push_str(&format!(" Status could not be saved: {e}"));
+                        }
+                        if result.is_ok() {
+                            match app
+                                .state::<crate::settings::Store>()
+                                .get()
+                                .and_then(|s| crate::settings_storage::retain(&root, &s.keep_audio))
+                            {
+                                Ok(()) => {}
+                                Err(error) => {
+                                    let _ = app.emit(
+                                        "motet://notice",
+                                        format!(
+                                            "Notes are ready, but audio retention failed: {error}"
+                                        ),
+                                    );
+                                }
+                            }
                         }
                         let _ = app.emit("motet://library-changed", ());
                         let _ = results.send(Message::Finished { id, result });

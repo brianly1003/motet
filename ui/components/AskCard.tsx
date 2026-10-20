@@ -6,6 +6,8 @@ import MotetMark from "@/components/MotetMark";
 
 /** The Ask card (DESIGN 4.2): a detected call asks; nothing records until Record. Rust fades it to the Pill after 20 s. */
 export function AskCard({ app, callId }: { app: string; callId: string }) {
+  const [reminder,setReminder]=useState(true);
+  useEffect(()=>{let active=true;ipc.getSettings().then(s=>{if(active)setReminder(s.recording_reminder);}).catch(()=>{});return()=>{active=false;};},[]);
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState("");
   // Leaving restarts the countdown line, like the backend's 20 s hold.
@@ -41,6 +43,6 @@ export function AskCard({ app, callId }: { app: string; callId: string }) {
         <button type="button" role="menuitem" onClick={() => run(() => ipc.dontAskForApp(callId))}><span>{s.askDontAsk.replace("{App}", app)}</span></button>
       </div>}
     </div>
-    <div className="cline">{s.askConsent}<i className="timer" key={lap}/></div>
+    <div className="cline">{reminder?s.askConsent:"Nothing is recorded until you choose Record."}<i className="timer" key={lap}/></div>
   </div></main>;
 }

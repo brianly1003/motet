@@ -387,3 +387,53 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .procbar i { display: block; height: 100%; background: var(--attention); border-radius: 99px; transition: width .4s ease; }
 .writing .tip { font-size: 12.5px; color: var(--ink-3); margin: 0; }
 .meeting-row i.rec { background: var(--rec-soft); color: var(--rec); } .meeting-row i.plain { background: var(--surface-3); color: var(--ink-2); }
+
+/* Settings: approved mockup .settabs/.setpane and form controls. */
+.settabs { display: flex; justify-content: center; gap: 4px; border-bottom: 1px solid var(--line); background: var(--surface-2); padding: 6px; flex: none; flex-wrap: wrap; }
+.settabs button { border: 0; background: transparent; border-radius: 7px; padding: 4px 12px; color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
+.settabs button[aria-selected="true"] { background: var(--surface-1); color: var(--ink-1); box-shadow: 0 0 0 1px var(--line); }
+.setpane { overflow: auto; padding: 20px 30px; display: grid; gap: 16px; align-content: start; flex: 1; }
+.formrow { display: grid; grid-template-columns: 200px minmax(0,1fr); gap: 16px; align-items: start; }
+.formrow > .lbl { font-weight: 500; font-size: 13px; padding-top: 4px; }
+.help { color: var(--ink-3); font-size: 12px; margin-top: 4px; }
+.field { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field select, .field input[type=text], .field input[type=number] { border: 1px solid var(--line-2); border-radius: 7px; padding: 5px 8px; background: var(--surface-1); min-width: 0; }
+.tbl { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.tbl table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th { text-align: left; font: 600 11.5px var(--font-ui); color: var(--ink-3); padding: 7px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.tbl td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr.new td { background: var(--accent-soft); }
+.tbl select { border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 6px; background: var(--surface-1); font-size: 12px; }
+.switch { position: relative; width: 32px; height: 19px; flex: none; display: inline-block; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--line-2); transition: background .2s; pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: var(--surface-1); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
+.switch input:checked + span { background: var(--ok); }
+.switch input:checked + span::after { transform: translateX(13px); }
+.note { font-size: 12.5px; color: var(--ink-2); padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+.saved { font: 11px var(--font-data); color: var(--ok); font-feature-settings: "tnum"; }
+
+
+.settings-window { height: 100dvh; display: flex; flex-direction: column; }
+.settings-fields { border: 0; padding: 0; margin: 0; display: grid; gap: 16px; min-width: 0; }
+.settings-window button, .settings-window input, .settings-window select { font-family: inherit; }
+.settings-window input, .settings-window select { color: inherit; }
+.settings-window .btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-2); background: var(--surface-1); padding: 6px 12px; border-radius: 8px; font-weight: 500; font-size: 13px; white-space: nowrap; }
+.settings-window .btn.sm { font-size: 12px; padding: 4px 9px; }
+.settings-window .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+.settings-window .btn.rec { color: var(--rec); border-color: var(--rec); }
+.settings-window .btn:hover { background: var(--surface-2); }
+.settings-window .switch input:focus-visible + span { outline: 2px solid var(--attention); outline-offset: 2px; }
+.settings-window .kv { margin: 0; }
+.settings-shortcuts, .settings-storage { max-width: 340px; }
+.settings-shortcuts > div { display: contents; }
+.settings-shortcuts input { font: inherit; width: 145px; text-align: right; border: 1px solid transparent; background: transparent; border-radius: 4px; }
+.settings-shortcuts input:focus { background: var(--surface-1); border-color: var(--line-2); }
+.settings-add { margin-top: 8px; }
+.settings-add .help { margin: 0; }
+.settings-intro { margin: 0; color: var(--ink-2); }
+.settings-error { color: var(--attention); }
+.settings-window .chip { display: inline-flex; padding: 1px 8px; border-radius: 99px; font: 500 11px/1.6 var(--font-data); white-space: nowrap; }
+.settings-window .chip.plain { background: var(--surface-3); color: var(--ink-2); }
+@media (prefers-reduced-motion: reduce) { .settings-window .switch span, .settings-window .switch span::after { transition: none; } }

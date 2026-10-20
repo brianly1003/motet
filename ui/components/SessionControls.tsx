@@ -25,7 +25,7 @@ export default function SessionControls({ hideActive = false }: { hideActive?: b
       {!finishing && <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(true))}>{s.stopAndSave}</button>}
       <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(false))}>{recording ? s.keepRecording : s.stayOpen}</button>
     </div>}
-    {state?.problem && <div className="banner" role="alert"><p>{problemMessage(state.problem.problem)}</p><button className="quiet" disabled={pending} onClick={() => act(() => ipc.dismissProblem(state.problem!.id))}>{s.dismiss}</button></div>}
+    {state?.problem && <div className="banner" role="alert"><p>{problemMessage(state.problem.problem)}</p>{state.problem.problem.type==='ModelMissing'&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('models'))}>Open Models</button>}{['DiskLow','DiskFull'].includes(state.problem.problem.type)&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('privacy'))}>Free up space</button>}<button className="quiet" disabled={pending} onClick={() => act(() => ipc.dismissProblem(state.problem!.id))}>{s.dismiss}</button></div>}
     {notice && <div className="banner" role="status"><p>{notice}</p><button className="quiet" onClick={() => setNotice("")}>{s.dismiss}</button></div>}
   </>;
 }

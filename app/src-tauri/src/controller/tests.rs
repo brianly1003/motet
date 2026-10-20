@@ -5,11 +5,15 @@ struct Fake {
     stops: Arc<Mutex<Vec<Stop>>>,
     allowed: Arc<AtomicBool>,
     announce_ok: bool,
+    preferences: (u32, u32, bool),
     mode: Mode,
     modes: Arc<Mutex<Vec<String>>>,
     requests: Arc<Mutex<Vec<bool>>>,
 }
 impl Host for Fake {
+    fn preferences(&self) -> (u32, u32, bool) {
+        self.preferences
+    }
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
         self.log.lock().unwrap().push(format!("mark:{id}:{at_ms}"));
         Ok(())
@@ -89,6 +93,7 @@ fn engine() -> Engine<Fake> {
             stops: Arc::default(),
             allowed: Arc::new(AtomicBool::new(true)),
             announce_ok: true,
+            preferences: (30, 20, false),
             mode: Mode::Ask,
             modes: Arc::default(),
             requests: Arc::default(),
@@ -509,4 +514,22 @@ fn record_now_while_asking_records_the_asked_call_or_releases_the_gate() {
     e.action(Action::Start, 1_000).unwrap();
     assert_ne!(e.session.app.state, SessionState::Recording);
     assert!(!e.busy.load(Ordering::SeqCst));
+}
+
+#[test]
+fn saved_preferences_set_timers_discard_and_initial_size() {
+    let mut e = engine();
+    e.host.preferences = (10, 0, true);
+    e.action(Action::Start, 0).unwrap();
+    assert_eq!(e.session.idle_stop_s, 10);
+    assert_eq!(e.session.discard_short_s, 0);
+    assert_eq!(e.session.app.companion.size, CompanionSize::Dot);
+    e.action(Action::Size(CompanionSize::Sidecar), 100).unwrap();
+    e.action(Action::Pause, 200).unwrap();
+    e.action(Action::Resume, 300).unwrap();
+    assert_eq!(e.session.app.companion.size, CompanionSize::Sidecar);
+    e.action(Action::Stop, 1000).unwrap();
+    e.apply(Command::Tick, 11000);
+    assert!(e.host.log.lock().unwrap().contains(&"finish".into()));
+    assert!(!e.host.log.lock().unwrap().contains(&"discard".into()));
 }

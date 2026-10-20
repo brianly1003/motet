@@ -11,7 +11,7 @@ const TWO_SIGNAL_MS: u64 = 5_000;
 /// Single-signal apps (Zoom, Teams) need the mic alone this long (SPEC debounce).
 const SINGLE_SIGNAL_MS: u64 = 1_500;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
 pub struct AppRule {
     pub app_id: String,
     pub name: String,
@@ -145,6 +145,10 @@ impl Watcher {
             })
             .find_map(|(_, title)| match_title(rules, title));
         Some((format!("browser:{family}"), titled.unwrap_or(rule)))
+    }
+
+    pub fn set_end_after_ms(&mut self, value: u64) {
+        self.end_after_ms = value;
     }
 
     pub fn update(

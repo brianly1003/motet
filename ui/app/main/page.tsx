@@ -57,7 +57,7 @@ export default function Main(){
     return()=>{active=false;clearTimeout(timer);};
   },[query,meetings]);
   useEffect(()=>{
-    const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();setPalette(value=>!value);}};
+    const key=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key===","){event.preventDefault();void ipc.openSettings().catch(e=>setError(String(e)));}if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();setPalette(value=>!value);}};
     document.addEventListener("keydown",key);return()=>document.removeEventListener("keydown",key);
   },[]);
   // ⌘⌫ / Ctrl+Delete deletes the open meeting, never while typing.

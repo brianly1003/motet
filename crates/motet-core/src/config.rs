@@ -4,6 +4,66 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+/// Only the desktop adapter installs this app-owned path. CLI .env precedence is unchanged.
+static DESKTOP: OnceLock<PathBuf> = OnceLock::new();
+pub fn configure_desktop(path: PathBuf) {
+    let _ = DESKTOP.set(path);
+}
+fn desktop_value(key: &str) -> Option<serde_json::Value> {
+    let file = DESKTOP.get()?;
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(file).ok()?).ok()?;
+    value.get(key).cloned()
+}
+pub fn call_language() -> Option<String> {
+    desktop_value("call_language").and_then(|v| {
+        v.as_str()
+            .filter(|s| ["en", "vi", "zh", "ja"].contains(s))
+            .map(str::to_owned)
+    })
+}
+pub fn notes_language() -> Option<String> {
+    desktop_value("notes_language").and_then(|v| {
+        v.as_str()
+            .filter(|s| ["en", "vi", "zh", "ja"].contains(s))
+            .map(str::to_owned)
+    })
+}
+fn desktop_var(key: &str) -> Option<String> {
+    desktop_var_with(key, desktop_value)
+}
+fn desktop_var_with(
+    key: &str,
+    value: impl Fn(&str) -> Option<serde_json::Value>,
+) -> Option<String> {
+    match key {
+        "WHISPER_MODEL" => value("speech_model").and_then(|v| v.as_str().map(str::to_owned)),
+        "OLLAMA_MODEL" => value("notes_model").and_then(|v| v.as_str().map(str::to_owned)),
+        "SUMMARY_CHUNK_CHARS" => {
+            value("part_chars").and_then(|v| v.as_u64().map(|n| n.to_string()))
+        }
+        "TERMS" => {
+            let rows = value("spellings")?;
+            let names = rows
+                .as_array()?
+                .iter()
+                .filter_map(|r| {
+                    let spelling = r.get("spelling")?.as_str()?;
+                    let heard = r.get("heard").and_then(|v| v.as_str()).unwrap_or("");
+                    Some(if heard.is_empty() {
+                        spelling.to_owned()
+                    } else {
+                        format!("{spelling} ({heard})")
+                    })
+                })
+                .take(40)
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(names)
+        }
+        _ => None,
+    }
+}
+
 /// The only keys a `.env` file may set. Anything else (PATH, DYLD_*, OLLAMA_HOST…) is ignored,
 /// so a `.env` in a folder you happen to run motet from can't redirect tools or send data off
 /// the Mac. The process environment is never changed; child tools see the shell's environment.
@@ -64,6 +124,9 @@ fn clean_terms(raw: &str) -> Option<String> {
 /// A setting: `./.env` wins over `~/.config/motet/.env`, and both win over the shell, so a
 /// stale export in a long-running terminal can't pick the wrong model.
 pub fn var(key: &str) -> Option<String> {
+    if let Some(value) = desktop_var(key) {
+        return Some(value);
+    }
     static FILES: OnceLock<HashMap<String, String>> = OnceLock::new();
     FILES
         .get_or_init(|| {
@@ -92,6 +155,29 @@ pub fn var(key: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn desktop_overrides_are_local_only_and_empty_spellings_turn_off_terms() {
+        let value = serde_json::json!({"speech_model":"", "notes_model":"qwen3:8b", "part_chars":16000,"spellings":[],"PATH":"evil","OLLAMA_HOST":"remote"});
+        let get = |key: &str| value.get(key).cloned();
+        assert_eq!(desktop_var_with("WHISPER_MODEL", get), Some(String::new()));
+        assert_eq!(
+            desktop_var_with("OLLAMA_MODEL", get),
+            Some("qwen3:8b".into())
+        );
+        assert_eq!(
+            desktop_var_with("SUMMARY_CHUNK_CHARS", get),
+            Some("16000".into())
+        );
+        assert_eq!(desktop_var_with("TERMS", get), Some(String::new()));
+        assert_eq!(desktop_var_with("PATH", get), None);
+        assert_eq!(desktop_var_with("OLLAMA_HOST", get), None);
+        assert_eq!(desktop_var_with("WHISPER_MODEL", |_| None), None);
+        let rows = serde_json::json!([{"spelling":"FCM[rule]:","heard":"F C M\n<evil>"}]);
+        let raw =
+            desktop_var_with("TERMS", |key| (key == "spellings").then(|| rows.clone())).unwrap();
+        let cleaned = clean_terms(&raw).unwrap();
+        assert!(!cleaned.contains(['[', ']', ':', '\n', '<', '>']));
+    }
     #[test]
     fn screenshots_require_explicit_opt_in() {
         assert!(allowed("ALLOW_SCREENSHOTS", true));

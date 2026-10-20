@@ -95,7 +95,16 @@ pub fn transcript_parts(
             println!("Transcribing {src} with {model}...");
             let mut whisper = crate::tools::command("whisper-cli");
             whisper.args([
-                "-m", &model, "-f", &wav16, "-l", "auto", "-np", "-ocsv", "-of", &stem,
+                "-m",
+                &model,
+                "-f",
+                &wav16,
+                "-l",
+                config::call_language().as_deref().unwrap_or("auto"),
+                "-np",
+                "-ocsv",
+                "-of",
+                &stem,
             ]);
             // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
             // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting

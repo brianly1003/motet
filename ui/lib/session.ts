@@ -2,7 +2,7 @@ import type { Problem } from "./bindings/Problem";
 export function problemMessage(problem: Problem): string {
   switch (problem.type) {
     case "PermissionMissing": return `Allow ${problem.kind === "Microphone" ? "Microphone" : problem.kind === "SystemAudio" ? "Screen & System Audio Recording" : "Notifications"} for Motet in System Settings > Privacy & Security, then try Record now again. You may need to restart Motet.`;
-    case "ModelMissing": return "Your speech model is missing. Set WHISPER_MODEL to an installed local model before recording.";
+    case "ModelMissing": return "Your speech model is missing. Choose an installed local model in Settings > Models before recording.";
     case "DiskFull": return "Not enough disk space to record. Free at least 1 GB and try again.";
     case "DiskLow": return "Disk space is running low. Free space to keep this recording safe.";
     case "ToolFailed": return `${problem.tool} failed: ${problem.stderr}`;
