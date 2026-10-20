@@ -17,6 +17,7 @@ mod permissions;
 mod recording;
 mod shortcuts;
 mod speech;
+mod transcript_edits;
 mod tray;
 mod window_native;
 

@@ -50,8 +50,14 @@ fn purge_meeting(root: &Path, id: &str) -> Result<(), String> {
 
 fn regenerate(root: &Path, id: &str) -> Result<(), String> {
     let folder = library::folder(root, id)?;
+    if crate::bookmarks::locked(root, id)? {
+        return Err(crate::bookmarks::LOCKED.into());
+    }
     let meeting = library::read(root, id)?;
-    let transcript = if folder.join("transcript.fixed.txt").exists() {
+    // The user's corrections win over the optional model fix (SPEC 6.3).
+    let transcript = if folder.join(crate::transcript_edits::EDITED).exists() {
+        meeting.transcript.clone()
+    } else if folder.join("transcript.fixed.txt").exists() {
         library::text(&folder.join("transcript.fixed.txt"))?
     } else {
         meeting.transcript.clone()
@@ -132,6 +138,17 @@ pub fn rename_meeting(
     title: String,
 ) -> Result<library::MeetingSummary, String> {
     let summary = crate::bookmarks::rename(&app.state::<Library>().root, &id, &title)?;
+    let _ = app.emit("motet://library-changed", ());
+    Ok(summary)
+}
+
+#[tauri::command]
+pub fn set_locked(
+    app: tauri::AppHandle,
+    id: String,
+    locked: bool,
+) -> Result<library::MeetingSummary, String> {
+    let summary = crate::bookmarks::set_locked(&app.state::<Library>().root, &id, locked)?;
     let _ = app.emit("motet://library-changed", ());
     Ok(summary)
 }

@@ -24,6 +24,7 @@ pub fn save(root: &Path, value: &MeetingSummary) -> Result<(), String> {
         let saved = library::summary(root, &value.id)?;
         value.marks_ms = saved.marks_ms;
         value.title = saved.title;
+        value.locked = saved.locked;
     }
     write(root, &value)
 }
@@ -51,6 +52,9 @@ pub fn rename(root: &Path, id: &str, title: &str) -> Result<MeetingSummary, Stri
         .lock()
         .map_err(|_| "Meeting storage is unavailable")?;
     let mut value = library::summary(root, id)?;
+    if value.locked {
+        return Err(LOCKED.into());
+    }
     if value.title != title {
         value.title = title;
         write(root, &value)?;
@@ -69,6 +73,29 @@ pub fn mark(root: &Path, id: &str, at_ms: u64) -> Result<(), String> {
         write(root, &value)?;
     }
     Ok(())
+}
+
+pub const LOCKED: &str = "These notes are locked. Unlock them to edit.";
+
+/// Lock or unlock a meeting's notes for review (SPEC 7.11); the user's choice, kept like the title.
+pub fn set_locked(root: &Path, id: &str, locked: bool) -> Result<MeetingSummary, String> {
+    let _guard = WRITER
+        .lock()
+        .map_err(|_| "Meeting storage is unavailable")?;
+    let mut value = library::summary(root, id)?;
+    if value.locked != locked {
+        value.locked = locked;
+        write(root, &value)?;
+    }
+    Ok(value)
+}
+
+// A meeting without metadata (an older import) is unlocked; unreadable metadata refuses the edit.
+pub fn locked(root: &Path, id: &str) -> Result<bool, String> {
+    if !library::folder(root, id)?.join("meeting.json").exists() {
+        return Ok(false);
+    }
+    Ok(library::summary(root, id)?.locked)
 }
 
 fn write(root: &Path, value: &MeetingSummary) -> Result<(), String> {

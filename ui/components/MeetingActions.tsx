@@ -5,7 +5,7 @@ import { meetingAction } from "@/lib/ipc";
 import { renderNotes } from "@/lib/md";
 import { withoutTranscript } from "@/lib/document";
 import { strings as s } from "@/lib/strings";
-import { MenuItem } from "@/components/MenuIcon";
+import { MenuItem, MenuSwitch } from "@/components/MenuIcon";
 
 /** Text for Copy: the whole notes as Markdown or plain text, or only the action items. */
 export function notesText(notes_md: string, kind: "items" | "markdown" | "plain") {
@@ -22,7 +22,8 @@ export function notesText(notes_md: string, kind: "items" | "markdown" | "plain"
 /** A meeting still recording or writing its notes can't be deleted yet. */
 export const deletable = (status: string) => status !== "Recording" && status !== "Finishing";
 
-export default function MeetingActions({ meeting, onChanged, onError, onRename, onDelete }: { meeting: Meeting; onChanged: (deleted: boolean) => Promise<void>; onError: (message: string) => void; onRename: () => void; onDelete: () => void }) {
+export default function MeetingActions({ meeting, onChanged, onError, onRename, onDelete, onLock }: { meeting: Meeting; onChanged: (deleted: boolean) => Promise<void>; onError: (message: string) => void; onRename: () => void; onDelete: () => void; onLock: (locked: boolean) => void }) {
+  const locked = meeting.summary.locked;
   const [menu, setMenu] = useState<"copy" | "more" | null>(null);
   const [confirm, setConfirm] = useState<"regenerate" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +52,7 @@ export default function MeetingActions({ meeting, onChanged, onError, onRename, 
   return <div className="headacts" ref={root} onKeyDown={event => {
     if (event.key === "Escape") { setMenu(null); root.current?.querySelector<HTMLButtonElement>(`[data-menu="${menu}"]`)?.focus(); }
     if (menu && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault(); const items = Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+      event.preventDefault(); const items = Array.from(root.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []);
       const index = items.indexOf(document.activeElement as HTMLButtonElement);
       items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length]?.focus();
     }
@@ -62,9 +63,12 @@ export default function MeetingActions({ meeting, onChanged, onError, onRename, 
       <button role="menuitem" onClick={() => copy("items")}><span>{s.copyItems}</span><kbd>⇧⌘C</kbd></button><button role="menuitem" onClick={() => copy("markdown")}>{s.copyMarkdown}</button><button role="menuitem" onClick={() => copy("plain")}>{s.copyPlain}</button>
     </div>}
     {menu === "more" && <div className="doc-dropdown gmenu" role="menu" aria-label={s.moreActions}>
-      <MenuItem icon="rename" label={s.rename} onClick={() => { setMenu(null); onRename(); }}/>
-      <MenuItem icon="again" label={s.regenerate} onClick={() => { setConfirm("regenerate"); setMenu(null); }}/>
+      {/* Locked notes are read-only for review (SPEC 7.11): no rename, no new notes over them. */}
+      <MenuItem icon="rename" label={s.rename} disabled={locked} title={locked ? s.lockedHint : undefined} onClick={() => { setMenu(null); onRename(); }}/>
+      <MenuItem icon="again" label={s.regenerate} disabled={locked} title={locked ? s.lockedHint : undefined} onClick={() => { setConfirm("regenerate"); setMenu(null); }}/>
       <MenuItem icon="folder" label={s.reveal} onClick={() => run("reveal")}/>
+      <div className="sep"/>
+      <MenuSwitch icon="lock" label={s.lockNotes} checked={locked} onChange={onLock}/>
       <div className="sep"/>
       <MenuItem icon="trash" label={s.deleteMeeting} danger disabled={!deletable(meeting.summary.status)} title={deletable(meeting.summary.status) ? undefined : s.deleteBusy} onClick={() => { setMenu(null); onDelete(); }}/>
     </div>}

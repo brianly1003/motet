@@ -85,6 +85,7 @@ export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("searc
 export const meetingAction = (id: string, action: "reveal" | "regenerate" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
 export const deletedMeetings = () => invoke<MeetingSummary[]>("deleted_meetings");
 export const renameMeeting = (id: string, title: string) => invoke<MeetingSummary>("rename_meeting", { id, title });
+export const setLocked = (id: string, locked: boolean) => invoke<MeetingSummary>("set_locked", { id, locked });
 
 import type { MeetingMedia } from './bindings/MeetingMedia';
 export async function meetingMedia(id: string): Promise<MeetingMedia> {
@@ -93,3 +94,5 @@ export async function meetingMedia(id: string): Promise<MeetingMedia> {
   return {...media, tracks:media.tracks.map(track=>({...track,path:convertFileSrc(track.path)}))};
 }
 export const setActionItemDone = (id:string, line:number, done:boolean, expected:string) => invoke<string>('set_action_item_done',{id,line,done,expected});
+export const saveNotes = (id:string, markdown:string, expected:string) => invoke<string>('save_notes',{id,markdown,expected});
+export const saveTranscriptLine = (id:string, index:number, text:string) => invoke<string>('save_transcript_line',{id,index,text});

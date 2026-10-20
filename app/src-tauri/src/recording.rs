@@ -204,6 +204,7 @@ fn create(root: &Path, id: &str) -> Result<PathBuf, String> {
                 duration_ms: None,
                 notes_ms: None,
                 spellings: vec![],
+                locked: false,
             },
         )?;
     }

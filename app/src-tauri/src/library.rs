@@ -27,6 +27,9 @@ pub struct MeetingSummary {
     pub notes_ms: Option<u64>,
     #[serde(default)]
     pub spellings: Vec<String>,
+    /// Read-only for review: no note, transcript or title edits, no Write the notes again (SPEC 7.11).
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Serialize, TS)]
@@ -34,6 +37,8 @@ pub struct Meeting {
     pub summary: MeetingSummary,
     pub notes_md: String,
     pub transcript: String,
+    /// transcript.txt as heard, only when the user edited lines (else empty), for Revert (SPEC 7.11).
+    pub transcript_heard: String,
 }
 
 pub fn folder(root: &Path, id: &str) -> Result<PathBuf, String> {
@@ -124,6 +129,7 @@ pub fn search(root: &Path, query: &str) -> Result<Vec<MeetingSummary>, String> {
             [
                 "notes.md",
                 "transcript.txt",
+                crate::transcript_edits::EDITED,
                 "transcript.fixed.txt",
                 "my-notes.md",
             ]
@@ -164,6 +170,7 @@ fn unreadable(id: &str) -> MeetingSummary {
         duration_ms: None,
         notes_ms: None,
         spellings: vec![],
+        locked: false,
     }
 }
 
@@ -192,7 +199,13 @@ pub fn read(root: &Path, id: &str) -> Result<Meeting, String> {
     } else {
         String::new()
     };
-    let transcript = if dir.join("transcript.txt").exists() {
+    let edited = dir.join(crate::transcript_edits::EDITED).exists();
+    let transcript = if edited || dir.join("transcript.txt").exists() {
+        crate::transcript_edits::current(&dir)?
+    } else {
+        String::new()
+    };
+    let transcript_heard = if edited {
         text(&dir.join("transcript.txt"))?
     } else {
         String::new()
@@ -201,6 +214,7 @@ pub fn read(root: &Path, id: &str) -> Result<Meeting, String> {
         summary,
         notes_md,
         transcript,
+        transcript_heard,
     })
 }
 
@@ -261,6 +275,7 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
         duration_ms: None,
         notes_ms: None,
         spellings: vec![],
+        locked: false,
     };
     let dir = root.join(&summary.id);
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
@@ -428,6 +443,7 @@ mod tests {
                     duration_ms: None,
                     notes_ms: None,
                     spellings: vec![],
+                    locked: false,
                 },
             )
             .unwrap();
@@ -469,6 +485,7 @@ mod tests {
                 duration_ms: None,
                 notes_ms: None,
                 spellings: vec![],
+                locked: false,
             };
             save(&root, &summary).unwrap();
         }

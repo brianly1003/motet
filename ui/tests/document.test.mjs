@@ -26,6 +26,7 @@ test('task positions preserve original Markdown line numbers and owners are expl
  const sections=noteSections('### Action items\n- [ ] You: Send it [01:20]\n\n### Overview\n- Text\n<details><summary>Transcript</summary>\n### Not a section');
  assert.equal(sections.length,2);
  assert.equal(sections[0].lines[0].line,1);
+ assert.deepEqual(sections.map(s=>s.line),[0,3]);
  assert.deepEqual(taskLine(sections[0].lines[0].text),{done:false,owner:'You',text:'Send it [01:20]'});
  assert.equal(taskLine('- None'),null);
  assert.equal(taskLine('- [x] Send it').owner,'');

@@ -41,8 +41,9 @@ export function myNoteTimes(markdown: string) {
   return [...mine.matchAll(/^\s*\[(\d+):(\d{2})\]/gm)].map(match => (Number(match[1])*60+Number(match[2]))*1000);
 }
 export function noteSections(markdown: string) {
-  const sections: {title:string; lines:{text:string; line:number}[]}[] = [];
-  let section = {title:'', lines:[] as {text:string; line:number}[]};
+  // `line` is the heading's own line (-1 before the first heading), so a topic title can be edited.
+  const sections: {title:string; line:number; lines:{text:string; line:number}[]}[] = [];
+  let section = {title:'', line:-1, lines:[] as {text:string; line:number}[]};
   let fence = false, transcript = false;
   // Skip the transcript block but keep line numbers: ticking a task rewrites its original line.
   markdown.split('\n').forEach((text, line) => {
@@ -50,7 +51,7 @@ export function noteSections(markdown: string) {
     if (transcript) { if (text.includes('</details>')) transcript = false; return; }
     if (/^\s*(```|~~~)/.test(text)) fence = !fence;
     const heading = !fence && /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(text);
-    if (heading) { if(section.title || section.lines.length) sections.push(section); section = {title:heading[1],lines:[]}; }
+    if (heading) { if(section.title || section.lines.length) sections.push(section); section = {title:heading[1],line,lines:[]}; }
     else section.lines.push({text,line});
   });
   if(section.title || section.lines.length) sections.push(section);

@@ -52,7 +52,7 @@ async (page) => {
     await p.waitForFunction(()=>window.testCalls.some(c=>c.command==='set_action_item_done'&&c.args.done));
     await p.getByRole('checkbox').first().uncheck();
     const differences=[];
-    const pairs=[['.dochead','.dochead'],['.document-meta','.meta'],['.docbody','.docbody'],['.notes','.notes'],['.notes h3','.notes h3'],['.notes h4','.notes h4'],['.todo','.todo'],['.todo input','.todo input'],['.owner','.owner'],['.src','.src'],['.meeting-aside','.aside'],['.panel','.panel'],['.panel h5','.panel h5'],['.kv','.kv'],['.tl','.tl'],['.tl svg','.tl svg'],['.tl-legend','.tl-legend'],['.notes li:has(.jotmark)','.notes li:has(.jotmark)'],['.jotmark','.jotmark'],['.notes li:has(.jotmark) .tip','.notes li:has(.jotmark) .tip']];
+    const pairs=[['.dochead','.dochead'],['.document-meta','.meta'],['.docbody','.docbody'],['.notes','.notes'],['.notes h3','.notes h3'],['.notes section > h4','.notes section:not(.suggest) > h4'],['.todo','.todo'],['.todo input','.todo input'],['.owner','.owner'],['.src','.src'],['.meeting-aside','.aside'],['.panel','.panel'],['.panel h5','.panel h5'],['.kv','.kv'],['.tl','.tl'],['.tl svg','.tl svg'],['.tl-legend','.tl-legend'],['.notes li:has(.jotmark)','.notes li:has(.jotmark)'],['.jotmark','.jotmark'],['.notes li:has(.jotmark) .tip','.notes li:has(.jotmark) .tip']];
     // Labels stay labels wherever they fall (owner 2026-10-20); topics take the serif heading.
     const levels=await p.locator('.notes section > :is(h3,h4)').evaluateAll(hs=>hs.map(h=>`${h.tagName}:${h.textContent}`).join('|'));
     if(levels!=='H3:Action items|H3:Overview|H4:Push beams on top of FCM|H4:Cost|H3:Open questions|H3:My notes')differences.push(`headings: ${levels}`);
@@ -100,10 +100,11 @@ async (page) => {
     await p.getByRole('button',{name:'Play from 00:16',exact:true}).click();
     await p.waitForFunction(()=>document.querySelector('audio')?.currentTime>=16&&document.querySelector('audio')?.currentTime<20);
     await p.waitForFunction(()=>document.querySelector('.tline.playing')?.textContent.includes('Pusher beams relies'));
-    // As in the mockup, the whole line plays from its start and the heard line is highlighted.
-    await p.locator('.tline',{hasText:'Book a follow-up.'}).getByText('Book a follow-up.').click();
+    // As in the mockup, the line's time plays the whole line from its start (its words are edited in place).
+    await p.locator('.tline',{hasText:'Book a follow-up.'}).locator('button.ts').click();
     await p.waitForFunction(()=>{const t=document.querySelector('audio')?.currentTime;return t>=74&&t<78;});
     await p.waitForFunction(()=>document.querySelectorAll('.tline.playing').length===1&&document.querySelector('.tline.playing').textContent.includes('Book a follow-up.'));
+    await p.waitForTimeout(200); // the highlight fades in over .12 s, as in the mockup
     const hl=await p.locator('.tline.playing').evaluate(e=>getComputedStyle(e).backgroundColor);
     const refHl=await reference.evaluate(()=>{const e=document.createElement('div');e.className='tline playing';document.querySelector('#doc').append(e);const c=getComputedStyle(e).backgroundColor;e.remove();return c;});
     if(hl!==refHl)differences.push(`.tline.playing background: ${hl} != ${refHl}`);

@@ -19,10 +19,18 @@ test('transcript shows You for the mic and leaves other speakers alone',()=>{
  assert.equal(out,'[00:01] Them: Me: is a word\n[00:03] You: Sure\n[00:05] Speaker 2: ok');
 });
 
-test('source chips require an existing transcript timestamp and escape untrusted text', () => {
-  const html=renderNotes('- [01:20] <script>alert(1)</script> [99:59]',[80000]);
+test('every time within the meeting becomes a chip; others stay text; untrusted text is escaped', () => {
+  const html=renderNotes('- [01:20] and [00:05] <script>alert(1)</script> [99:59] [01:75]',87000);
   assert.match(html,/class="src" data-ms="80000"/);
-  assert.ok(!html.includes('data-ms="5999000"'));
+  assert.match(html,/class="src" data-ms="5000"/);
+  assert.ok(html.includes('[99:59]') && html.includes('[01:75]'));
   assert.ok(!html.includes('<script>'));
-  assert.ok(!renderNotes('[01:20]').includes('class="src"'));
+  assert.ok(!renderNotes('[01:20]').includes('class="src"'), 'no audio, no chips');
+});
+test('editable blocks carry their notes.md line range', () => {
+  const html=renderNotes('- one\n- two\n\nPara line\nnext line',0,10);
+  assert.match(html,/<li data-lines="10,11">one/);
+  assert.match(html,/<li data-lines="11,13">two/); // a trailing blank line belongs to the item; saving keeps it
+  assert.match(html,/<p data-lines="13,15">Para line/);
+  assert.ok(!renderNotes('- one').includes('data-lines'));
 });

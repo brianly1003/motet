@@ -140,7 +140,8 @@ fn with_my_tasks(summary: &str, my_notes: &str) -> String {
                     .join(" "),
                 None => task.to_string(),
             };
-            let owner = owner.unwrap_or("You");
+            // The @ picker writes a multi-word name as one word: "@Linh_Tran" is Linh Tran (SPEC 7.11).
+            let owner = owner.map_or_else(|| "You".to_string(), |name| name.replace('_', " "));
             (!task.is_empty()).then(|| match time {
                 Some(time) => format!("- [ ] {owner}: {task} [{time}]"),
                 None => format!("- [ ] {owner}: {task}"),
@@ -369,6 +370,10 @@ mod tests {
         assert_eq!(
             with_my_tasks("### Action items\n- None", "[00:05] [] @Anna send the deck"),
             "### Action items\n- [ ] Anna: send the deck [00:05]"
+        );
+        assert_eq!(
+            with_my_tasks("### Action items\n- None", "[] update the docs @Linh_Tran"),
+            "### Action items\n- [ ] Linh Tran: update the docs"
         );
     }
 
