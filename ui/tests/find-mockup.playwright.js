@@ -52,6 +52,12 @@ async (page) => {
     await input.fill('');if(await p.locator('#findCount').innerText()!=='')throw Error('Empty query should clear');
     await input.fill('FCM');await input.press('Enter');await input.press('Escape');
     if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Escape left find visible');
+    await p.keyboard.press('Meta+f');
+    if(await input.inputValue()!=='')throw Error('Escape retained the search query');
+    await input.fill('FCM');await p.getByRole('button',{name:'Close find',exact:true}).click();
+    await p.keyboard.press('Meta+f');
+    if(await input.inputValue()!=='')throw Error('Close button retained the search query');
+    await input.press('Escape');
     const after=await content();if(after!==before){let i=0;while(before[i]===after[i])i++;throw Error('Find changed editable content '+tab+' at '+i+': '+before.slice(i-60,i+180)+' -> '+after.slice(i-60,i+180));}
    }
   }
@@ -61,9 +67,16 @@ async (page) => {
   await p.getByRole('tab',{name:'Notes',exact:true}).click();await p.keyboard.press('Meta+f');
   await p.getByRole('button',{name:'Close find',exact:true}).click();
   if(await p.locator('.findbar').count())throw Error('Close button failed');
-  await p.keyboard.press('Meta+f');
+  await p.keyboard.press('Meta+f');await p.locator('.findbar input').fill('FCM');
   await p.locator('.side .mitem').nth(1).click();
   if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Meeting switch left stale search');
+  await p.locator('.side .mitem[data-id="fcm"]').click();await p.keyboard.press('Meta+f');
+  if(await p.locator('.findbar input').inputValue()!=='')throw Error('Meeting switch retained query');
+  await p.locator('.findbar input').fill('FCM');await p.locator('#openHome').click();
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Action items left stale search');
+  await p.locator('.side .mitem[data-id="fcm"]').click();await p.keyboard.press('Meta+f');
+  if(await p.locator('.findbar input').inputValue()!=='')throw Error('Action items retained query');
+  await p.keyboard.press('Escape');
   if(errors.length)throw Error(errors.join('\n'));
   await p.close();results.push(theme+' PASS');
  }

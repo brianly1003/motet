@@ -34,10 +34,10 @@ export default function DocumentFind({tab,body}:{tab:string;body:RefObject<HTMLD
   const input=useRef<HTMLInputElement>(null),back=useRef<HTMLElement|null>(null);
   const open=scope===tab;
   function close(restore=true){
-    setScope(null);
+    setScope(null);setQuery('');setRanges([]);setIndex(-1);
     if(restore)(back.current?.isConnected?back.current:document.getElementById(`tab-${tab}`))?.focus({preventScroll:true});
   }
-  useEffect(()=>{setScope(null);},[tab]);
+  useEffect(()=>{close(false);},[tab]);
   useLayoutEffect(()=>{if(open){input.current?.focus();input.current?.select();}},[open]);
   useEffect(()=>{
     const keys=(event:KeyboardEvent)=>{
