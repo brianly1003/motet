@@ -43,6 +43,12 @@ export const strings = {
   browser: "Open the desktop app to view your meetings or import a recording.",
   error: "Something needs attention", retry: "Refresh meetings", ready: "Ready", finishing: "Writing notes", failed: "Needs attention",
   quitPending: "Motet will quit after the current meeting finishes.",
+  // SPEC 7.12 banner_recover / banner_recover_many, recovered, recovery_discarded.
+  recoverTitle: "Recover an interrupted recording", recoverTitleMany: "Recover interrupted recordings",
+  recoverBody: "Motet closed during a recording at {when}. The saved audio is still on this computer.",
+  recoverBodyMany: "{n} recordings were interrupted. Their saved audio is still on this computer.",
+  recover: "Recover", discard: "Discard", recovered: "Recovered. The recording is being transcribed.",
+  recoveryDiscarded: "Discarded the unfinished recording. It's in Recently deleted.",
   sourceNote: "Generated notes can miss details. Check important decisions against the transcript.",
   noNotes: "This meeting has no notes yet. The source recording and any completed transcript remain on this computer.",
 };

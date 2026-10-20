@@ -57,9 +57,15 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
     // A recording that was never processed (Discard, then restored) is transcribed first, from the
     // parts it saved, as recording.rs would have done.
     if meeting.transcript.trim().is_empty() && folder.join("parts.json").exists() {
-        let parts: Vec<(Vec<String>, u64)> =
+        let mut parts: Vec<(Vec<String>, u64)> =
             serde_json::from_str(&library::text(&folder.join("parts.json"))?)
                 .map_err(|e| format!("This recording's parts can't be read: {e}"))?;
+        // A part is listed before capture starts (recording.rs); after a crash a track it never
+        // opened is missing.
+        for (files, _) in &mut parts {
+            files.retain(|file| Path::new(file).exists());
+        }
+        parts.retain(|(files, _)| !files.is_empty());
         motet_core::tools::reset();
         let transcript =
             motet_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;

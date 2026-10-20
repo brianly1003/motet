@@ -24,6 +24,11 @@ export function timeLabel(ms: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
 }
 // Mockup durations: "22 s", "1 min 27 s" for short meetings, whole minutes from 10 min.
+// "09:14", "09:14 yesterday", "09:14 on Thu": when a recording was cut off (Recover banner).
+export function recordedAt(time: number, now = new Date()) {
+  const [day, clock] = meetingDate(time, now).split(' · ');
+  return day === 'Today' ? clock : day === 'Yesterday' ? `${clock} yesterday` : `${clock} on ${day}`;
+}
 export function durationLabel(ms: number) {
   const seconds = Math.floor(ms / 1000), minutes = Math.floor(seconds / 60);
   return seconds < 60 ? `${seconds} s` : minutes < 10 ? `${minutes} min ${seconds % 60} s` : `${minutes} min`;

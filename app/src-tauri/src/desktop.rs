@@ -123,9 +123,9 @@ pub fn run() {
             ) {
                 eprintln!("Motet couldn't apply audio retention: {error}");
             }
-            // Nothing imports yet at launch, so any Finishing meeting was cut off by a quit or crash.
+            // Nothing records or imports yet at launch, so any busy meeting was cut off by a quit or crash.
             if let Err(e) = library::recover_interrupted(&root) {
-                eprintln!("Motet: couldn't check for interrupted imports: {e}");
+                eprintln!("Motet: couldn't check for interrupted meetings: {e}");
             }
             app.manage(crate::my_notes::Store::new(root.clone()));
             app.manage(crate::live::State::default());
@@ -230,6 +230,9 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Moved(_)) {
+                crate::companion::keep_tucked_on_screen(window);
+            }
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event
                 && window.label() == "main"
                 && let Some(path) = paths.first().cloned()

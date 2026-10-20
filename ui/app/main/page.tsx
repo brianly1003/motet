@@ -1,4 +1,5 @@
 "use client";
+import { Alert } from "@/components/Alert";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Duet from "@/components/MotetMark";
 import RecentlyDeleted from "@/components/RecentlyDeleted";
@@ -146,6 +147,10 @@ export default function Main(){
   // The live meeting's page follows the session: Stopped, then Writing the notes, then Ready.
   useEffect(()=>{if(openId.current&&openId.current===live?.meeting_id)void reread(openId.current);},[live?.state.type]);
   async function recordNow(){setTrashOpen(false);await session.act(ipc.startRecording);}
+  // Recover = Write the notes again on the saved parts (it transcribes them first), one meeting at a
+  // time on its own progress page; Discard = Recently deleted, with Undo.
+  async function recover(ids:string[]){for(const id of ids){await select(id);notify(s.recovered);try{await ipc.meetingAction(id,"regenerate");}catch(e){setError(String(e));break;}finally{await refresh();}}}
+  async function discardRecovery(ids:string[]){try{for(const id of ids)await ipc.meetingAction(id,"delete");}catch(e){setError(String(e));await refresh();return;}await refresh();notify(s.recoveryDiscarded,async()=>{for(const id of ids)await ipc.meetingAction(id,"restore");await refresh();});}
   function cancelImport(){stoppingRef.current=true;setStopping(true);ipc.cancelImport().catch(e=>{stoppingRef.current=false;setStopping(false);setError(String(e));});}
   function stopped(){if(!stoppingRef.current)return;stoppingRef.current=false;setStopping(false);notify(s.importCancelled);}
   async function importRecording(){setError("");try{const meeting=await ipc.importAudio();await refresh();if(meeting)await select(meeting.id);}catch(e){setError(String(e));await refresh();}}
@@ -153,7 +158,17 @@ export default function Main(){
   const importBlocked=job?s.importBusy:live&&live.state.type!=="Idle"?s.importRecording:"";
   const menuMeeting=rowMenu?shown.find(meeting=>meeting.id===rowMenu.id):undefined;
   return <>{mac&&<header className="window-titlebar" data-tauri-drag-region><span className="title-brand"><Duet className="mark"/><span>Motet</span></span></header>}<main className="shell">
-    <aside className="sidebar" aria-label={s.meetings}>
+    <aside className="sidebar" aria-label={s.meetings} onClickCapture={event=>{
+      (event.target as Element).closest<HTMLButtonElement>(".homerow, .meeting-row, .trash")?.focus({preventScroll:true});
+    }} onKeyDown={event=>{
+      if(event.key!=="ArrowUp"&&event.key!=="ArrowDown"||event.metaKey||event.ctrlKey||event.altKey||event.shiftKey)return;
+      const rows=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".homerow, .meeting-row, .trash"));
+      const index=rows.indexOf(event.target as HTMLButtonElement);if(index<0)return;
+      event.preventDefault();
+      const next=rows[Math.max(0,Math.min(rows.length-1,index+(event.key==="ArrowDown"?1:-1)))];
+      if(next===rows[index])return;
+      next.focus({preventScroll:true});next.scrollIntoView({block:"nearest"});next.click();
+    }}>
       <label className="search"><span className="sr-only">{s.search}</span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><input placeholder={s.search} value={query} onChange={e=>setQuery(e.target.value)}/><button className="search-key" aria-label="Command palette" onClick={event=>{event.preventDefault();setPalette(true);}}><kbd>⌘K</kbd></button></label>
       {meetings.length>0&&<button className="homerow" aria-current={!trashOpen&&!selected?"page":undefined} onClick={goHome}><MenuIcon name="items"/><span>{s.actionItems}</span><span className="n" aria-label={openCount?s.openCount.replace("{n}",String(openCount)):undefined}>{openCount||""}</span></button>}
       <nav className="meeting-list" aria-label={s.meetings}>
@@ -172,17 +187,17 @@ export default function Main(){
     </aside>
     <section className="workspace" aria-busy={loading}>
       <NotificationPermission/><SessionControls hideActive={!!selected}/>
-      {error&&<div className="banner" role="alert"><strong>{s.error}</strong><p>{error}</p><button className="quiet" onClick={()=>setError("")}>{s.dismiss}</button></div>}
-      {quitPending&&<div className="banner" role="status">{s.quitPending}</div>}
+      {error&&<Alert variant="danger" role="alert" title={s.error} actions={<button className="quiet" onClick={()=>setError("")}>{s.dismiss}</button>}>{error}</Alert>}
+      {quitPending&&<Alert title="Saving before quitting">{s.quitPending}</Alert>}
       {loading?<div className="empty" role="status"><p>{s.loading}</p></div>
         :trashOpen?<RecentlyDeleted deleted={deleted} refresh={refresh} notify={notify} onError={setError}/>
         :selected&&job?.id===selected.summary.id?<div className="home"><h1>{meetingTitle(selected.summary)}</h1><div className={`empty processing${stopping?" stopping":""}`} role="status"><Duet/><h2>{s.processing}</h2><p>{s.processingBody}</p><div className="progress"/>
           {job.import&&<div className="proc-cancel"><button className="btn" onClick={cancelImport} disabled={stopping||!desktop}>{stopping?s.importStopping:s.importCancel}</button><span className="hint">{s.importCancelHint}</span></div>}</div></div>
         :selected?<MeetingDocument key={selected.summary.id} session={session} meeting={selected} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
-        :meetings.length?<LibraryHome version={version} onOpen={id=>void select(id)} onImport={importRecording} onError={setError} onCount={setOpenCount} disabled={!desktop||!!importBlocked} disabledReason={importBlocked} onDone={undo=>notify(s.itemDone,undo)}/>
+        :meetings.length?<LibraryHome version={version} onOpen={id=>void select(id)} onImport={importRecording} onError={setError} onCount={setOpenCount} disabled={!desktop||!!importBlocked} disabledReason={importBlocked} onDone={undo=>notify(s.itemDone,undo)} interrupted={meetings.filter(meeting=>meeting.status==="Interrupted"&&meeting.id!==job?.id)} onRecover={ids=>void recover(ids)} onDiscard={ids=>void discardRecovery(ids)}/>
         :<div className="home"><h1>{s.meetings}</h1><div className="empty"><Duet className="mark lg"/><b>{meetings.length?s.libraryTitle:s.emptyTitle}</b><span>{meetings.length?s.libraryBody:s.emptyBody}</span>
           <div className="field">{!meetings.length&&<button className="btn" onClick={()=>void recordNow()} disabled={!desktop||live?.state.type!=="Idle"}>{s.recordNow}</button>}<button className="btn ghost" onClick={importRecording} disabled={!desktop||!!importBlocked} title={importBlocked||undefined}>{s.import}</button></div>{!desktop&&<span className="hint">{s.browser}</span>}</div></div>}
-      {toast&&<div className="toast" role="status"><span>{toast.text}</span>{toast.undo&&<button onClick={()=>{const undo=toast.undo!;clearTimeout(toastTimer.current);setToast(null);void undo().catch(e=>setError(String(e)));}}>{s.undo}</button>}</div>}
+      {toast&&<div className="toast" role="status"><span>{toast.text}</span>{toast.undo&&<button onClick={()=>{const undo=toast.undo!;clearTimeout(toastTimer.current);setToast(null);void undo().catch(e=>setError(String(e)));}}>{s.undo}</button>}<button type="button" className="toast-close" aria-label="Dismiss notification" title="Dismiss notification" onClick={()=>{clearTimeout(toastTimer.current);setToast(null);}}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button></div>}
     </section>
     {rowMenu&&menuMeeting&&<div ref={menuRef} className="gmenu rowmenu" role="menu" aria-label={`${s.rowActions} ${meetingTitle(menuMeeting)}`} style={{left:rowMenu.left,top:rowMenu.top}} onKeyDown={event=>{
       if(event.key==="Escape"){setRowMenu(null);document.querySelector<HTMLButtonElement>(`.mrow.open .rowmore`)?.focus();}

@@ -198,8 +198,10 @@ fn unreadable(id: &str) -> MeetingSummary {
     }
 }
 
-/// Imports that were still Finishing when the app last stopped can't be resumed; mark them
-/// NeedsAttention so they don't look busy forever. Call once at launch, before any import runs.
+/// Meetings still Recording or Finishing when the app last stopped were cut off by a quit or crash.
+/// A recording with saved parts becomes Interrupted, which Home offers to Recover (SPEC 6.1); an
+/// import can't be resumed, so it becomes NeedsAttention and doesn't look busy forever. Call once
+/// at launch, before any import runs.
 pub fn recover_interrupted(root: &Path) -> Result<usize, String> {
     let mut recovered = 0;
     for mut meeting in list(root)? {
@@ -207,7 +209,13 @@ pub fn recover_interrupted(root: &Path) -> Result<usize, String> {
             meeting.status.as_str(),
             "Finishing" | "Recording" | "Stopped"
         ) {
-            meeting.status = "NeedsAttention".into();
+            let recording = folder(root, &meeting.id)?.join("parts.json").exists();
+            meeting.status = if recording {
+                "Interrupted"
+            } else {
+                "NeedsAttention"
+            }
+            .into();
             save(root, &meeting)?;
             recovered += 1;
         }
@@ -515,7 +523,7 @@ mod tests {
     #[test]
     fn interrupted_imports_need_attention_after_restart() {
         let root = temp_root();
-        for (id, status) in [("1", "Finishing"), ("2", "Ready")] {
+        for (id, status) in [("1", "Finishing"), ("2", "Ready"), ("3", "Recording")] {
             fs::create_dir(root.join(id)).unwrap();
             let summary = MeetingSummary {
                 id: id.into(),
@@ -531,9 +539,12 @@ mod tests {
             };
             save(&root, &summary).unwrap();
         }
-        assert_eq!(recover_interrupted(&root).unwrap(), 1);
+        fs::write(root.join("3/parts.json"), "[]").unwrap();
+        assert_eq!(recover_interrupted(&root).unwrap(), 2);
         assert_eq!(read(&root, "1").unwrap().summary.status, "NeedsAttention");
         assert_eq!(read(&root, "2").unwrap().summary.status, "Ready");
+        // A recording (it has parts.json) is offered as Recover instead.
+        assert_eq!(read(&root, "3").unwrap().summary.status, "Interrupted");
         fs::remove_dir_all(root).unwrap();
     }
 

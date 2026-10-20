@@ -71,12 +71,14 @@ async (page) => {
     await p.locator('.tedit').hover();
     await p.getByRole('button', {name: 'Rename', exact: true}).click();
     if (!await p.locator('.edithint').isVisible() || await p.locator('.document-meta').isVisible()) throw Error('Rename hint does not replace the meta line');
+    await p.waitForFunction(()=>document.activeElement?.isContentEditable);
     await p.keyboard.type('Weekly sync');
     await p.keyboard.press('Enter');
     await p.getByText('Renamed.', {exact: true}).waitFor();
     if (!await p.evaluate(() => window.testCalls.some(call => call.command === 'rename_meeting' && call.args.title === 'Weekly sync'))) throw Error('Rename not saved');
     await p.locator('.meeting-row strong', {hasText: 'Weekly sync'}).waitFor();
     await p.getByRole('heading', {name: 'Weekly sync'}).click();
+    await p.waitForFunction(()=>document.activeElement?.isContentEditable);
     await p.keyboard.type('Not saved'); await p.keyboard.press('Escape');
     if (await p.getByRole('heading', {level: 1}).first().innerText() !== 'Weekly sync' || await p.evaluate(() => window.testCalls.filter(c => c.command === 'rename_meeting').length) !== 1) throw Error('Esc did not cancel the rename');
     // Delete has no confirmation; Undo restores it.

@@ -209,14 +209,39 @@ fn capture_part(
         return Ok(());
     }
     let base = dir.join(format!("part-{:04}", record.parts.len()));
-    let files = capture(&base.to_string_lossy(), stop.clone())?;
-    if !stop.load(Ordering::SeqCst) {
-        return Err("Audio capture ended unexpectedly. Partial audio is retained.".into());
+    let base = base.to_string_lossy().into_owned();
+    // Listed before capture, so a crash or a failed capture still leaves its audio findable by
+    // Recover and Write the notes again; the entry is narrowed to the files written afterwards.
+    let tracks = ["mic", "system"].map(|side| format!("{base}.{side}.wav"));
+    record.parts.push((tracks.to_vec(), offset_ms));
+    write_parts(&dir, &record.parts)?;
+    let captured = capture(&base, stop.clone()).and_then(|files| {
+        if stop.load(Ordering::SeqCst) {
+            Ok(files)
+        } else {
+            Err("Audio capture ended unexpectedly. Partial audio is retained.".into())
+        }
+    });
+    let files = match &captured {
+        Ok(files) => files.clone(),
+        Err(_) => tracks
+            .into_iter()
+            .filter(|f| Path::new(f).exists())
+            .collect(),
+    };
+    if files.is_empty() {
+        record.parts.pop();
+    } else if let Some(part) = record.parts.last_mut() {
+        part.0 = files;
     }
-    record.parts.push((files, offset_ms));
+    let listed = write_parts(&dir, &record.parts);
+    captured?;
+    listed
+}
+fn write_parts(dir: &Path, parts: &[(Vec<String>, u64)]) -> Result<(), String> {
     fs::write(
         dir.join("parts.json"),
-        serde_json::to_vec_pretty(&record.parts).map_err(|e| e.to_string())?,
+        serde_json::to_vec_pretty(parts).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())
 }
@@ -347,6 +372,49 @@ mod tests {
             serde_json::from_slice(&fs::read(root.join("123/parts.json")).unwrap()).unwrap();
         assert_eq!(saved, record.parts);
         assert_eq!(saved[1].1, 25_000);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn parts_are_listed_before_capture_and_kept_when_it_fails() {
+        let root = root();
+        let mut record = Recording {
+            id: "123".into(),
+            parts: vec![],
+            failure: None,
+        };
+        let listed = |root: &Path| -> Vec<(Vec<String>, u64)> {
+            serde_json::from_slice(&fs::read(root.join("123/parts.json")).unwrap()).unwrap()
+        };
+        // While capture runs (a crash would stop here), both tracks are already listed.
+        capture_part(&root, &mut record, 0, Stop::default(), |base, stop| {
+            assert_eq!(
+                listed(&root),
+                [(
+                    vec![format!("{base}.mic.wav"), format!("{base}.system.wav")],
+                    0
+                )]
+            );
+            fs::write(format!("{base}.mic.wav"), b"audio").unwrap();
+            stop.store(true, Ordering::SeqCst);
+            Ok(vec![format!("{base}.mic.wav")])
+        })
+        .unwrap();
+        // A failed part keeps only the audio it wrote; one that wrote nothing is not listed.
+        let error = capture_part(&root, &mut record, 25_000, Stop::default(), |base, _| {
+            fs::write(format!("{base}.system.wav"), b"partial").unwrap();
+            Err("disk full".into())
+        });
+        assert_eq!(error, Err("disk full".into()));
+        let parts = listed(&root);
+        assert_eq!(parts, record.parts);
+        assert_eq!(parts.len(), 2);
+        assert!(parts[1].0.len() == 1 && parts[1].0[0].ends_with("part-0001.system.wav"));
+        assert_eq!(parts[1].1, 25_000);
+        let ended = capture_part(&root, &mut record, 50_000, Stop::default(), |_, _| {
+            Ok(vec![])
+        });
+        assert!(ended.unwrap_err().contains("ended unexpectedly"));
+        assert_eq!(listed(&root).len(), 2);
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

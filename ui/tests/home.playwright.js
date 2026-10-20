@@ -42,7 +42,7 @@ async (page) => {
     await p.locator('.openitems .oi').first().waitFor();
     const differences = [];
     const props = ['padding', 'gap', 'fontSize', 'fontWeight', 'lineHeight', 'borderRadius', 'backgroundColor', 'color', 'borderColor', 'borderStyle', 'borderWidth', 'display', 'textAlign', 'fontFamily'];
-    const pairs = [['.home', '.home'], ['.home h1', '.home h2'], ['.home .titlerow .tip', '.home .titlerow .tip'], ['.openitems', '.openitems'], ['.openitems .oi', '.openitems .oi'], ['.openitems .owner', '.openitems .owner'], ['.openitems .from', '.openitems .from'], ['.drop', '.drop'], ['.drop button', '.drop button'], ['.meeting-row > span', '.mitem .mm'], ['.meeting-row', '.mitem']];
+    const pairs = [['.home', '.home'], ['.home h1', '.home h2'], ['.home .titlerow .tip', '.home .titlerow .tip'], ['.openitems', '.openitems'], ['.openitems .oi', '.openitems .oi'], ['.openitems .owner:not(.me)', '.openitems .owner'], ['.openitems .from', '.openitems .from'], ['.drop', '.drop'], ['.drop button', '.drop button'], ['.meeting-row > span', '.mitem .mm'], ['.meeting-row', '.mitem']];
     for (const [a, b] of pairs) {
       const x = await p.locator(a).first().evaluate((e, ps) => Object.fromEntries(ps.map(k => [k, getComputedStyle(e)[k]])), props);
       const y = await ref.locator('.mainwin ' + b).first().evaluate((e, ps) => Object.fromEntries(ps.map(k => [k, getComputedStyle(e)[k]])), props);

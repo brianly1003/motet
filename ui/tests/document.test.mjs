@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {meetingGroup, meetingDate, noteSections, taskLine, timeLabel, durationLabel, myNoteTimes, withoutTranscript} from '../lib/document.ts';
+import {meetingGroup, meetingDate, recordedAt, noteSections, taskLine, timeLabel, durationLabel, myNoteTimes, withoutTranscript} from '../lib/document.ts';
 test('My notes after the transcript block still show, and their times may seek',()=>{
  const md='### Action items\n- [ ] You: Brush [01:00]\n\n<details><summary>Transcript</summary>\n\n[00:12] Me: hi\n### Not a section\n\n</details>\n\n### My notes\n\n[00:28] > quote\n[01:00] [] Brush\n';
  const sections=noteSections(md);
@@ -31,4 +31,11 @@ test('task positions preserve original Markdown line numbers and owners are expl
  assert.equal(taskLine('- None'),null);
  assert.equal(taskLine('- [x] Send it').owner,'');
  assert.equal(noteSections('### Topic\n```\n### Code\n```').length,1);
+});
+test('the Recover banner says when the recording was cut off',()=>{
+ const now=new Date(2026,9,21,12);
+ assert.equal(recordedAt(new Date(2026,9,21,9,14).getTime(),now),'09:14');
+ assert.equal(recordedAt(new Date(2026,9,20,9,14).getTime(),now),'09:14 yesterday');
+ const weekday=new Intl.DateTimeFormat(undefined,{weekday:'short'}).format(new Date(2026,9,16));
+ assert.equal(recordedAt(new Date(2026,9,16,9,14).getTime(),now),`09:14 on ${weekday}`);
 });

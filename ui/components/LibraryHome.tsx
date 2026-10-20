@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { noteSections, taskLine } from "@/lib/document";
+import { noteSections, recordedAt, taskLine } from "@/lib/document";
+import { Alert } from "@/components/Alert";
 import { renderInline } from "@/lib/md";
 import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
@@ -19,7 +20,9 @@ export function openItems(open: unknown): Item[] {
 }
 
 // Library home (mockup renderHome): unchecked action items across meetings, then the import drop zone.
-export default function LibraryHome({version, onOpen, onImport, onDone, onError, onCount, disabled, disabledReason}: {version: number; disabledReason?: string; onCount: (n: number) => void; onOpen: (id: string) => void; onImport: () => void; onDone: (undo: () => Promise<void>) => void; onError: (error: string) => void; disabled: boolean}) {
+export default function LibraryHome({version, onOpen, onImport, onDone, onError, onCount, disabled, disabledReason, interrupted = [], onRecover, onDiscard}: {version: number; disabledReason?: string; onCount: (n: number) => void; onOpen: (id: string) => void; onImport: () => void; onDone: (undo: () => Promise<void>) => void; onError: (error: string) => void; disabled: boolean;
+  /** Recordings cut off by a quit or crash (status Interrupted), offered first (SPEC 6.1, mockup renderHome). */
+  interrupted?: MeetingSummary[]; onRecover?: (ids: string[]) => void; onDiscard?: (ids: string[]) => void}) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -36,7 +39,12 @@ export default function LibraryHome({version, onOpen, onImport, onDone, onError,
   }
   useEffect(() => { if (items) onCount(items.length); }, [items, onCount]);
   const meetings = new Set(items?.map(item => item.meeting.id)).size;
+  const ids = interrupted.map(meeting => meeting.id);
   return <div className="home">
+    {interrupted.length > 0 && <Alert variant="warning" title={interrupted.length === 1 ? s.recoverTitle : s.recoverTitleMany}
+      actions={<><button type="button" className="btn sm" onClick={() => onRecover?.(ids)} disabled={disabled} title={disabledReason || undefined}>{s.recover}</button><button type="button" className="btn sm ghost" onClick={() => onDiscard?.(ids)}>{s.discard}</button></>}>
+      {interrupted.length === 1 ? s.recoverBody.replace("{when}", recordedAt(interrupted[0].created_ms)) : s.recoverBodyMany.replace("{n}", String(interrupted.length))}
+    </Alert>}
     <div className="titlerow"><h1>{s.openItemsTitle}</h1>{items && <span className="tip">{s.openItemsCount.replace("{n}", String(items.length)).replace("{m}", String(meetings))}</span>}</div>
     {items && (items.length ? <div className="openitems">{items.map(item => <div className="oi" key={`${item.meeting.id}-${item.line}`}>
       <input type="checkbox" aria-label={s.markDone} onChange={() => void done(item)}/>
