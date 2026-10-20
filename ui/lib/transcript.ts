@@ -3,7 +3,8 @@ export function gapLabel(ms: number) {
 }
 export function transcriptLines(text: string, marks: number[]) {
   const lines = text.split("\n").filter(Boolean).map(raw => {
-    const match = /^\[(\d+):(\d{2})\] ([^:]+):\s?(.*)$/.exec(raw);
+    // Labels are Me, Them or Speaker N; a single-file import has none, so "7:30" stays text.
+    const match = /^\[(\d+):(\d{2})\] (?:(Me|Them|Speaker \d+): ?)?(.*)$/.exec(raw);
     return { time: match ? `${match[1]}:${match[2]}` : "", ms: match ? (Number(match[1]) * 60 + Number(match[2])) * 1000 : null,
       speaker: match?.[3] === "Me" ? "You" : match?.[3] ?? "", text: match?.[4] ?? raw, marks: [] as number[] };
   });

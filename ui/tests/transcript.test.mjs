@@ -9,4 +9,6 @@ test('marks retain their time and attach to the preceding utterance across gaps'
  assert.equal(lines[1].text, '<script>');
  assert.equal(lines[2].text, 'plain text');
  assert.deepEqual(transcriptLines('', [1]), []);
+ const bare = transcriptLines('[04:06] How about 7:30 am?\n[04:15] Speaker 2: 9:30 then', []);
+ assert.deepEqual(bare.map(l => [l.time, l.speaker, l.text]), [['04:06', '', 'How about 7:30 am?'], ['04:15', 'Speaker 2', '9:30 then']]);
 });
