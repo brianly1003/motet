@@ -423,7 +423,9 @@ pub fn open(app: &tauri::AppHandle, tab: &str) -> Result<(), String> {
             tauri::WebviewUrl::App(format!("settings/?tab={tab}").into()),
         )
         .title("Settings")
-        .inner_size(860., 630.)
+        .inner_size(960., 760.)
+        .prevent_overflow()
+        .center()
         .min_inner_size(760., 520.)
         .build()
         .map_err(|e| e.to_string())?;

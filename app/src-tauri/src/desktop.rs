@@ -159,6 +159,9 @@ pub fn run() {
                 edits: std::sync::Mutex::new(()),
             });
             crate::companion::create(app.handle())?;
+            if let Some(window) = app.get_webview_window("main") {
+                crate::window_native::place_main(&window)?;
+            }
             crate::notifications::setup(app.handle())?;
             crate::shortcuts::install(app.handle())?;
             // After the companion exists: a detected call shows its Ask card there.
@@ -505,6 +508,9 @@ impl Host for Desktop {
         window
             .set_title("Motet - Recording microphone and system audio")
             .map_err(|e| e.to_string())
+    }
+    fn show_main(&self) {
+        show(&self.app);
     }
     fn job(&self, job: Job) -> Result<(), String> {
         self.jobs

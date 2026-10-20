@@ -16,17 +16,18 @@
 }
 * { box-sizing: border-box; outline: none; }
 body { margin: 0; background: var(--surface-1); color: var(--ink-1); font: 14px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
-button, input { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 :root :is(button, a, input, select, textarea, summary, [role="button"], [role="tab"], [role="menuitem"]):focus-visible { box-shadow: inset 0 0 0 2px var(--attention); }
 svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
-.shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100dvh; min-height: 0; }
+.shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100dvh; min-height: 0; }
 .sidebar { border-right: 1px solid var(--line); background: var(--surface-2); display: flex; flex-direction: column; min-height: 0; }
 .search { margin: 10px 10px 4px; display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-1); color: var(--ink-3); font-size: 13px; }
 .search svg { width: 13px; height: 13px; flex: none; }
 .search input { border: 0; outline: 0; background: transparent; width: 100%; color: var(--ink-1); min-width: 0; padding: 1px 2px; }
-.search input:focus-visible { outline: none; }
+:root :is(.search, .palette) input:focus-visible { box-shadow: none; }
+.search:has(input:focus-visible) { border-color: var(--ink-3); }
 .list-heading { padding: 10px 14px 3px; font: 600 11.5px var(--font-ui); color: var(--ink-3); display: flex; justify-content: space-between; }
 .meeting-list { overflow: auto; flex: 1; padding: 0 6px 8px; }
 .meeting-row { text-align: left; border: 0; background: transparent; border-radius: 8px; padding: 7px 9px; display: grid; gap: 1px; width: 100%; margin-bottom: 1px; }
@@ -38,7 +39,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .ready { background: var(--ok-soft); color: var(--ok); }
 .attention { background: var(--accent-soft); color: var(--accent-ink); }
 .privacy { border-top: 1px solid var(--line); padding: 9px 12px; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
-/* One line, always (owner 2026-10-20): 280 px fits "On this computer · 999 meetings · 712.4 GB". */
+/* One line, always (owner 2026-10-20): 300 px fits "On this computer · 999 meetings · 712.4 GB". */
 .privacy span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* Only "On this computer" gives way; the meeting count and size always show (owner 2026-10-20). */
 .privacy .where { display: flex; }
@@ -398,6 +399,25 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .step.done .b { background: var(--ok); border-color: var(--ok); }
 .step.now .b { border-color: var(--attention); border-top-color: transparent; animation: spin 1s linear infinite; }
 .step small { color: var(--ink-3); font-family: var(--font-data); font-feature-settings: "tnum"; }
+
+/* Owner 2026-10-20: a light sweep across each processing label. */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .step > span:nth-child(2) {
+    justify-self: start;
+    color: transparent;
+    background: linear-gradient(90deg, var(--ink-2) 40%, var(--ink) 50%, var(--ink-2) 60%);
+    background-size: 250% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    animation: text-sweep 1.8s linear infinite;
+  }
+}
+@keyframes text-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+.processing.stopping .step > span:nth-child(2) { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .step > span:nth-child(2) { animation: none; background: none; color: inherit; }
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .step.now .b { animation: none; } }
 .procbar { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
@@ -436,6 +456,15 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .settings-fields { border: 0; padding: 0; margin: 0; display: grid; gap: 16px; min-width: 0; }
 .settings-window button, .settings-window input, .settings-window select { font-family: inherit; }
 .settings-window input, .settings-window select { color: inherit; }
+/* WebKit's native popup button ignores the mockup's padding and shrinks to 18px. */
+.settings-window select { appearance: none; max-width: 100%; padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%231b1e1a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 5 5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; background-size: 12px; }
+.settings-window .field select { min-height: 31px; line-height: normal; }
+.settings-window .tbl select { width: 51px; height: 22px; line-height: normal; padding-right: 22px; background-position: right 6px center; }
+.settings-window .speech-model { width: 262px; }
+.settings-window .notes-model { width: 228px; }
+.settings-window .call-language { width: 110px; }
+@media (prefers-color-scheme: dark) { .settings-window select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ecede7' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 5 5 5 5-5'/%3E%3C/svg%3E"); } }
+
 .settings-window .btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-2); background: var(--surface-1); padding: 6px 12px; border-radius: 8px; font-weight: 500; font-size: 13px; white-space: nowrap; }
 .settings-window .btn.sm { font-size: 12px; padding: 4px 9px; }
 .settings-window .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }

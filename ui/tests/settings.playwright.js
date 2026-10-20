@@ -50,11 +50,15 @@ async (page)=>{
   await p.getByRole('tab',{name:'Calls',exact:true}).click();
   const diffs=[];
   for(const selector of ['.settabs','.settabs button','.setpane','.formrow','.formrow > .lbl','.help','.tbl','.tbl th','.tbl td','.tbl select','.switch']){
-   const props=['padding','gap','fontSize','fontWeight','color','backgroundColor','borderRadius','gridTemplateColumns'];
+   const props=['padding','gap','fontSize','fontWeight','color','backgroundColor','borderRadius','gridTemplateColumns'].filter(key=>selector!=='.tbl select'||key!=='padding');
    const styles=await p.locator(selector).first().evaluate((el,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(el)[k]])),props);
    const expected=await reference.locator(selector).first().evaluate((el,props)=>Object.fromEntries(props.map(k=>[k,getComputedStyle(el)[k]])),props);
    for(const key of props)if(styles[key]!==expected[key])diffs.push(`${selector} ${key}: ${styles[key]} != ${expected[key]}`);
   }
+  // Native popup arrows consume space outside CSS padding; compare rendered geometry instead.
+  const actualSelect=await p.locator('.tbl select').first().boundingBox();
+  const referenceSelect=await reference.locator('.tbl select').first().boundingBox();
+  if(Math.abs(actualSelect.width-referenceSelect.width)>1||Math.abs(actualSelect.height-referenceSelect.height)>1)diffs.push('Call mode select geometry differs from the mockup');
   await reference.locator('.setpane input#auto').uncheck();
   await reference.getByRole('combobox',{name:'When Zoom starts a call',exact:true}).selectOption('Off');
   await p.screenshot({path:`.playwright-out/settings-calls-${theme}.png`});
@@ -98,6 +102,7 @@ async (page)=>{
    await p.screenshot({path:`.playwright-out/settings-${tab.toLowerCase()}-minimum-${theme}.png`});
   }
   if(errors.length)throw Error(errors.join('\n'));
+  if(diffs.length)throw Error(diffs.join('\n'));
   results.push({theme,differences:diffs,interactions:'passed',minimum:'all six tabs passed'});
   await p.close();
  }

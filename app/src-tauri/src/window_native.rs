@@ -1,4 +1,4 @@
-//! macOS companion placement across full-screen Spaces.
+//! Native window placement and macOS companion behavior across full-screen Spaces.
 #[cfg(target_os = "macos")]
 pub fn configure(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2::{msg_send, runtime::AnyObject};
@@ -54,4 +54,55 @@ pub fn tray_title(tray: &tauri::tray::TrayIcon, title: String) -> tauri::Result<
 #[cfg(not(target_os = "macos"))]
 pub fn tray_title(tray: &tauri::tray::TrayIcon, title: String) -> tauri::Result<()> {
     tray.set_title(Some(title))
+}
+
+/// Start below the default recording Pill, within the OS work area (Dock/taskbar excluded).
+pub fn place_main(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()?.or(window.primary_monitor()?) else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let outer = window.outer_size()?;
+    let inner = window.inner_size()?;
+    let frame = outer.height.saturating_sub(inner.height);
+    let scale = window.scale_factor()?;
+    let (y, height) = main_vertical(
+        area.position.y,
+        area.size.height,
+        outer.height,
+        (520.0 * scale) as u32 + frame,
+        scale,
+    );
+    if height < outer.height {
+        window.set_size(tauri::PhysicalSize::new(
+            inner.width,
+            height.saturating_sub(frame),
+        ))?;
+    }
+    window.set_position(tauri::PhysicalPosition::new(window.outer_position()?.x, y))
+}
+
+fn main_vertical(y: i32, height: u32, window: u32, minimum: u32, scale: f64) -> (i32, u32) {
+    let bottom = (16.0 * scale) as u32;
+    // 16 px above the 72 px companion window, then 16 px between it and the library.
+    let top = ((104.0 * scale) as u32).min(height.saturating_sub(minimum + bottom));
+    (
+        y + top as i32,
+        window.min(height.saturating_sub(top + bottom)),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::main_vertical;
+
+    #[test]
+    fn library_clears_the_pill_and_stays_inside_the_work_area() {
+        assert_eq!(main_vertical(25, 850, 828, 548, 1.0), (129, 730));
+        assert_eq!(main_vertical(50, 1700, 1656, 1096, 2.0), (258, 1460));
+        // Smaller display: preserve the minimum height by reducing the gap above the library.
+        assert_eq!(main_vertical(0, 600, 828, 548, 1.0), (36, 548));
+        // Negative display origins and a window that already fits keep their size.
+        assert_eq!(main_vertical(-900, 900, 600, 548, 1.0), (-796, 600));
+    }
 }

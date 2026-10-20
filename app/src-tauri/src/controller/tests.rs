@@ -44,6 +44,9 @@ impl Host for Fake {
             Err("no visible window".into())
         }
     }
+    fn show_main(&self) {
+        self.log.lock().unwrap().push("show-main".into());
+    }
     fn job(&self, job: Job) -> Result<(), String> {
         let value = match job {
             Job::Capture {
@@ -559,4 +562,34 @@ fn saved_preferences_set_timers_discard_and_initial_size() {
     e.apply(Command::Tick, 11000);
     assert!(e.host.log.lock().unwrap().contains(&"finish".into()));
     assert!(!e.host.log.lock().unwrap().contains(&"discard".into()));
+}
+
+#[test]
+fn explicit_stop_restores_main_after_stopping_but_automatic_stop_does_not() {
+    for paused in [false, true] {
+        let mut e = engine();
+        e.action(Action::Stop, 0).unwrap();
+        assert!(!e.host.log.lock().unwrap().iter().any(|s| s == "show-main"));
+        e.action(Action::Start, 0).unwrap();
+        if paused {
+            e.action(Action::Pause, 25_000).unwrap();
+        }
+        e.host.log.lock().unwrap().clear();
+        e.action(Action::Stop, 26_000).unwrap();
+        assert!(matches!(e.session.app.state, SessionState::Stopped { .. }));
+        assert!(e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
+        let log = e.host.log.lock().unwrap();
+        assert!(
+            log.iter()
+                .position(|s| s.starts_with("state:Stopped"))
+                .unwrap()
+                < log.iter().position(|s| s == "show-main").unwrap()
+        );
+    }
+    let mut e = engine();
+    e.action(Action::Start, 0).unwrap();
+    e.host.log.lock().unwrap().clear();
+    e.apply(Command::StopRecording, 26_000);
+    assert!(matches!(e.session.app.state, SessionState::Stopped { .. }));
+    assert!(!e.host.log.lock().unwrap().iter().any(|s| s == "show-main"));
 }

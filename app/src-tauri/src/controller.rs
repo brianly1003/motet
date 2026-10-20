@@ -86,6 +86,7 @@ pub trait Host: Send + 'static {
     fn readiness(&self, request: bool) -> Result<Readiness, String>;
     fn event(&self, event: Event) -> Result<(), String>;
     fn announce(&self) -> Result<(), String>;
+    fn show_main(&self);
     fn job(&self, job: Job) -> Result<(), String>;
     fn notice(&self, message: &str);
     /// SPEC 7.5 `cant_record` for a detected call: an OS notification only, no window comes forward.
@@ -359,7 +360,15 @@ impl<H: Host> Engine<H> {
             Action::Quit(stop_and_save) => Command::Quit { stop_and_save },
             Action::Dismiss(id) => Command::DismissProblem { id },
         };
+        let manual_stop = matches!(command, Command::StopRecording)
+            && matches!(
+                self.session.app.state,
+                SessionState::Recording | SessionState::Paused
+            );
         self.apply(command, now);
+        if manual_stop && matches!(self.session.app.state, SessionState::Stopped { .. }) {
+            self.host.show_main();
+        }
         Ok(())
     }
     /// Take the one-meeting reservation and fresh readiness before a recording can start.
