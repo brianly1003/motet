@@ -1,4 +1,5 @@
 "use client";
+import { Alert } from "@/components/Alert";
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import * as ipc from '@/lib/ipc';
 import type {Settings} from '@/lib/bindings/Settings';
@@ -64,7 +65,7 @@ export default function SettingsPage(){
       e.preventDefault();changeTab(TABS[next]);document.getElementById(`tab-${TABS[next]}`)?.focus();
     }}>{TABS.map(name=><button key={name} id={`tab-${name}`} type="button" role="tab" tabIndex={tab===name?0:-1} aria-controls="settings-pane" aria-selected={tab===name} disabled={pending} onClick={()=>changeTab(name)}>{name}</button>)}</div>
     <section className="setpane" id="settings-pane" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
-      {error&&<div className="note settings-error" role="alert">{error}</div>}
+      {error&&<Alert variant="danger" className="settings-error" title="Settings need attention" role="alert">{error}</Alert>}
       {!settings?<p role="status">{error?'Settings are unavailable.':'Loading settings…'}</p>:<fieldset disabled={pending} className="settings-fields">
       {tab==='General'&&<>
         <Row label="Notes folder" help="Each meeting is a folder with notes.md, transcript.txt and the two audio tracks."><div className="field"><input type="text" readOnly value={settings.notes_folder} aria-label="Notes folder" style={{width:300}}/><button className="btn sm" onClick={()=>void action(()=>ipc.moveNotesFolder(),'Folder moved','Copying and verifying meetings…')}>Choose…</button></div><div className="help">Choose an empty folder. Motet verifies the copy and reopens there. Original files are kept for recovery.</div></Row>

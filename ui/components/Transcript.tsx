@@ -59,7 +59,9 @@ export default function Transcript({id, text, heard, marks, locked = false, onSe
   // Space and the arrows also work before anything in the list has focus.
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
-      if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
+      const arrow = e.key === "ArrowDown" || e.key === "ArrowUp";
+      const tab = e.target instanceof Element && e.target.matches('#tab-Transcript[aria-selected="true"]');
+      if ((e.target !== document.body && !(tab && arrow)) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === " ") { e.preventDefault(); onTogglePlay?.(); }
       else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); go(playing >= 0 ? playing : 0); }
     };

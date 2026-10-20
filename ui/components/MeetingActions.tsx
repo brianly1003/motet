@@ -1,4 +1,5 @@
 "use client";
+import { Alert } from "@/components/Alert";
 import { useEffect, useRef, useState } from "react";
 import type { Meeting } from "@/lib/bindings/Meeting";
 import { meetingAction } from "@/lib/ipc";
@@ -72,7 +73,7 @@ export default function MeetingActions({ meeting, onChanged, onError, onRename, 
       <div className="sep"/>
       <MenuItem icon="trash" label={s.deleteMeeting} danger disabled={!deletable(meeting.summary.status)} title={deletable(meeting.summary.status) ? undefined : s.deleteBusy} onClick={() => { setMenu(null); onDelete(); }}/>
     </div>}
-    {confirm && <div className="doc-confirm banner" role="alertdialog" aria-label={s.regenerate}><p>{s.regenerateConfirm}</p><button className="doc-action" disabled={busy} onClick={() => run(confirm)}>{busy ? s.processing : s.confirm}</button><button className="doc-action ghost" disabled={busy} onClick={() => setConfirm(null)}>{s.cancel}</button></div>}
+    {confirm && <Alert variant="warning" className="doc-confirm" role="alertdialog" title={s.regenerate} actions={<><button className="doc-action" disabled={busy} onClick={() => run(confirm)}>{busy ? s.processing : s.confirm}</button><button className="doc-action ghost" disabled={busy} onClick={() => setConfirm(null)}>{s.cancel}</button></>}>{s.regenerateConfirm}</Alert>}
     <span className="sr-only" role="status">{message}</span>
   </div>;
 }

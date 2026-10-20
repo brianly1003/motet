@@ -1,4 +1,5 @@
 "use client";
+import { Alert } from "@/components/Alert";
 import { useEffect, useState } from "react";
 import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
@@ -23,5 +24,5 @@ export default function NotificationPermission() {
     catch (error) { setMessage(String(error)); }
     finally { setPending(false); }
   }
-  return !allowed && <div className="banner" role="status"><p>{message}</p><button className="quiet" disabled={pending} onClick={request}>{s.allowNotifications}</button></div>;
+  return !allowed && <Alert variant="warning" title="Recording notifications" actions={<button className="quiet" disabled={pending} onClick={request}>{s.allowNotifications}</button>}>{message}</Alert>;
 }

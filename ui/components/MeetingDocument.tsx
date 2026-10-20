@@ -175,6 +175,7 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
     </header>
     {live&&session?.state?<RecordingPage session={{state:session.state,gaps:session.gaps,pending:session.pending,act:session.act}}/>:writing?<ProcessingPage stage={session?.stage??null} durationMs={meeting.summary.duration_ms??session?.state?.elapsed_ms??0}/>:<>
     <div className="tabs" role="tablist" aria-label={s.meetingViews}>{['Notes','Transcript','Audio'].map((name,index)=><button key={name} id={`tab-${name}`} type="button" role="tab" aria-selected={tab===name} aria-controls="meeting-panel" tabIndex={tab===name?0:-1} onClick={()=>setTab(name)} onKeyDown={event=>{
+      if(event.key===' ' && tab==='Transcript' && name==='Transcript' && !event.altKey && !event.ctrlKey && !event.metaKey){event.preventDefault();event.stopPropagation();togglePlay();return;}
       const names=['Notes','Transcript','Audio'];let next=index;
       if(event.key==='ArrowRight')next=(index+1)%3;else if(event.key==='ArrowLeft')next=(index+2)%3;else if(event.key==='Home')next=0;else if(event.key==='End')next=2;else return;
       event.preventDefault();setTab(names[next]);document.getElementById(`tab-${names[next]}`)?.focus();
@@ -187,7 +188,7 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
         <div className="panel"><h5>Stays on this computer</h5><p className="tip">No account, no upload. Folder: <span>{media?.folder??'Loading…'}</span></p></div>
       </aside>
     </div>
-    {(showPlayer||tab==='Transcript')&&duration>0&&<div className="player"><button className="doc-action" onClick={togglePlay}>{playing?'❚❚ Pause':'▶ Play'}</button><span>{timeLabel(position)}</span><div className="bar"><i style={{width:`${position/duration*100}%`}}/></div><span className="tip">{tracks.some(t=>t.speaker==='You')&&tracks.some(t=>t.speaker==='Them')?'Both sides':'Audio'}</span></div>}
+    {(showPlayer||tab==='Transcript')&&duration>0&&<div className="player"><button className="doc-action" onClick={togglePlay}>{playing?'❚❚ Pause':'▶ Play'}</button><span className="mono">{timeLabel(position)}</span><div className="bar"><i style={{width:`${position/duration*100}%`}}/></div><span className="tip">{tracks.some(t=>t.speaker==='You')&&tracks.some(t=>t.speaker==='Them')?'Both sides':'Audio'}</span></div>}
     {tracks.map((track,index)=><audio key={track.path} ref={element=>{audio.current[index]=element;}} src={track.path} preload="metadata"/>)}
     </>}
   </article>;

@@ -1,4 +1,5 @@
 "use client";
+import { Alert } from "@/components/Alert";
 import { useSession } from "@/lib/useSession";
 import * as ipc from "@/lib/ipc";
 import { elapsedLabel, problemMessage } from "@/lib/session";
@@ -20,12 +21,11 @@ export default function SessionControls({ hideActive = false }: { hideActive?: b
       {(recording || paused) && <button className="quiet" disabled={pending} onClick={() => act(ipc.stopRecording)}>{s.stop}</button>}
       {stopped && <button className="quiet" disabled={pending} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>}
     </div>}
-    {state?.quit_pending && <div className="banner" role="alert">
-      <p>{finishing ? s.quitPending : s.quitQuestion}</p>
+    {state?.quit_pending && <Alert variant={finishing ? "info" : "warning"} title={finishing ? "Saving before quitting" : "Keep Motet open?"} role="alert" actions={<>
       {!finishing && <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(true))}>{s.stopAndSave}</button>}
       <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(false))}>{recording ? s.keepRecording : s.stayOpen}</button>
-    </div>}
-    {state?.problem && <div className="banner" role="alert"><p>{problemMessage(state.problem.problem)}</p>{state.problem.problem.type==='ModelMissing'&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('models'))}>Open Models</button>}{['DiskLow','DiskFull'].includes(state.problem.problem.type)&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('privacy'))}>Free up space</button>}<button className="quiet" disabled={pending} onClick={() => act(() => ipc.dismissProblem(state.problem!.id))}>{s.dismiss}</button></div>}
-    {notice && <div className="banner" role="status"><p>{notice}</p><button className="quiet" onClick={() => setNotice("")}>{s.dismiss}</button></div>}
+    </>}>{finishing ? s.quitPending : s.quitQuestion}</Alert>}
+    {state?.problem && <Alert variant={["DiskFull", "ToolFailed", "NotesFailed"].includes(state.problem.problem.type) ? "danger" : "warning"} title={s.error} role="alert" actions={<>{state.problem.problem.type==='ModelMissing'&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('models'))}>Open Models</button>}{['DiskLow','DiskFull'].includes(state.problem.problem.type)&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('privacy'))}>Free up space</button>}<button className="quiet" disabled={pending} onClick={() => act(() => ipc.dismissProblem(state.problem!.id))}>{s.dismiss}</button></>}>{problemMessage(state.problem.problem)}</Alert>}
+    {notice && <Alert title="Motet" actions={<button className="quiet" onClick={() => setNotice("")}>{s.dismiss}</button>}>{notice}</Alert>}
   </>;
 }

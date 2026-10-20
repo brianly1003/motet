@@ -9,7 +9,7 @@ async (page)=>{
  const results=[];
  for(const theme of ['light','dark']){
   const p=await page.context().newPage();let errors=[];p.on('pageerror',e=>errors.push(e.message));
-  await p.setViewportSize({width:878,height:614});await p.emulateMedia({colorScheme:theme});
+  await p.setViewportSize({width:958,height:760});await p.emulateMedia({colorScheme:theme});
   await reference.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
   await p.addInitScript(()=>{
    const settings={version:1,notes_folder:'/Users/test/Documents/Motet/imports',open_at_login:false,notes_language:'same_as_call',ask_on_call:true,app_modes:{},apps:[],idle_stop_s:30,discard_short_s:20,speech_model:'/local/ggml-large-v3-q5_0.bin',notes_model:'qwen3:8b',call_language:'detect',part_chars:24000,keep_audio:'forever',recording_reminder:true,sounds:true,companion:{default_size:'pill',captions:true},spellings:[],shortcuts:Object.fromEntries(['S','M','J','N','Space','H','P'].map(k=>[k,`Ctrl+Alt+${k}`]))};
