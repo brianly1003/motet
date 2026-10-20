@@ -1,5 +1,15 @@
-//! Desktop child-tool search paths without changing the process environment or CLI behavior.
-use std::{ffi::OsString, process::Command, sync::OnceLock};
+//! Desktop child-tool search paths without changing the process environment or CLI behavior,
+//! and Cancel for the desktop import: every child tool is waited on here, so it can be stopped.
+use std::{
+    ffi::OsString,
+    io::{self, Read, Write},
+    process::{Child, Command, ExitStatus, Output, Stdio},
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 static DESKTOP_PATH: OnceLock<OsString> = OnceLock::new();
 
@@ -30,6 +40,96 @@ pub fn command(program: &str) -> Command {
     command
 }
 
+// One processing job runs at a time (the desktop's busy flag), so one flag is enough; each job
+// resets it before it starts, so a late Cancel can't stop the next one.
+// process-wide flag; pass a token per job if jobs ever run side by side.
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+/// Stops the running child tool and fails every later stage with `ErrorKind::Interrupted`.
+pub fn cancel() {
+    CANCELLED.store(true, Ordering::SeqCst);
+}
+/// Called when a processing job starts.
+pub fn reset() {
+    CANCELLED.store(false, Ordering::SeqCst);
+}
+pub fn cancelled() -> bool {
+    CANCELLED.load(Ordering::SeqCst)
+}
+/// Between stages: an error once Cancel was pressed.
+pub fn check() -> io::Result<()> {
+    if cancelled() { Err(stopped()) } else { Ok(()) }
+}
+fn stopped() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "cancelled")
+}
+
+/// `Command::status`, but Cancel kills the child.
+pub fn status(command: &mut Command) -> io::Result<ExitStatus> {
+    check()?;
+    wait(&mut command.spawn()?, &CANCELLED)
+}
+
+/// `Command::output` with `input` on stdin, but Cancel kills the child.
+pub fn output(command: &mut Command, input: Option<&[u8]>) -> io::Result<Output> {
+    check()?;
+    let stdin = if input.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    };
+    let mut child = command
+        .stdin(stdin)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // Pipes drain on their own threads so a chatty child can't fill one and stall.
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = vec![];
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        })
+    };
+    let stdout = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let stderr = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    if let (Some(input), Some(mut pipe)) = (input, child.stdin.take()) {
+        pipe.write_all(input)?;
+    }
+    let status = wait(&mut child, &CANCELLED)?;
+    Ok(Output {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
+}
+
+fn wait(child: &mut Child, cancel: &AtomicBool) -> io::Result<ExitStatus> {
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if cancel.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(stopped());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,6 +146,29 @@ mod tests {
                 .unwrap_or_else(|error| panic!("{program}: {error}"));
             assert!(output.status.success(), "{program}: {}", output.status);
         }
+    }
+    #[test]
+    #[cfg(unix)]
+    fn cancel_kills_the_running_child() {
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let flag = cancel.clone();
+        let started = std::time::Instant::now();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            flag.store(true, Ordering::SeqCst);
+        });
+        let mut child = Command::new("sleep").arg("10").spawn().unwrap();
+        let error = wait(&mut child, &cancel).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(child.try_wait().unwrap().is_some(), "the child was reaped");
+    }
+    #[test]
+    #[cfg(unix)]
+    fn output_keeps_stdin_stdout_and_status() {
+        let out = output(Command::new("cat").arg("-"), Some(b"hello")).unwrap();
+        assert!(out.status.success());
+        assert_eq!(out.stdout, b"hello");
     }
     #[test]
     fn finder_path_gets_local_tools_without_replacing_existing_order() {

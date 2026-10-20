@@ -16,6 +16,9 @@ pub enum Action {
     Stop,
     StopMeeting(String),
     Pause,
+    Keep,
+    Discard,
+    UndoDiscard,
     Resume,
     Size(CompanionSize),
     Pin(bool),
@@ -65,6 +68,10 @@ pub enum Job {
         id: String,
     },
     Discard {
+        id: String,
+    },
+    /// Discard from the Stopped Pill: into Recently deleted, no notes.
+    Trash {
         id: String,
     },
 }
@@ -332,6 +339,9 @@ impl<H: Host> Engine<H> {
                 Command::StopRecording
             }
             Action::Stop => Command::StopRecording,
+            Action::Keep => Command::KeepRecording,
+            Action::Discard => Command::DiscardRecording,
+            Action::UndoDiscard => Command::UndoDiscard,
             Action::Pause => {
                 if self.session.app.state != SessionState::Recording {
                     return Err("There is no recording to pause".into());
@@ -495,6 +505,7 @@ impl<H: Host> Engine<H> {
                 }
                 Effect::Finish { meeting_id, .. } => self.host.job(Job::Finish { id: meeting_id }),
                 Effect::Discard { meeting_id } => self.host.job(Job::Discard { id: meeting_id }),
+                Effect::Trash { meeting_id } => self.host.job(Job::Trash { id: meeting_id }),
                 Effect::NotifyShort { seconds } => {
                     self.host.notice(&format!(
                         "Recording under {seconds} seconds discarded unless capture failed."

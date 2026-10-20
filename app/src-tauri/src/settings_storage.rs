@@ -4,13 +4,17 @@ use serde::Serialize;
 use std::{fs, path::Path, sync::atomic::Ordering};
 use tauri::{Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
+use ts_rs::TS;
 
-#[derive(Default, Serialize)]
-pub struct Storage {
+#[derive(Default, Serialize, TS)]
+pub struct StorageSummary {
     pub meetings: u32,
-    pub audio: u64,
-    pub documents: u64,
-    pub free: u64,
+    #[ts(type = "number")]
+    pub audio_bytes: u64,
+    #[ts(type = "number")]
+    pub notes_bytes: u64,
+    #[ts(type = "number")]
+    pub free_bytes: u64,
 }
 fn audio(path: &Path) -> bool {
     path.extension().is_some_and(|s| {
@@ -21,7 +25,7 @@ fn audio(path: &Path) -> bool {
         .any(|ext| s.eq_ignore_ascii_case(ext))
     })
 }
-fn count(path: &Path, total: &mut Storage) -> Result<(), String> {
+fn count(path: &Path, total: &mut StorageSummary) -> Result<(), String> {
     for item in fs::read_dir(path).map_err(|e| e.to_string())? {
         let item = item.map_err(|e| e.to_string())?;
         let kind = item.file_type().map_err(|e| e.to_string())?;
@@ -33,9 +37,9 @@ fn count(path: &Path, total: &mut Storage) -> Result<(), String> {
         } else if kind.is_file() {
             let bytes = item.metadata().map_err(|e| e.to_string())?.len();
             if audio(&item.path()) {
-                total.audio = total.audio.saturating_add(bytes);
+                total.audio_bytes = total.audio_bytes.saturating_add(bytes);
             } else {
-                total.documents = total.documents.saturating_add(bytes);
+                total.notes_bytes = total.notes_bytes.saturating_add(bytes);
             }
         }
     }
@@ -58,8 +62,8 @@ fn meeting_dirs(root: &Path) -> Result<Vec<std::path::PathBuf>, String> {
     }
     Ok(dirs)
 }
-pub fn summary(root: &Path) -> Result<Storage, String> {
-    let mut total = Storage::default();
+pub fn summary(root: &Path) -> Result<StorageSummary, String> {
+    let mut total = StorageSummary::default();
     for dir in meeting_dirs(root)? {
         total.meetings += 1;
         count(&dir, &mut total)?;
@@ -74,7 +78,7 @@ pub fn summary(root: &Path) -> Result<Storage, String> {
         if !out.status.success() {
             return Err("Couldn't check free disk space".into());
         }
-        total.free = String::from_utf8_lossy(&out.stdout)
+        total.free_bytes = String::from_utf8_lossy(&out.stdout)
             .lines()
             .nth(1)
             .and_then(|l| l.split_whitespace().nth(3))
@@ -85,7 +89,7 @@ pub fn summary(root: &Path) -> Result<Storage, String> {
     Ok(total)
 }
 #[tauri::command]
-pub async fn storage_summary(app: tauri::AppHandle) -> Result<Storage, String> {
+pub async fn storage_summary(app: tauri::AppHandle) -> Result<StorageSummary, String> {
     let root = app.state::<Library>().root.clone();
     tauri::async_runtime::spawn_blocking(move || summary(&root))
         .await
@@ -286,6 +290,8 @@ mod tests {
     }
     #[test]
     fn storage_copy_and_delete_do_not_follow_links() {
+        StorageSummary::export_all(&ts_rs::Config::default().with_out_dir("../../ui/lib/bindings"))
+            .unwrap();
         let root =
             std::env::temp_dir().join(format!("motet-settings-storage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -294,7 +300,7 @@ mod tests {
         fs::write(root.join("old/123/mic.wav"), "audio").unwrap();
         copy_verified(&root.join("old"), &root.join("copy")).unwrap();
         assert_eq!(fs::read(root.join("copy/123/notes.md")).unwrap(), b"notes");
-        assert_eq!(summary(&root.join("old")).unwrap().audio, 5);
+        assert_eq!(summary(&root.join("old")).unwrap().audio_bytes, 5);
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(root.join("old/123"), root.join("copy/456")).unwrap();

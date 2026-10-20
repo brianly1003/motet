@@ -32,7 +32,7 @@ async (page)=>{
     if(command==='add_app'){apps.push({app_id:args.appId,name:args.appId,mode:'ask',single_signal:false,mac_ids:[args.appId],win_ids:[],title_patterns:[]});return structuredClone(settings);}
     if(command==='installed_models')return {speech:[settings.speech_model,'/local/ggml-small.bin'],notes:['qwen3:8b','qwen3:4b'],warning:null};
     if(command==='run_speed_test')return .25;
-    if(command==='storage_summary')return {meetings:window.deleted?0:5,audio:window.deleted?0:2100000000,documents:3400000,free:212000000000};
+    if(command==='storage_summary')return {meetings:window.deleted?0:5,audio_bytes:window.deleted?0:2100000000,notes_bytes:3400000,free_bytes:212000000000};
     if(command==='delete_all_meetings'){window.deleted=true;return;}
     if(command==='notification_permission')return true;
     if(command==='about')return {version:'0.1.0',platform:'macos',licences:'whisper.cpp (MIT) · Tauri (MIT or Apache-2.0)'};

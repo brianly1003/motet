@@ -54,6 +54,7 @@ impl Host for Fake {
             }
             Job::Finish { .. } => "finish".into(),
             Job::Discard { .. } => "discard".into(),
+            Job::Trash { id } => format!("trash:{id}"),
             Job::Exit => "exit-job".into(),
         };
         self.log.lock().unwrap().push(value);
@@ -165,6 +166,32 @@ fn short_recording_discards_after_grace_and_releases_import_gate() {
     e.apply(Command::Tick, 12_000);
     assert!(!e.busy.load(Ordering::SeqCst));
     assert!(e.host.log.lock().unwrap().contains(&"discard".into()));
+}
+#[test]
+fn discard_in_the_pill_trashes_without_notes_and_releases_the_gate() {
+    let mut e = engine();
+    e.action(Action::Start, 0).unwrap();
+    // Not while recording: only the Stopped Pill offers Discard.
+    e.action(Action::Discard, 30_000).unwrap();
+    assert!(
+        !e.host
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|l| l.starts_with("trash:"))
+    );
+    e.action(Action::Stop, 30_000).unwrap();
+    e.action(Action::Discard, 31_000).unwrap();
+    let id = e.session.app.discarded.clone().unwrap().meeting_id;
+    assert!(e.host.log.lock().unwrap().contains(&format!("trash:{id}")));
+    assert!(
+        !e.busy.load(Ordering::SeqCst),
+        "a new recording or import can start"
+    );
+    // The grace deadline passes without notes.
+    e.apply(Command::Tick, 45_000);
+    assert!(!e.host.log.lock().unwrap().contains(&"finish".into()));
 }
 #[test]
 fn blocked_permission_and_failed_announcement_never_capture() {

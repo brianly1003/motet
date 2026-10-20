@@ -124,8 +124,15 @@ pub async fn run_speed_test(app: tauri::AppHandle) -> Result<f64, String> {
 fn speed_test() -> Result<f64, String> {
     #[cfg(target_os = "macos")]
     {
-        let dir = std::env::temp_dir().join(format!("motet-speed-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let dir = std::env::temp_dir().join(format!(
+            "motet-speed-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_nanos()
+        ));
+        std::fs::create_dir(&dir).map_err(|e| e.to_string())?;
         let result = (|| {
             let sample = dir.join("sample.aiff");
             let status=std::process::Command::new("say").args(["-r","160","-o"]).arg(&sample).arg("This is a local speech speed test. We discussed the project timeline and agreed to review the next steps together at our meeting tomorrow.").status().map_err(|e|e.to_string())?;

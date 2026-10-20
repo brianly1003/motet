@@ -14,9 +14,10 @@ import "../../styles/companion.css";
 export default function Companion() {
   const { state, notice, pending, act, gaps } = useSession();
   const [captions, setCaptions] = useState(true);
+  const [notesShortcut,setNotesShortcut]=useState('⌃⌥N');
   useEffect(()=>{
     let active=true;let off:(()=>void)|undefined;
-    const refresh=()=>ipc.getSettings().then(s=>{if(active)setCaptions(s.companion.captions);}).catch(()=>{});
+    const refresh=()=>ipc.getSettings().then(s=>{if(active){setCaptions(s.companion.captions);setNotesShortcut(/Mac/.test(navigator.platform)?s.shortcuts.N.replace('Ctrl+','⌃').replace('Alt+','⌥').replace('Shift+','⇧').replace('Super+','⌘'):s.shortcuts.N);}}).catch(()=>{});
     void refresh();void ipc.subscribe('motet://settings-changed',()=>void refresh()).then(fn=>{if(active)off=fn;else fn();});
     return()=>{active=false;off?.();};
   },[]);
@@ -83,6 +84,8 @@ export default function Companion() {
   const stopped = state?.state.type === "Stopped";
   // Paused keeps an open Sidecar for notes; Dot, Tucked and Pill show the paused bar (Rust sizes it).
   const paused = state?.state.type === "Paused";
+  // The call's app let go of the mic: the idle stop counts down on the recording clock.
+  const endingIn = state?.state.type === "Recording" && state.stops_at_ms != null ? Math.max(0, Math.ceil((state.stops_at_ms - state.elapsed_ms) / 1000)) : null;
   useEffect(() => {
     if (!state) return;
     // Report readiness after controls have been painted, never merely after the webview loaded.
@@ -105,12 +108,13 @@ export default function Companion() {
   if (!state) return <div className="companion-loading">{s.loading}</div>;
   const asking = state.state.type === "Asking" ? state.state : null;
   const offPending = !asking && state.state.type === "Idle" ? state.ask_off_pending : null;
-  // Asking and the Undo prompt are Pill-only: Rust sizes them (Ask card, then Pill), never Dot or Tucked.
-  const prompting = !!(asking || offPending);
+  const discarded = !asking && state.state.type === "Idle" ? state.discarded : null;
+  // Asking and the Undo prompts are Pill-only: Rust sizes them (Ask card, then Pill), never Dot or Tucked.
+  const prompting = !!(asking || offPending || discarded);
   if (asking && state.companion.size === "Ask") return <AskCard app={asking.app} callId={asking.call_id}/>;
   const dot = state.companion.size === "Dot" && !state.quit_pending && !stopped && !paused && !prompting;
   const sidecar = state.companion.size === "Sidecar" && !stopped && !state.quit_pending && !prompting;
-  const tucked = state.companion.size === "Tucked" && !stopped && !state.quit_pending && !paused && !prompting;
+  const tucked = state.companion.size === "Tucked" && !stopped && !state.quit_pending && !prompting;
   const lines = transcriptLines(live, []);
   // Each pause shows as one muted line before the first line spoken after it.
   const gapsBefore = (index: number) => gaps.filter(gap => lines.findIndex(line => line.ms !== null && line.ms >= gap.at_ms) === index);
@@ -125,7 +129,7 @@ export default function Companion() {
         else if (!(sidecar && pinned)) void act(() => size(sidecar ? "Tucked" : "Dot"));
       }
     }}>
-    {tucked ? <button className="handle" aria-label="Recording. Open notes and live transcript" title="Drag to move"
+    {tucked ? <><button className="handle" aria-label="Recording. Open notes and live transcript" title="Drag to move"
       onPointerDown={event => { if (event.button === 0) dragFrom.current = { x: event.screenX, y: event.screenY, moved: false }; }}
       onPointerMove={event => {
         const from = dragFrom.current;
@@ -133,7 +137,14 @@ export default function Companion() {
         from.moved = true;
         void act(() => ipc.dragCompanion());
       }}
-      onClick={() => { const moved = dragFrom.current?.moved; dragFrom.current = null; if (!moved) void act(() => size("Sidecar")); }}><span className="dot pulse" /><MotetMark className="mark"/></button> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className="dot pulse" /></button> :
+      onClick={() => { const moved = dragFrom.current?.moved; dragFrom.current = null; if (!moved) void act(() => size("Sidecar")); }}><span className={`dot ${paused ? "stopped" : "pulse"}`} /><MotetMark className="mark"/></button>
+      {/* Pause and Stop without opening anything (owner 2026-10-20); Stop then shows the Pill's 10 s Resume. */}
+      <span className="tuckctl">
+        {paused
+          ? <button className="iconbtn" disabled={pending} onClick={() => act(ipc.resumeRecording)} aria-label={s.resume} title={s.resume}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.4-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5z"/></svg></button>
+          : <button className="iconbtn" disabled={pending} onClick={() => act(async () => { await flushNotes.current(); await ipc.pauseRecording(); })} aria-label={s.pauseRecording} title={s.pauseTitle}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg></button>}
+        <button className="iconbtn tstop" disabled={pending} onClick={() => act(stop)} aria-label={s.pillStop} title={s.pillStop}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="2"/></svg></button>
+      </span></> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className="dot pulse" /></button> :
       <div className="pillbar" data-tauri-drag-region>
         {state.quit_pending ? <>
           <span className="pillmsg">{notice || (state.state.type === "Finishing" ? s.quitPending : s.pillQuitQuestion)}</span>
@@ -148,6 +159,10 @@ export default function Companion() {
           <span className="dot stopped" aria-hidden="true" />
           <span className="pillmsg" role="status">{notice || s.askOffDone.replace("{App}", offPending.app)}</span>
           <button className="quiet" disabled={pending} onClick={() => act(() => ipc.undoDontAsk(offPending.app_id))}>{s.undo}</button>
+        </> : discarded ? <>
+          <span className="dot stopped" aria-hidden="true" />
+          <span className="pillmsg" role="status">{notice || s.pillDiscarded}</span>
+          <button className="quiet" disabled={pending} onClick={() => act(() => ipc.undoDiscard(discarded.meeting_id))}>{s.undo}</button>
         </> : paused ? <>
           <span className="dot stopped" aria-hidden="true" />
           <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
@@ -155,8 +170,15 @@ export default function Companion() {
           <button className="primary" disabled={pending} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>
           <button className="stop" disabled={pending} onClick={() => act(stop)}>{s.pillStop}</button>
         </> : stopped ? <>
-          <span className="dot stopped" /><span className="pillmsg" role="status">{notice || <>{s.pillStopped} <span aria-live="off">{remaining ?? "…"} {s.seconds}</span></>}</span>
+          <span className="dot stopped" /><span className="pillmsg" role="status">{notice || <><span className="lbl"><span className="long">{s.pillStopped}</span><span className="short">{s.pillStoppedShort}</span></span><span className="num" aria-live="off">{remaining ?? "…"} {s.seconds}</span></>}</span>
           <button className="primary" disabled={pending || remaining === 0} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>
+          <button className="quiet" disabled={pending || remaining === 0} onClick={() => act(ipc.discardRecording)} title={s.pillDiscardTitle}>{s.pillDiscard}</button>
+        </> : endingIn !== null && !sidecar ? <>
+          <span className="dot pulse" aria-hidden="true" />
+          <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
+          <span className="pillmsg" role="status" title={state.app ? s.pillEndingTitle.replace("{App}", state.app) : s.pillEndingQuiet}>{notice || <>{s.pillEnding} <span aria-live="off">{endingIn}</span> {s.seconds}</>}</span>
+          <button className="quiet" disabled={pending} onClick={() => act(ipc.keepRecording)}>{s.keepRecording}</button>
+          <button className="stop" disabled={pending} onClick={() => act(stop)}>{s.pillStop}</button>
         </> : <>
           <span className="dot pulse" aria-hidden="true" />
           <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
@@ -164,7 +186,7 @@ export default function Companion() {
           <button className="iconbtn markbtn" disabled={pending} onClick={mark} aria-label={s.markMoment} title={markedAt === null ? s.markMoment : `${s.marked} ${elapsedLabel(markedAt)}`} aria-pressed={markedAt !== null}>⚑</button>
           <button className="iconbtn" disabled={pending} onClick={() => act(async () => { await flushNotes.current(); await ipc.pauseRecording(); })} aria-label={s.pauseRecording} title={s.pauseTitle}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg></button>
           <button className="stop" disabled={pending} onClick={() => act(stop)}>{s.pillStop}</button>
-          {sidecar ? <><button className="iconbtn" aria-label="Keep open" title="Keep open while I work elsewhere" aria-pressed={pinned} onClick={() => act(() => ipc.pinCompanion(!pinned))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M6 2h4l-.5 4 2.5 2.5H4L6.5 6zM8 8.5V14"/></svg></button><button className="iconbtn" aria-label="Tuck to the screen edge" onClick={() => act(() => size("Tucked"))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M3 8h8M8 5l3 3-3 3M13.5 3v10"/></svg></button></> : <button className="iconbtn" aria-label="Open my notes" title="Take a note (⌃⌥N)" onClick={() => act(async () => { await size("Sidecar"); await ipc.takeNote(); })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg></button>}
+          {sidecar ? <><button className="iconbtn" aria-label="Keep open" title="Keep open while I work elsewhere" aria-pressed={pinned} onClick={() => act(() => ipc.pinCompanion(!pinned))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M6 2h4l-.5 4 2.5 2.5H4L6.5 6zM8 8.5V14"/></svg></button><button className="iconbtn" aria-label="Tuck to the screen edge" onClick={() => act(() => size("Tucked"))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M3 8h8M8 5l3 3-3 3M13.5 3v10"/></svg></button></> : <button className="iconbtn" aria-label="Open my notes" title={`Take a note (${notesShortcut})`} onClick={() => act(async () => { await size("Sidecar"); await ipc.takeNote(); })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg></button>}
         </>}
       </div>}
     {captions && !dot && !tucked && !sidecar && !prompting && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}

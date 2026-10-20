@@ -98,5 +98,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => transcript,
     };
 
-    summarize::notes(&base, &transcript, "")
+    // The title is printed ("Title: ..."); the CLI's notes file keeps its layout.
+    summarize::notes(&base, &transcript, "").map(drop)
 }

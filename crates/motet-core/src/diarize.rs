@@ -48,15 +48,17 @@ fn run(wav: &Path, seg: &str, emb: &str) -> Result<Vec<Turn>, Box<dyn Error>> {
     let threads = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
     // 0.5 is the tool's default; 0.4-0.8 gave the same speakers on our synthetic calls.
     // no speaker-count hint; add --clustering.num-clusters if people ask for one.
-    let out = crate::tools::command(TOOL)
-        .arg(format!("--segmentation.pyannote-model={seg}"))
-        .arg(format!("--embedding.model={emb}"))
-        .arg(format!("--segmentation.num-threads={threads}"))
-        .arg(format!("--embedding.num-threads={threads}"))
-        .arg("--clustering.cluster-threshold=0.5")
-        .arg(wav)
-        .output()
-        .map_err(|e| format!("couldn't run {TOOL} ({e}); put its bin folder on PATH"))?;
+    let out = crate::tools::output(
+        crate::tools::command(TOOL)
+            .arg(format!("--segmentation.pyannote-model={seg}"))
+            .arg(format!("--embedding.model={emb}"))
+            .arg(format!("--segmentation.num-threads={threads}"))
+            .arg(format!("--embedding.num-threads={threads}"))
+            .arg("--clustering.cluster-threshold=0.5")
+            .arg(wav),
+        None,
+    )
+    .map_err(|e| format!("couldn't run {TOOL} ({e}); put its bin folder on PATH"))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let last = stderr.lines().rfind(|l| !l.trim().is_empty()).unwrap_or("");

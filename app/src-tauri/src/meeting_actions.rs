@@ -1,10 +1,10 @@
 //! Local document actions. Deleted meetings remain recoverable; regeneration preserves notes.
-use crate::{controller::Controller, library, library_commands::Library};
+use crate::{library, library_commands::Library};
 use motet_core::events::{AppState, SessionState};
 use std::{fs, path::Path, sync::atomic::Ordering};
 use tauri::{Emitter, Manager};
 
-fn move_meeting(root: &Path, id: &str, restore: bool) -> Result<(), String> {
+pub(crate) fn move_meeting(root: &Path, id: &str, restore: bool) -> Result<(), String> {
     // shortcut: retain deleted files until the planned 30-day retention scheduler is implemented.
     let deleted = root.join(".deleted");
     fs::create_dir_all(&deleted).map_err(|e| e.to_string())?;
@@ -53,7 +53,19 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
     if crate::bookmarks::locked(root, id)? {
         return Err(crate::bookmarks::LOCKED.into());
     }
-    let meeting = library::read(root, id)?;
+    let mut meeting = library::read(root, id)?;
+    // A recording that was never processed (Discard, then restored) is transcribed first, from the
+    // parts it saved, as recording.rs would have done.
+    if meeting.transcript.trim().is_empty() && folder.join("parts.json").exists() {
+        let parts: Vec<(Vec<String>, u64)> =
+            serde_json::from_str(&library::text(&folder.join("parts.json"))?)
+                .map_err(|e| format!("This recording's parts can't be read: {e}"))?;
+        motet_core::tools::reset();
+        let transcript =
+            motet_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
+        fs::write(folder.join("transcript.txt"), &transcript).map_err(|e| e.to_string())?;
+        meeting.transcript = transcript;
+    }
     // The user's corrections win over the optional model fix (SPEC 6.3).
     let transcript = if folder.join(crate::transcript_edits::EDITED).exists() {
         meeting.transcript.clone()
@@ -65,6 +77,7 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
     if meeting.transcript.trim().is_empty() {
         return Err("This meeting has no transcript to summarize".into());
     }
+    motet_core::tools::reset(); // Cancel is for imports only
     let staging = folder.join(".regenerating");
     fs::create_dir(&staging).map_err(|e| format!("Cannot prepare new notes: {e}"))?;
     let result = (|| -> Result<(), String> {
@@ -75,7 +88,7 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
         } else {
             String::new()
         };
-        motet_core::summarize::notes(
+        let title = motet_core::summarize::notes(
             &staging.join("notes").to_string_lossy(),
             &transcript,
             &notes,
@@ -101,6 +114,9 @@ fn regenerate(root: &Path, id: &str) -> Result<(), String> {
         let mut summary = library::summary(root, id)?;
         summary.notes_ms = Some(started.elapsed().as_millis() as u64);
         summary.spellings = spellings;
+        summary.titled(title);
+        // Notes written: a recording that needed them (Discard, then Undo) is ready now.
+        summary.status = "Ready".into();
         library::save(root, &summary)
     })();
     let _ = fs::remove_dir_all(staging);
@@ -183,7 +199,7 @@ fn run(root: &Path, id: &str, action: &str) -> Result<(), String> {
 }
 
 /// The meeting a call is recording or writing notes for; the controller holds `busy` meanwhile.
-fn live_id(state: &AppState) -> Option<&str> {
+pub(crate) fn live_id(state: &AppState) -> Option<&str> {
     match &state.state {
         SessionState::Finishing { meeting_id } => Some(meeting_id),
         SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => {
@@ -201,31 +217,36 @@ pub async fn meeting_action(
 ) -> Result<(), String> {
     let state = app.state::<Library>();
     let root = state.root.clone();
-    // Delete, restore, purge and reveal touch one folder, so other meetings stay manageable
-    // while a call records or writes its notes; that call's own meeting does not (owner, 2026-10-20).
-    // only the live meeting is locked; lock per meeting if imports ever run beside a call.
-    let session = app.state::<Controller>().state()?;
-    if action != "regenerate"
-        && let Some(live) = live_id(&session)
-    {
-        if live == id {
-            return Err("This meeting is still recording or writing its notes".into());
-        }
-        let result = tauri::async_runtime::spawn_blocking(move || run(&root, &id, &action))
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|r| r);
+    // Delete, restore, purge and reveal touch one folder, so other meetings stay manageable while a
+    // call records or a file imports; the meeting being written does not (owner, 2026-10-20).
+    if action != "regenerate" {
+        let worker = app.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            crate::library_commands::edit(&worker, &id, |root| run(root, &id, &action))
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
         let _ = app.emit("motet://library-changed", ());
         return result;
     }
     if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("Finish recording or processing before changing a meeting".into());
+        return Err(
+            "Wait for the current recording or import to finish before writing the notes again"
+                .into(),
+        );
     }
     state.importing.store(true, Ordering::SeqCst);
+    state.set_job(Some(crate::library_commands::Job {
+        id: Some(id.clone()),
+        import: false,
+    }));
+    let _ = app.emit("motet://library-changed", ());
     let result = tauri::async_runtime::spawn_blocking(move || run(&root, &id, &action))
         .await
         .map_err(|e| e.to_string())
         .and_then(|r| r);
+    state.set_job(None);
     state.importing.store(false, Ordering::SeqCst);
     state.busy.store(false, Ordering::SeqCst);
     let _ = app.emit("motet://library-changed", ());

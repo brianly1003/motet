@@ -139,6 +139,9 @@ async (page) => {
     await p.getByRole('button',{name:'Show all',exact:true}).click();
     await p.locator('.todo li:has-text("device table") button.owner').click();
     await p.getByRole('menuitem',{name:'Fix this name…'}).click();
+    // The name box shows the whole name, selected, with one edge (a 15 px checkbox rule once squeezed it).
+    const box=await p.locator('input.ownerin').evaluate(i=>({fits:i.scrollWidth<=i.clientWidth&&i.offsetWidth>30,value:i.value,selected:i.selectionEnd-i.selectionStart,shadow:getComputedStyle(i).boxShadow}));
+    if(!box.fits||box.value!=='Kevin'||box.selected!==5||(box.shadow.match(/inset/g)||[]).length!==1)failures.push(`name box: ${JSON.stringify(box)}`);
     await p.keyboard.press('Meta+a'); await p.keyboard.type('Kevan'); await p.keyboard.press('Enter'); await p.waitForTimeout(250);
     const fixed=await saved();
     if((fixed.match(/Kevan: /g)||[]).length!==2||fixed.includes('Kevin: '))failures.push('Fix this name did not rename every Kevin task');
@@ -176,6 +179,9 @@ async (page) => {
     else {
       await p.mouse.move(dot.x+7,dot.y+7); await p.waitForTimeout(100);
       if(!(await p.locator(row(0)+' .epop').innerText()).includes('Pusher beams relies on FCM.'))failures.push('popover lacks the heard text');
+      // The edited dot sits on the middle of the line's first text line (owner, 2026-10-20: it sat 3 px high).
+      const mid=await p.locator(row(0)).evaluate(r=>{const w=r.querySelector('.words'),g=document.createRange();g.selectNodeContents(w);const t=g.getClientRects()[0],d=r.querySelector('.edot').getBoundingClientRect();return Math.abs((t.top+t.bottom)/2-(d.top+d.bottom)/2);});
+      if(mid>1)failures.push(`edited dot ${mid.toFixed(1)} px off the text's middle`);
       const rb=await p.locator(row(0)+' .epop button').boundingBox();
       await p.mouse.move(rb.x+rb.width/2,rb.y+rb.height/2,{steps:6}); await p.mouse.down(); await p.mouse.up(); await p.waitForTimeout(250);
       if((await p.evaluate(()=>window.meeting.transcript_heard))!=='')failures.push('Revert did not restore the line');

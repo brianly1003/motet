@@ -1,5 +1,5 @@
 //! Persist task completion and in-place note edits without overwriting a newer notes document.
-use crate::{library, library_commands::Library};
+use crate::library;
 use std::{
     fs,
     io::Write,
@@ -96,17 +96,13 @@ fn write(dir: &Path, path: &Path, current: &str, result: &str) -> Result<String,
 #[tauri::command]
 pub fn set_action_item_done(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Library>,
     id: String,
     line: usize,
     done: bool,
     expected: String,
 ) -> Result<String, String> {
-    if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("Wait for the current recording or processing to finish".into());
-    }
-    let result = update(&state.root, &id, line, done, &expected);
-    state.busy.store(false, Ordering::SeqCst);
+    let result =
+        crate::library_commands::edit(&app, &id, |root| update(root, &id, line, done, &expected));
     if result.is_ok() {
         let _ = app.emit("motet://library-changed", ());
     }
@@ -116,16 +112,12 @@ pub fn set_action_item_done(
 #[tauri::command]
 pub fn save_notes(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Library>,
     id: String,
     markdown: String,
     expected: String,
 ) -> Result<String, String> {
-    if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("Wait for the current recording or processing to finish".into());
-    }
-    let result = save(&state.root, &id, &markdown, &expected);
-    state.busy.store(false, Ordering::SeqCst);
+    let result =
+        crate::library_commands::edit(&app, &id, |root| save(root, &id, &markdown, &expected));
     if result.is_ok() {
         let _ = app.emit("motet://library-changed", ());
     }

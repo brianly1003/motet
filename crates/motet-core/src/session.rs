@@ -5,6 +5,8 @@ use crate::events::*;
 const GRACE_MS: u64 = 10_000;
 /// The Ask card fades to the Pill after this long (DESIGN 4.2); the question itself never times out.
 const ASK_CARD_MS: u64 = 20_000;
+/// How long the Pill offers Undo after Discard (SPEC 7.7: the same 5 s as Delete).
+const DISCARD_UNDO_MS: u64 = 5_000;
 /// One reminder when a pause runs this long, so a forgotten pause doesn't lose the meeting.
 const PAUSE_REMIND_MS: u64 = 15 * 60_000;
 const GB: u64 = 1_000_000_000;
@@ -44,6 +46,10 @@ pub enum Effect {
         notes_only: bool,
     },
     Discard {
+        meeting_id: String,
+    },
+    /// Discard chosen in the Pill: move the meeting to Recently deleted (recoverable), no notes.
+    Trash {
         meeting_id: String,
     },
     AddApp {
@@ -97,6 +103,8 @@ pub struct Session {
     last_ms: u64,
     last_emit_ms: u64,
     idle_since: Option<u64>,
+    /// Keep recording was chosen during the idle countdown; the mic coming back clears it.
+    keep: bool,
     peek_until: Option<u64>,
     before_share: CompanionSize,
     pause_remind_at: Option<u64>,
@@ -118,6 +126,7 @@ impl Session {
             last_ms: 0,
             last_emit_ms: 0,
             idle_since: None,
+            keep: false,
             peek_until: None,
             before_share: CompanionSize::Pill,
             pause_remind_at: None,
@@ -138,6 +147,7 @@ impl Session {
         self.call = None;
         self.apps.clear();
         self.idle_since = None;
+        self.keep = false;
         self.pause_remind_at = None;
     }
 
@@ -266,6 +276,8 @@ impl Session {
         self.app.companion.peeking = false;
         self.peek_until = None;
         self.idle_since = None;
+        self.keep = false;
+        self.app.discarded = None;
         if self.audio() {
             effects.push(Effect::NotifyRecording { reason });
             effects.push(Effect::StartCapture {
@@ -359,6 +371,14 @@ impl Session {
             .is_some_and(|p| now >= p.until_ms)
         {
             self.app.ask_off_pending = None;
+        }
+        if self
+            .app
+            .discarded
+            .as_ref()
+            .is_some_and(|d| now >= d.until_ms)
+        {
+            self.app.discarded = None;
         }
         if let SessionState::Stopped { resume_until_ms } = self.app.state
             && now >= resume_until_ms
@@ -480,7 +500,9 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 && session.call.as_ref().is_some_and(|c| c.call_id == call_id)
             {
                 // Record may come after the mic went quiet, so no Mic signal starts the idle stop.
-                session.idle_since.get_or_insert(now);
+                if !session.keep {
+                    session.idle_since.get_or_insert(now);
+                }
             }
         }
         Command::HoldAsk(hold) if session.app.companion.size == CompanionSize::Ask => {
@@ -527,6 +549,27 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             effects.push(Effect::SetAskOnCall(on));
         }
         Command::StopRecording => session.stop(now, &mut effects),
+        Command::DiscardRecording if matches!(session.app.state, SessionState::Stopped { .. }) => {
+            if let Some(meeting_id) = session.app.meeting_id.clone() {
+                effects.push(Effect::Trash {
+                    meeting_id: meeting_id.clone(),
+                });
+                session.idle();
+                session.app.discarded = Some(Discarded {
+                    meeting_id,
+                    until_ms: now.saturating_add(DISCARD_UNDO_MS),
+                });
+                if session.app.quit_pending {
+                    effects.push(Effect::PauseDownload);
+                    effects.push(Effect::Exit);
+                }
+            }
+        }
+        Command::UndoDiscard => session.app.discarded = None,
+        Command::KeepRecording if session.app.state == SessionState::Recording => {
+            session.idle_since = None;
+            session.keep = true;
+        }
         Command::PauseRecording
             if session.app.state == SessionState::Recording && session.audio() =>
         {
@@ -543,7 +586,8 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             // A manual recording has no call of its own, so any app's mic signal counts.
             if active {
                 session.idle_since = None;
-            } else if session.idle_since.is_none() {
+                session.keep = false;
+            } else if session.idle_since.is_none() && !session.keep {
                 session.idle_since = Some(now);
             }
         }
@@ -747,7 +791,9 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
         session.app.companion.size = CompanionSize::Dot;
     }
     session.app.companion.visible = match session.app.state {
-        SessionState::Idle => session.app.ask_off_pending.is_some(),
+        SessionState::Idle => {
+            session.app.ask_off_pending.is_some() || session.app.discarded.is_some()
+        }
         SessionState::Asking { .. } => true,
         SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => true,
         SessionState::Finishing { .. } => session.app.quit_pending,
@@ -759,6 +805,15 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
     {
         session.app.companion.size = CompanionSize::Pill;
     }
+    // The idle stop as a point on the recording clock; elapsed and the deadline move together,
+    // so this stays put between ticks and adds no extra state events.
+    session.app.stops_at_ms = session
+        .idle_since
+        .filter(|_| session.app.state == SessionState::Recording && session.audio())
+        .map(|since| {
+            let deadline = since.saturating_add(u64::from(session.idle_stop_s) * 1000);
+            session.app.elapsed_ms + deadline.saturating_sub(now)
+        });
     session.problems.sort_by_key(|p| priority(&p.problem));
     session.app.problem = session.problems.first().cloned();
     session.app.more_problems = session.problems.len().saturating_sub(1) as u32;

@@ -30,6 +30,29 @@ pub struct MeetingSummary {
     /// Read-only for review: no note, transcript or title edits, no Write the notes again (SPEC 7.11).
     #[serde(default)]
     pub locked: bool,
+    /// Who named the meeting (SPEC 7.6): the notes model replaces a placeholder or its own title,
+    /// never one the user typed.
+    #[serde(default)]
+    pub title_source: TitleSource,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum TitleSource {
+    #[default]
+    Placeholder,
+    Model,
+    User,
+}
+
+impl MeetingSummary {
+    /// The notes model's title, unless the user named the meeting.
+    pub fn titled(&mut self, title: Option<String>) {
+        if let Some(title) = title.filter(|_| self.title_source != TitleSource::User) {
+            self.title = title;
+            self.title_source = TitleSource::Model;
+        }
+    }
 }
 
 #[derive(Serialize, TS)]
@@ -171,6 +194,7 @@ fn unreadable(id: &str) -> MeetingSummary {
         notes_ms: None,
         spellings: vec![],
         locked: false,
+        title_source: Default::default(),
     }
 }
 
@@ -243,7 +267,12 @@ pub fn open_items(root: &Path) -> Result<Vec<(MeetingSummary, String)>, String> 
     Ok(open)
 }
 
-pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
+/// `None` when Cancel stopped it: the meeting is removed and the source file was never touched.
+pub fn import(
+    root: &Path,
+    source: &Path,
+    started: impl FnOnce(&str),
+) -> Result<Option<MeetingSummary>, String> {
     // Checked before a folder exists, so a wrong pick leaves nothing behind.
     let extension = source
         .extension()
@@ -276,6 +305,7 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
         notes_ms: None,
         spellings: vec![],
         locked: false,
+        title_source: Default::default(),
     };
     let dir = root.join(&summary.id);
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
@@ -284,6 +314,7 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
         let _ = fs::remove_dir(&dir);
         return Err(format!("Couldn't create the meeting folder: {e}"));
     }
+    started(&summary.id);
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let copied = dir.join(format!("source.{extension}"));
         fs::copy(source, &copied)?;
@@ -302,11 +333,18 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
         };
         let started = std::time::Instant::now();
         let spellings = used_spellings();
-        motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input, "")?;
+        let title =
+            motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input, "")?;
+        summary.titled(title);
         summary.notes_ms = Some(started.elapsed().as_millis() as u64);
         summary.spellings = spellings;
         Ok(())
     })();
+    if result.is_err() && motet_core::tools::cancelled() {
+        fs::remove_dir_all(&dir)
+            .map_err(|e| format!("Import stopped, but its folder couldn't be removed: {e}"))?;
+        return Ok(None);
+    }
     summary.status = if result.is_ok() {
         "Ready"
     } else {
@@ -316,7 +354,7 @@ pub fn import(root: &Path, source: &Path) -> Result<MeetingSummary, String> {
     // The pipeline's error is the one people need; a failed status save is added, not swapped in.
     let saved = save(root, &summary);
     match (result, saved) {
-        (Ok(()), Ok(())) => Ok(summary),
+        (Ok(()), Ok(())) => Ok(Some(summary)),
         (Ok(()), Err(e)) => Err(format!(
             "Notes for {} are written, but its status couldn't be saved: {e}",
             summary.title
@@ -413,6 +451,8 @@ mod tests {
         }
     }
 
+    // Cancel is one process-wide flag (motet_core::tools), so imports run one at a time here too.
+    static IMPORTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     fn temp_root() -> PathBuf {
         // Parallel tests can read the same clock tick; the counter keeps folders apart.
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -444,6 +484,7 @@ mod tests {
                     notes_ms: None,
                     spellings: vec![],
                     locked: false,
+                    title_source: Default::default(),
                 },
             )
             .unwrap();
@@ -486,6 +527,7 @@ mod tests {
                 notes_ms: None,
                 spellings: vec![],
                 locked: false,
+                title_source: Default::default(),
             };
             save(&root, &summary).unwrap();
         }
@@ -497,20 +539,31 @@ mod tests {
 
     #[test]
     fn import_without_extension_leaves_no_folder() {
+        let _imports = IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
         let root = temp_root();
-        assert!(import(&root, Path::new("/tmp/recording")).is_err());
+        assert!(import(&root, Path::new("/tmp/recording"), |_| {}).is_err());
         assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn failed_import_keeps_its_error_and_needs_attention() {
+        let _imports = IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
         let root = temp_root();
         let missing = root.join("gone.m4a"); // copy fails: the pipeline error must surface
-        let err = import(&root, &missing).unwrap_err();
+        // The meeting is announced once its folder exists, so the list can show it writing.
+        let mut announced = None;
+        let err = import(&root, &missing, |id| {
+            announced = Some((id.to_owned(), list(&root).unwrap()[0].status.clone()));
+        })
+        .unwrap_err();
         assert!(err.starts_with("Couldn't finish gone:"), "{err}");
         let meetings = list(&root).unwrap();
         assert_eq!(meetings.len(), 1);
+        assert_eq!(
+            announced,
+            Some((meetings[0].id.clone(), "Finishing".into()))
+        );
         assert_eq!(meetings[0].status, "NeedsAttention");
         fs::remove_dir_all(root).unwrap();
     }
@@ -530,12 +583,27 @@ mod tests {
         fs::remove_dir_all(outside).unwrap();
     }
     #[test]
+    fn cancelled_import_leaves_no_meeting_and_keeps_the_source() {
+        let _imports = IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
+        let root = temp_root();
+        let source = root.join("call.m4a");
+        fs::write(&source, b"not really audio").unwrap();
+        motet_core::tools::cancel();
+        let result = import(&root, &source, |_| {});
+        motet_core::tools::reset();
+        assert!(matches!(result, Ok(None)), "{result:?}");
+        assert!(list(&root).unwrap().is_empty());
+        assert_eq!(fs::read(&source).unwrap(), b"not really audio");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     #[ignore = "requires synthetic speech and installed local models"]
     fn real_import_preserves_source_and_writes_notes() {
+        let _imports = IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
         let source = PathBuf::from(std::env::var("MOTET_TEST_IMPORT").unwrap());
         let before = fs::read(&source).unwrap();
         let root = temp_root();
-        let imported = import(&root, &source).unwrap();
+        let imported = import(&root, &source, |_| {}).unwrap().unwrap();
         let meeting = read(&root, &imported.id).unwrap();
         assert_eq!(imported.status, "Ready");
         assert!(meeting.transcript.to_lowercase().contains("friday"));

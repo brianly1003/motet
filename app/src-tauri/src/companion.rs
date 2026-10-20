@@ -244,7 +244,8 @@ fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
     }
     match size {
         CompanionSize::Dot => (40.0, 40.0),
-        CompanionSize::Tucked => (24.0, 64.0),
+        // Dot, Pause and Stop stacked (owner 2026-10-20: pause or stop without opening it).
+        CompanionSize::Tucked => (28.0, 104.0),
         // Fills the work area 16 px from top and bottom, as in the mockup (DESIGN 4.3: 40-100 %);
         // resize() clamps it. no splitter or saved height yet (SPEC sidecar_height_pct).
         CompanionSize::Sidecar => (340.0, f64::INFINITY),

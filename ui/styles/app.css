@@ -14,12 +14,12 @@
 @media (prefers-color-scheme: dark) {
   :root { --line-2: #3b4137; --ok-soft: #173123; --accent-soft: #3a2d16; --accent-ink: #f0c27c; --hl: #4a3d16; --rec-soft: #3d1714; color-scheme: dark; }
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; outline: none; }
 body { margin: 0; background: var(--surface-1); color: var(--ink-1); font: 14px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { opacity: .45; cursor: not-allowed; }
-:focus-visible { outline: 2px solid var(--attention); outline-offset: 2px; }
+:root :is(button, a, input, select, textarea, summary, [role="button"], [role="tab"], [role="menuitem"]):focus-visible { box-shadow: inset 0 0 0 2px var(--attention); }
 svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100dvh; min-height: 0; }
 .sidebar { border-right: 1px solid var(--line); background: var(--surface-2); display: flex; flex-direction: column; min-height: 0; }
@@ -40,6 +40,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .privacy { border-top: 1px solid var(--line); padding: 9px 12px; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12px; }
 /* One line, always (owner 2026-10-20): 280 px fits "On this computer · 999 meetings · 712.4 GB". */
 .privacy span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* Only "On this computer" gives way; the meeting count and size always show (owner 2026-10-20). */
+.privacy .where { display: flex; }
+.privacy .where b { flex: none; font-weight: inherit; white-space: nowrap; }
 .privacy svg { width: 13px; height: 13px; color: var(--ok); flex: none; }
 .workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; position: relative; }
 .primary, .quiet { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-2); background: var(--surface-1); padding: 6px 12px; border-radius: 8px; font-weight: 500; font-size: 13px; }
@@ -52,7 +55,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .openitems { border: 1px solid var(--line); border-radius: 10px; }
 .openitems .oi { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); align-items: start; font-size: 13.5px; }
 .openitems .oi:last-child { border-bottom: 0; }
-.openitems .oi input { margin-top: 3px; accent-color: var(--ok); }
+.openitems .oi input[type=checkbox] { margin: 3px 0 0; accent-color: var(--ok); width: 15px; height: 15px; } /* the same box as a task in the notes (.todo input[type=checkbox]) */
 .openitems .from { font-size: 12px; color: var(--ink-3); border: 0; background: none; padding: 0; text-align: right; }
 .openitems .from:hover { color: var(--ink-1); text-decoration: underline; }
 .drop { border: 1.5px dashed var(--line-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-3); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -89,7 +92,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .muted, .list-empty { color: var(--ink-2); }
 .list-empty { font-size: 12px; padding: 12px; }
 .workspace > .empty { margin: 18px 28px; }
-.processing h1 { margin: 0; font: 400 28px/1.1 var(--font-doc); }
+.processing :is(h1, h2) { margin: 0; font: 400 28px/1.1 var(--font-doc); }
+.home > .processing h2 { font-size: 22px; } /* under the meeting title, as the mockup .processing h4 */
 svg.duet { width: 32px; height: 32px; fill: none; stroke-width: 3; stroke-linecap: round; }
 svg.duet path.me { stroke: var(--voice-me); } svg.duet circle.me { fill: var(--voice-me); }
 svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: var(--voice-them); }
@@ -97,6 +101,13 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 .progress:after { content: ""; display: block; background: var(--attention); height: 100%; width: 35%; animation: working 1.5s ease-in-out infinite alternate; }
 @keyframes working { to { transform: translateX(190%); } }
 @media (prefers-reduced-motion: reduce) { .progress:after { animation: none; } }
+/* Cancel import (SPEC 7.7): one quiet button under the bar; while it stops, the bar holds still and greys. */
+.proc-cancel { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.proc-cancel .btn { font-size: 12px; padding: 4px 10px; }
+.proc-cancel .btn:disabled { color: var(--ink-3); cursor: default; }
+.proc-cancel .hint { color: var(--ink-3); font-size: 12px; }
+.processing.stopping .progress:after { animation-play-state: paused; background: var(--ink-3); transition: background-color .2s; }
+.processing.stopping :is(h1, h2, p) { color: var(--ink-3); transition: color .2s; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 .session-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -165,7 +176,7 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 .notes .tip { font-size: 12px; color: var(--ink-3); }
 .todo { list-style: none; padding: 0 !important; }
 .todo li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; }
-.todo input { margin: 3px 0 0; accent-color: var(--ok); width: 15px; height: 15px; }
+.todo input[type=checkbox] { margin: 3px 0 0; accent-color: var(--ok); width: 15px; height: 15px; }
 .todo .done .tt { color: var(--ink-3); text-decoration: line-through; }
 /* Edit in place (DESIGN 4.9, SPEC 7.11): a wash on hover; the block being edited sits on one amber
    hairline and otherwise stays exactly as rendered, so nothing reflows on focus or blur. */
@@ -186,6 +197,8 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 button.owner { cursor: pointer; font-family: inherit; line-height: inherit; }
 .owner[aria-pressed="true"] { box-shadow: 0 0 0 1.5px currentColor inset; }
 input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height: inherit; border: 0; outline: none; cursor: text; box-shadow: 0 0 0 1.5px currentColor inset; }
+/* The pill's own edge is its focus mark (mockup); the global amber ring would draw a second one. */
+:root input.ownerin:focus-visible { box-shadow: 0 0 0 1.5px currentColor inset; }
 .notes .show-all { font-size: 12px; padding: 1px 8px; }
 .mention > .tip { margin: 6px 10px; }
 /* Lock notes (SPEC 7.11): a switch in the ••• menu; a quiet Locked mark in the meta line unlocks. */
@@ -228,7 +241,7 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .panel .tip, .player .tip { font-size: 12px; color: var(--ink-3); margin: 0; overflow-wrap: anywhere; }
 .timeline-wave { position: relative; }
 .timeline-wave input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.timeline-wave:has(input:focus-visible) { outline: 2px solid var(--attention); outline-offset: 2px; }
+.timeline-wave:has(input:focus-visible) { box-shadow: inset 0 0 0 2px var(--attention); }
 /* Cited moments (DESIGN 2.0): a 9 px ring on the centre line, drawn in HTML so the wave's stretch
    never makes it an ellipse; it fills and grows a little on hover or focus, and plays from there. */
 .tl-dots { position: absolute; inset: 0; pointer-events: none; }
@@ -241,7 +254,9 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .tline button.ts:hover:not(:disabled) { color: var(--attention); }
 .tline button.ts:hover:not(:disabled)::after { content: " \25B6"; font-size: 8px; vertical-align: 1px; }
 .tline .tx { display: grid; grid-template-columns: minmax(0,1fr) auto; column-gap: 8px; align-items: start; min-width: 0; }
-.tline .tx-end { display: inline-flex; gap: 6px; align-items: center; line-height: 1.7; }
+/* The line the keyboard is on (↑↓): the hover tone, no ring, so it reads as "here", not "selected". */
+.tline:focus { outline: none; background: var(--surface-2); }
+.tline .tx-end { display: inline-flex; gap: 6px; align-items: center; height: 1lh; } /* one text line tall, so the edited dot and flags sit on its middle */
 .tline .words { display: block; border-radius: 4px; outline: none; cursor: text; transition: background-color .12s, box-shadow .12s; }
 .tline .words:hover { background-color: var(--surface-2); box-shadow: 0 0 0 3px var(--surface-2); }
 .tline .words.ro { cursor: auto; } .tline .words.ro:hover { background: none; box-shadow: none; }
@@ -315,11 +330,13 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .gmenu button[disabled] { opacity: .45; cursor: not-allowed; background: transparent; }
 .gmenu .sep { height: 1px; background: var(--line-2); margin: 6px 10px; }
 .gmenu .danger, .gmenu .danger svg { color: var(--rec); }
-.sidebar .trash { margin: 0 6px 6px; border: 0; background: transparent; border-radius: 8px; padding: 6px 9px; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12.5px; text-align: left; }
-.sidebar .trash:hover { background: var(--surface-3); }
-.sidebar .trash[aria-current="page"] { background: var(--surface-1); box-shadow: 0 0 0 1px var(--line); color: var(--ink-1); }
-.sidebar .trash svg { width: 14px; height: 14px; flex: none; stroke-width: 1.4; }
-.sidebar .trash .n { margin-left: auto; color: var(--ink-3); font-size: 11.5px; font-feature-settings: "tnum"; }
+/* Action items: the way back to Home, under search, with what is still open (mockup .side .homerow). */
+.sidebar :is(.trash, .homerow) { margin: 0 6px 6px; border: 0; background: transparent; border-radius: 8px; padding: 6px 9px; display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 12.5px; text-align: left; }
+.sidebar :is(.trash, .homerow):hover { background: var(--surface-3); }
+.sidebar :is(.trash, .homerow)[aria-current="page"] { background: var(--surface-1); box-shadow: 0 0 0 1px var(--line); color: var(--ink-1); }
+.sidebar :is(.trash, .homerow) svg { width: 14px; height: 14px; flex: none; stroke-width: 1.4; }
+.sidebar :is(.trash, .homerow) .n { margin-left: auto; color: var(--ink-3); font-size: 11.5px; font-feature-settings: "tnum"; }
+.sidebar .homerow { margin: 2px 6px 4px; }
 .trashview { padding: 14px 28px; display: grid; gap: 10px; align-content: start; }
 .trashview h1 { margin: 0; font: 400 30px/1.15 var(--font-doc); }
 .trashview .lead { margin: 0; color: var(--ink-2); font-size: 13px; }
@@ -424,7 +441,7 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .settings-window .btn.ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
 .settings-window .btn.rec { color: var(--rec); border-color: var(--rec); }
 .settings-window .btn:hover { background: var(--surface-2); }
-.settings-window .switch input:focus-visible + span { outline: 2px solid var(--attention); outline-offset: 2px; }
+.settings-window .switch input:focus-visible + span { box-shadow: inset 0 0 0 2px var(--attention); }
 .settings-window .kv { margin: 0; }
 .settings-shortcuts, .settings-storage { max-width: 340px; }
 .settings-shortcuts > div { display: contents; }

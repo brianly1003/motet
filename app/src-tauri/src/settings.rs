@@ -40,9 +40,6 @@ pub struct Settings {
     pub notes_language: String,
     pub ask_on_call: bool,
     pub app_modes: BTreeMap<String, Mode>,
-    #[ts(
-        type = "Array<{app_id:string,name:string,mac_ids:string[],win_ids:string[],title_patterns:string[],single_signal:boolean,mode:'ask'|'off'}>"
-    )]
     pub apps: Vec<AppRule>,
     pub idle_stop_s: u32,
     pub discard_short_s: u32,
@@ -72,7 +69,10 @@ impl Default for Settings {
             speech_model: motet_core::config::var("WHISPER_MODEL").unwrap_or_default(),
             notes_model: motet_core::config::var("OLLAMA_MODEL").unwrap_or_default(),
             call_language: "detect".into(),
-            part_chars: 24000,
+            part_chars: motet_core::config::var("SUMMARY_CHUNK_CHARS")
+                .and_then(|n| n.parse().ok())
+                .filter(|n| (8000..=48000).contains(n))
+                .unwrap_or(24000),
             keep_audio: "30_days".into(),
             recording_reminder: true,
             sounds: true,
@@ -184,10 +184,15 @@ impl Settings {
         {
             return Err("Each shortcut must be different.".into());
         }
+        let mut shortcuts = Vec::new();
         for accelerator in self.shortcuts.values() {
-            accelerator
+            let shortcut = accelerator
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
                 .map_err(|_| "Use a valid shortcut such as Ctrl+Alt+S.")?;
+            if shortcuts.contains(&shortcut) {
+                return Err("Each shortcut must be different.".into());
+            }
+            shortcuts.push(shortcut);
         }
         Ok(())
     }
@@ -274,7 +279,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<
                 "Wait until the recording or import finishes before changing settings.".into(),
             );
         }
-        let result = (|| {
+        let mut result = (|| {
             if settings.speech_model != old.speech_model
                 && !Path::new(&settings.speech_model).is_file()
             {
@@ -291,24 +296,28 @@ pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<
             if settings.shortcuts != old.shortcuts {
                 crate::shortcuts::replace(&app, &old.shortcuts, &settings.shortcuts)?;
             }
-            let saved = store.change(|s| {
+            store.change(|s| {
                 // Calls choices may have changed in the controller since this window loaded.
                 let ask = s.ask_on_call;
                 let modes = s.app_modes.clone();
                 *s = settings.clone();
                 s.ask_on_call = ask;
                 s.app_modes = modes;
-            });
-            if saved.is_err() {
-                if settings.open_at_login != old.open_at_login {
-                    let _ = crate::settings_system::login(&app, old.open_at_login);
-                }
-                if settings.shortcuts != old.shortcuts {
-                    let _ = crate::shortcuts::replace(&app, &settings.shortcuts, &old.shortcuts);
-                }
-            }
-            saved
+            })
         })();
+        if let Err(reason) = &mut result {
+            if settings.open_at_login != old.open_at_login
+                && let Err(error) = crate::settings_system::login(&app, old.open_at_login)
+            {
+                reason.push_str(&format!(" Couldn't restore the login preference: {error}"));
+            }
+            if settings.shortcuts != old.shortcuts
+                && let Err(error) =
+                    crate::shortcuts::replace(&app, &settings.shortcuts, &old.shortcuts)
+            {
+                reason.push_str(&format!(" Couldn't restore shortcuts: {error}"));
+            }
+        }
         if needs_idle {
             library
                 .busy

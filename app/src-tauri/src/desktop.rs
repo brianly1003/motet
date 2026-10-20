@@ -39,6 +39,7 @@ pub fn run() {
             library_commands::get_meeting,
             library_commands::import_audio,
             library_commands::importing,
+            library_commands::cancel_import,
             get_state,
             crate::my_notes::get_my_notes,
             crate::my_notes::save_my_notes,
@@ -47,6 +48,9 @@ pub fn run() {
             start_recording,
             stop_recording,
             pause_recording,
+            keep_recording,
+            discard_recording,
+            undo_discard,
             resume_recording,
             quit,
             dismiss_problem,
@@ -151,6 +155,8 @@ pub fn run() {
                 importing: AtomicBool::new(false),
                 allow_exit,
                 quit_pending: AtomicBool::new(false),
+                job: std::sync::Mutex::new(None),
+                edits: std::sync::Mutex::new(()),
             });
             crate::companion::create(app.handle())?;
             crate::notifications::setup(app.handle())?;
@@ -315,6 +321,46 @@ async fn stop_recording(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn pause_recording(app: tauri::AppHandle) -> Result<(), String> {
     act(app, Action::Pause).await
+}
+/// The Pill's Keep recording, during the countdown after the call's app lets go of the mic.
+#[tauri::command]
+async fn keep_recording(app: tauri::AppHandle) -> Result<(), String> {
+    act(app, Action::Keep).await
+}
+/// The Stopped Pill's Discard (owner 2026-10-20): no notes, the meeting goes to Recently deleted.
+#[tauri::command]
+async fn discard_recording(app: tauri::AppHandle) -> Result<(), String> {
+    act(app, Action::Discard).await
+}
+/// Undo in the Pill: the meeting comes back and its notes are written after all.
+#[tauri::command]
+async fn undo_discard(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    act(app.clone(), Action::UndoDiscard).await?;
+    // The worker moves it into Recently deleted right after Discard; wait for that (at most 2 s).
+    let trashed = app.state::<Library>().root.join(".deleted").join(&id);
+    for _ in 0..20 {
+        if trashed.exists() {
+            break;
+        }
+        tauri::async_runtime::spawn_blocking(|| {
+            std::thread::sleep(std::time::Duration::from_millis(100))
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    let result = async {
+        crate::meeting_actions::meeting_action(app.clone(), id.clone(), "restore".into()).await?;
+        crate::meeting_actions::meeting_action(app.clone(), id, "regenerate".into()).await
+    }
+    .await;
+    // The Pill has gone by now, so the library says what went wrong.
+    if let Err(error) = &result {
+        let _ = app.emit(
+            "motet://notice",
+            format!("Couldn't bring the recording back: {error}"),
+        );
+    }
+    result
 }
 #[tauri::command]
 async fn resume_recording(app: tauri::AppHandle) -> Result<(), String> {

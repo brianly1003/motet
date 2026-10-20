@@ -1,9 +1,9 @@
 //! Library IPC and import orchestration.
 use crate::{desktop::refresh_tray, library};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -16,6 +16,52 @@ pub(crate) struct Library {
     pub(crate) importing: AtomicBool,
     pub(crate) allow_exit: Arc<AtomicBool>,
     pub(crate) quit_pending: AtomicBool,
+    /// The meeting an import or Write the notes again is writing; `id` is None while the file
+    /// picker is open. Only this meeting (and a live call's) is closed to edits.
+    pub(crate) job: Mutex<Option<Job>>,
+    /// Edits wait for each other, never for processing (owner, 2026-10-20).
+    pub(crate) edits: Mutex<()>,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct Job {
+    pub(crate) id: Option<String>,
+    /// An import can be cancelled; Write the notes again can't.
+    pub(crate) import: bool,
+}
+
+impl Library {
+    /// Starts a job, after edits in flight have saved, so none lands under it.
+    pub(crate) fn set_job(&self, job: Option<Job>) {
+        let _edits = self.edits.lock().unwrap_or_else(|e| e.into_inner());
+        *self.job.lock().unwrap_or_else(|e| e.into_inner()) = job;
+    }
+    fn job_id(&self) -> Option<String> {
+        self.job
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()?
+            .id
+            .clone()
+    }
+}
+
+/// Notes, transcript lines, ticked items, delete and restore: other meetings stay usable while a
+/// call records or a file imports; only the meeting being written is refused.
+pub(crate) fn edit<T>(
+    app: &tauri::AppHandle,
+    id: &str,
+    change: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let state = app.state::<Library>();
+    let session = app.state::<crate::controller::Controller>().state()?;
+    if crate::meeting_actions::live_id(&session) == Some(id)
+        || state.job_id().as_deref() == Some(id)
+    {
+        return Err("This meeting is still recording or writing its notes".into());
+    }
+    let _edits = state.edits.lock().unwrap_or_else(|e| e.into_inner());
+    change(&state.root)
 }
 
 #[tauri::command]
@@ -47,8 +93,8 @@ pub(crate) async fn open_action_items(
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub(crate) fn importing(state: tauri::State<'_, Library>) -> bool {
-    state.importing.load(Ordering::SeqCst)
+pub(crate) fn importing(state: tauri::State<'_, Library>) -> Option<Job> {
+    state.job.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 const MEDIA: &[&str] = &[
@@ -80,7 +126,12 @@ pub(crate) async fn import_file(
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("A meeting is already being processed".into());
     }
+    motet_core::tools::reset();
     state.importing.store(true, Ordering::SeqCst);
+    state.set_job(Some(Job {
+        id: None,
+        import: true,
+    }));
     refresh_tray(&app);
     let _ = app.emit("motet://library-changed", ());
     let worker = app.clone();
@@ -99,8 +150,15 @@ pub(crate) async fn import_file(
                 file.into_path().map_err(|e| e.to_string())?
             }
         };
-        let root = &worker.state::<Library>().root;
-        library::import(root, &source).map(Some)
+        let library = worker.state::<Library>();
+        // The meeting shows in the list as soon as its folder exists; the rest of the app stays usable.
+        library::import(&library.root, &source, |id| {
+            library.set_job(Some(Job {
+                id: Some(id.into()),
+                import: true,
+            }));
+            let _ = worker.emit("motet://library-changed", ());
+        })
     })
     .await
     .map_err(|e| e.to_string())
@@ -116,6 +174,7 @@ pub(crate) async fn import_file(
             format!("Notes are ready, but audio retention failed: {error}"),
         );
     }
+    state.set_job(None);
     state.importing.store(false, Ordering::SeqCst);
     state.busy.store(false, Ordering::SeqCst);
     refresh_tray(&app);
@@ -138,6 +197,20 @@ pub(crate) async fn import_file(
         app.exit(0);
     }
     result
+}
+
+/// Cancel on the import's progress page: the running tool stops and the half-made meeting goes.
+#[tauri::command]
+pub(crate) fn cancel_import(state: tauri::State<'_, Library>) {
+    if state
+        .job
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .is_some_and(|job| job.import)
+    {
+        motet_core::tools::cancel();
+    }
 }
 
 #[tauri::command]

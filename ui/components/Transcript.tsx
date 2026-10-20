@@ -11,7 +11,7 @@ const mac = () => typeof navigator !== "undefined" && /Mac/.test(navigator.platf
 // As in the mockup: the time plays from its line; the words are the line's text, edited in place
 // (SPEC 7.11). The speaker and time never change; an emptied line is removed but keeps its place,
 // and what was heard stays one click away (Revert).
-export default function Transcript({id, text, heard, marks, locked = false, onSeek, onReplay, onChange, onError, position}: {id: string; text: string; heard: string; marks: number[]; locked?: boolean; onSeek?: (ms: number) => void; onReplay?: (start: number, end: number) => void; onChange: (text: string, heard: string) => void; onError: (error: string) => void; position?: number}) {
+export default function Transcript({id, text, heard, marks, locked = false, onSeek, onReplay, onTogglePlay, onChange, onError, position}: {id: string; text: string; heard: string; marks: number[]; locked?: boolean; onSeek?: (ms: number) => void; onReplay?: (start: number, end: number) => void; onTogglePlay?: () => void; onChange: (text: string, heard: string) => void; onError: (error: string) => void; position?: number}) {
   const lines = transcriptLines(text, marks);
   const heardLines = heard ? transcriptLines(heard, []) : null;
   const [focused, setFocused] = useState(-1);
@@ -36,6 +36,36 @@ export default function Transcript({id, text, heard, marks, locked = false, onSe
     el.focus(); const r = document.createRange(); r.selectNodeContents(el); r.collapse(start);
     const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(r);
   }
+  // The keyboard (owner 2026-10-20): ↑↓ move between lines, Space plays or pauses, ↩ edits the
+  // line, ⌥↩ plays it. A line is a focusable row, so a line with no time (disabled button) counts.
+  const row = (index: number) => box.current?.querySelector<HTMLElement>(`[data-line="${index}"]`);
+  function go(index: number) {
+    const target = row(Math.max(0, Math.min(lines.length - 1, index)));
+    target?.focus({preventScroll: true}); target?.scrollIntoView({block: "nearest"});
+  }
+  // While editing: ↑ on the first visual line goes to the line above (caret at its end), ↓ on the
+  // last to the line below, as the notes do; elsewhere the caret moves as usual.
+  function atEdge(el: HTMLElement, up: boolean) {
+    const sel = getSelection(); if (!sel?.rangeCount) return true;
+    const caret = sel.getRangeAt(0).cloneRange(); caret.collapse(up);
+    const at = caret.getClientRects()[0]; if (!at) return true;
+    const edge = el.getBoundingClientRect(), line = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    return up ? at.top - edge.top < line * 0.75 : edge.bottom - at.bottom < line * 0.75;
+  }
+  function editNext(from: number, step: 1 | -1) {
+    for (let i = from + step; i >= 0 && i < lines.length; i += step) { const w = words(i); if (w) { caretAt(w, step === 1); return true; } }
+    return false;
+  }
+  // Space and the arrows also work before anything in the list has focus.
+  useEffect(() => {
+    const keys = (e: KeyboardEvent) => {
+      if (e.target !== document.body || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === " ") { e.preventDefault(); onTogglePlay?.(); }
+      else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); go(playing >= 0 ? playing : 0); }
+    };
+    document.addEventListener("keydown", keys);
+    return () => document.removeEventListener("keydown", keys);
+  });
   // ⌘Z / Ctrl+Z with no caret in a line undoes the last saved line edit.
   useEffect(() => {
     const undo = (e: KeyboardEvent) => {
@@ -51,13 +81,22 @@ export default function Transcript({id, text, heard, marks, locked = false, onSe
   const editable = !locked;
   return <div className="transcript-edit">
     <div ref={box} className="tlist" tabIndex={0} role="document" aria-label={locked ? s.transcriptLockedLabel : s.transcriptLabel}
-      onKeyDown={event => { if (event.key === "Enter" && event.target === box.current) { event.preventDefault(); const w = words(0); if (w) caretAt(w, false); } }}>
+      onKeyDown={event => {
+        const target = event.target as HTMLElement;
+        if (target.isContentEditable || target.closest(".epop, .rmv") || event.metaKey || event.ctrlKey) return;
+        const at = target.closest<HTMLElement>(".tline") ? Number(target.closest<HTMLElement>(".tline")!.dataset.line) : -1;
+        const here = at >= 0 ? at : playing >= 0 ? playing : 0;
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); go(at < 0 ? here : here + (event.key === "ArrowDown" ? 1 : -1)); }
+        else if (event.key === " ") { event.preventDefault(); onTogglePlay?.(); }
+        else if (event.key === "Enter" && event.altKey) { event.preventDefault(); const line = lines[here], next = lines.slice(here + 1).find(l => l.ms !== null)?.ms; if (line?.ms != null) onReplay?.(line.ms, next ?? line.ms + 8000); }
+        else if (event.key === "Enter" && (at >= 0 || target === box.current)) { event.preventDefault(); const w = words(here); if (w) caretAt(w, false); }
+      }}>
       {lines.map((line, index) => {
         const side = line.speaker === "You" ? "me" : "them", original = heardLines?.[index]?.text ?? line.text;
         const removed = !line.text.trim() && !!original.trim(), edited = !!heardLines && line.text !== original;
         const next = lines.slice(index + 1).find(l => l.ms !== null)?.ms;
         const seek = onSeek && line.ms !== null ? () => onSeek(line.ms!) : undefined;
-        return <div className={`tline ${side}${index === playing && index !== focused ? " playing" : ""}${edited ? " edited" : ""}${removed ? " removed" : ""}`} key={index} data-line={index}>
+        return <div className={`tline ${side}${index === playing && index !== focused ? " playing" : ""}${edited ? " edited" : ""}${removed ? " removed" : ""}`} key={index} data-line={index} tabIndex={-1}>
           <button className="ts" disabled={!seek} onClick={seek} aria-label={`Play from ${line.time}`}>{line.time}</button><span className={`who ${side}`}>{line.speaker}</span>
           <span className="tx">
             {removed
@@ -73,7 +112,13 @@ export default function Transcript({id, text, heard, marks, locked = false, onSe
                     const el = event.currentTarget;
                     if (event.key === "Enter" && event.altKey) { event.preventDefault(); if (line.ms !== null) onReplay?.(line.ms, next ?? line.ms + 8000); return; }
                     if (event.key === "Enter") { event.preventDefault(); el.blur(); const w = words(index + 1); if (w) caretAt(w, true); return; }
-                    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const back = handBack(box.current); el.blur(); back(); }
+                    if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+                      const up = event.key === "ArrowUp";
+                      if (atEdge(el, up)) { event.preventDefault(); el.blur(); if (!editNext(index, up ? -1 : 1)) caretAt(el, !up); }
+                      return;
+                    }
+                    // Esc leaves the line selected, so ↑↓ carry on from it.
+                    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); const back = handBack(el.closest<HTMLElement>(".tline")); el.blur(); back(); }
                   }}/>}
             <span className="tx-end">{line.marks.map(mark => <span className="flag" key={mark} title={`${s.marked} ${elapsedLabel(mark)}`}>⚑ {s.mark}</span>)}
               {edited && !removed && <span className="edw"><button className="edot" aria-label={`${s.lineEdited} ${original}`}/><span className="epop" role="tooltip"><span>{s.lineEdited} <q>{original}</q></span>{editable && <button className="doc-action" onMouseDown={event => event.preventDefault()} onClick={() => void save(index, original)}>{s.revert}</button>}</span></span>}

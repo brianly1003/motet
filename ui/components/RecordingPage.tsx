@@ -54,6 +54,7 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
       <span className="sp"/>
       {stopped || paused
         ? <><button className="doc-action primary" disabled={pending || (stopped && remaining === 0)} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>
+          {stopped && <button className="doc-action ghost" disabled={pending || remaining === 0} title={s.pillDiscardTitle} onClick={() => act(ipc.discardRecording)}>{s.pillDiscard}</button>}
           {paused && <button className="doc-action danger" disabled={pending} onClick={() => act(async () => { await flush.current(); await ipc.stopRecording(); })}>{s.pillStop}</button>}</>
         : <><button className="doc-action ghost" disabled={pending} title={`${s.markMoment} (⌃⌥M)`} onClick={() => act(async () => setMarked(await ipc.markMoment()))}>⚑ Mark</button>
           <button className="doc-action ghost" disabled={pending} title={s.pauseTitle} onClick={() => act(async () => { await flush.current(); await ipc.pauseRecording(); })}><PauseIcon/> {s.pause}</button>

@@ -387,6 +387,85 @@ fn idle_mic_timeout_resets_on_activity_and_ignores_repeat_idle_signals() {
 }
 
 #[test]
+fn discard_in_the_stopped_pill_trashes_the_meeting_and_offers_undo_for_five_seconds() {
+    let s = recording();
+    // Discard is only for a stopped recording: while recording or paused it does nothing.
+    let (same, effects) = step(s.clone(), 30_000, Command::DiscardRecording);
+    assert_eq!(same.app.state, SessionState::Recording);
+    assert!(work(effects).is_empty());
+    let s = step(s, 30_000, Command::StopRecording).0;
+    assert!(matches!(s.app.state, SessionState::Stopped { .. }));
+    let (s, effects) = step(s, 32_000, Command::DiscardRecording);
+    assert_eq!(s.app.state, SessionState::Idle);
+    assert_eq!(
+        work(effects),
+        vec![Effect::Trash {
+            meeting_id: "m1".into()
+        }]
+    );
+    assert_eq!(
+        s.app.discarded,
+        Some(Discarded {
+            meeting_id: "m1".into(),
+            until_ms: 37_000
+        })
+    );
+    assert!(s.app.companion.visible, "the Pill stays for the Undo");
+    // The grace deadline has gone with the meeting: no notes are written later.
+    let (s, effects) = step(s, 45_000, Command::Tick);
+    assert!(
+        !work(effects)
+            .iter()
+            .any(|e| matches!(e, Effect::Finish { .. }))
+    );
+    assert_eq!(s.app.discarded, None);
+    assert!(!s.app.companion.visible);
+    // Undo ends the offer at once.
+    let s = step(recording(), 30_000, Command::StopRecording).0;
+    let s = step(s, 31_000, Command::DiscardRecording).0;
+    let s = step(s, 32_000, Command::UndoDiscard).0;
+    assert_eq!(s.app.discarded, None);
+}
+
+#[test]
+fn the_idle_stop_is_published_and_keep_recording_turns_it_off_until_the_mic_returns() {
+    let s = recording();
+    assert_eq!(s.app.stops_at_ms, None, "someone is talking");
+    // The call's app lets go of the mic at 10 s of recording: it stops at 40 s on the clock.
+    let s = step(s, 10_001, mic(false)).0;
+    assert_eq!(s.app.stops_at_ms, Some(s.app.elapsed_ms + 30_000));
+    let s = step(s, 25_001, Command::Tick).0;
+    assert_eq!(
+        s.app.stops_at_ms,
+        Some(40_000),
+        "the deadline holds still between ticks"
+    );
+    let (s, effects) = step(s, 26_000, Command::KeepRecording);
+    assert_eq!(s.app.stops_at_ms, None);
+    assert!(work(effects).is_empty());
+    // Quiet and the call's end no longer stop it...
+    let s = step(s, 27_000, mic(false)).0;
+    let s = step(
+        s,
+        28_000,
+        Command::CallEnded {
+            call_id: "c1".into(),
+        },
+    )
+    .0;
+    let s = step(s, 200_000, Command::Tick).0;
+    assert_eq!(s.app.state, SessionState::Recording);
+    assert_eq!(s.app.stops_at_ms, None);
+    // ...until the mic comes back; the next quiet counts down again.
+    let s = step(s, 201_000, mic(true)).0;
+    let s = step(s, 202_000, mic(false)).0;
+    assert!(s.app.stops_at_ms.is_some());
+    let s = step(s, 232_000, Command::Tick).0;
+    assert!(matches!(s.app.state, SessionState::Stopped { .. }));
+    assert_eq!(s.app.stops_at_ms, None);
+}
+
+#[test]
 fn manual_recording_idle_stops_on_any_app_but_a_call_ignores_other_apps() {
     let idle_zoom = |s: Session| {
         let s = step(s, 1_000, mic(false)).0;

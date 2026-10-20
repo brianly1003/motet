@@ -5,11 +5,12 @@ import type {Settings} from '@/lib/bindings/Settings';
 import {fileSize} from '@/lib/document';
 import NotificationPermission from '@/components/NotificationPermission';
 
+const CALL_ORDER=['zoom','teams','teams_classic','meet','whatsapp','telegram','browser','slack','webex','facetime'];
 const TABS=['General','Calls','Models','Spellings','Privacy','About'];
 const SHORTCUTS:Record<string,string>={S:'Start or stop',M:'Mark this moment',J:'Jot a note',N:'Open my notes',Space:'Tuck to the edge',H:'Sharing mode',P:'Peek while sharing'};
 function Row({label,help,children}:{label:string;help?:string;children:ReactNode}){return <div className="formrow"><span className="lbl">{label}</span><div>{children}{help&&<div className="help">{help}</div>}</div></div>;}
 function Switch({label,on,change}:{label:string;on:boolean;change:(value:boolean)=>void}){return <label className="switch"><input type="checkbox" aria-label={label} checked={on} onChange={e=>change(e.target.checked)}/><span/></label>;}
-const LANGUAGES=[['en','English'],['vi','Tiếng Việt'],['zh','中文'],['ja','日本語']];
+const LANGUAGES=[['en','English'],['vi','Tiếng Việt'],['zh','中文'],['ja','日本語']] as const;
 export default function SettingsPage(){
   const [tab,setTab]=useState('General');
   const [settings,setSettings]=useState<Settings|null>(null);
@@ -18,6 +19,7 @@ export default function SettingsPage(){
   const [storage,setStorage]=useState<ipc.StorageSummary|null>(null);
   const [info,setInfo]=useState<{version:string;licences:string;platform:string}|null>(null);
   const [pending,setPending]=useState(false);
+  const [working,setWorking]=useState('Saving…');
   const [error,setError]=useState('');
   const [saved,setSaved]=useState('');
   const [wipe,setWipe]=useState(false);
@@ -34,6 +36,7 @@ export default function SettingsPage(){
     if(!ipc.desktopAvailable()){setError('Open Settings in the Motet desktop app.');return;}
     let active=true;const off:Array<()=>void>=[];
     void refresh().catch(e=>setError(String(e)));
+    void ipc.about().then(setInfo).catch(e=>setError(String(e)));
     Promise.all([ipc.subscribe('motet://settings-changed',()=>{if(!saving.current)void refresh().catch(e=>setError(String(e)));}),ipc.onSettingsTab(value=>{const match=TABS.find(t=>t.toLowerCase()===value);if(match)setTab(match);})]).then(callbacks=>{if(active)off.push(...callbacks);else callbacks.forEach(fn=>fn());}).catch(e=>setError(String(e)));
     return()=>{active=false;off.forEach(fn=>fn());clearTimeout(timer.current);};
   },[]);
@@ -44,9 +47,9 @@ export default function SettingsPage(){
     if(tab==='Privacy')void ipc.storageSummary().then(setStorage).catch(e=>setError(String(e)));
     if(tab==='About')void ipc.about().then(setInfo).catch(e=>setError(String(e)));
   },[tab]);
-  async function action(run:()=>Promise<unknown>,message='Saved'){
+  async function action(run:()=>Promise<unknown>,message='Saved',workingMessage='Saving…'){
     if(saving.current)return;
-    saving.current=true;setPending(true);setError('');setSaved('');clearTimeout(timer.current);
+    saving.current=true;setPending(true);setWorking(workingMessage);setError('');setSaved('');clearTimeout(timer.current);
     try{await run();await refresh();setSaved(message);timer.current=setTimeout(()=>setSaved(''),1400);}
     catch(e){setError(String(e));await refresh().catch(()=>{});}
     finally{saving.current=false;setPending(false);}
@@ -64,7 +67,7 @@ export default function SettingsPage(){
       {error&&<div className="note settings-error" role="alert">{error}</div>}
       {!settings?<p role="status">{error?'Settings are unavailable.':'Loading settings…'}</p>:<fieldset disabled={pending} className="settings-fields">
       {tab==='General'&&<>
-        <Row label="Notes folder" help="Each meeting is a folder with notes.md, transcript.txt and the two audio tracks."><div className="field"><input type="text" readOnly value={settings.notes_folder} aria-label="Notes folder" style={{width:300}}/><button className="btn sm" onClick={()=>void action(()=>ipc.moveNotesFolder(),'Folder moved')}>Choose…</button></div><div className="help">Choose an empty folder. Motet verifies the copy and reopens there. Original files are kept for recovery.</div></Row>
+        <Row label="Notes folder" help="Each meeting is a folder with notes.md, transcript.txt and the two audio tracks."><div className="field"><input type="text" readOnly value={settings.notes_folder} aria-label="Notes folder" style={{width:300}}/><button className="btn sm" onClick={()=>void action(()=>ipc.moveNotesFolder(),'Folder moved','Copying and verifying meetings…')}>Choose…</button></div><div className="help">Choose an empty folder. Motet verifies the copy and reopens there. Original files are kept for recovery.</div></Row>
         <Row label="Open at login" help="Motet waits quietly in the menu bar. Takes effect at the next login."><Switch label="Open at login" on={settings.open_at_login} change={value=>void save({open_at_login:value})}/></Row>
         <Row label="Notes language"><div className="field"><select aria-label="Notes language" value={settings.notes_language} onChange={e=>void save({notes_language:e.target.value})}><option value="same_as_call">Same as the call</option>{LANGUAGES.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div></Row>
         <Row label="During a call" help="The companion is always visible while recording; it can shrink to a dot or the screen edge, never disappear."><div className="field"><select aria-label="Companion size when a recording starts" value={settings.companion.default_size} onChange={e=>void save({companion:{...settings.companion,default_size:e.target.value}})}><option value="pill">Pill</option><option value="dot">Dot</option></select><Switch label="Show the latest line in the Pill" on={settings.companion.captions} change={captions=>void save({companion:{...settings.companion,captions}})}/><span>Show the latest line</span></div></Row>
@@ -74,16 +77,16 @@ export default function SettingsPage(){
       </>}
       {tab==='Calls'&&<>
         <Row label="Ask when a call starts" help="Motet asks every time. Nothing is recorded until you choose Record. Turn this off to record only with Record now."><Switch label="Ask when a call starts" on={settings.ask_on_call} change={on=>void action(()=>ipc.setAskOnCall(on))}/></Row>
-        <Row label="Call apps" help="Voice messages don't count: messaging apps must also play sound for 5 seconds."><div className="tbl"><table><thead><tr><th>App</th><th>Counts as a call when</th><th>When a call starts</th></tr></thead><tbody>{apps.filter(app=>app.app_id!=='teams_classic'&&(info?.platform!=='windows'||app.app_id!=='facetime')).map(app=><tr key={app.app_id}><td>{app.app_id==='browser'?'Other browser calls':app.name}</td><td>{app.app_id==='meet'?'a browser window titled "Meet"':app.single_signal?'it uses the mic':app.app_id==='browser'?'a browser uses the mic and plays sound':'it uses the mic and plays sound'}</td><td><select aria-label={`When ${app.name} starts a call`} value={app.mode} onChange={e=>void action(()=>ipc.setAppMode(app.app_id,e.target.value as 'ask'|'off'))}><option value="ask">Ask</option><option value="off">Off</option></select></td></tr>)}</tbody></table></div><div className="field settings-add"><button className="btn sm" onClick={()=>void action(async()=>setRecent(await ipc.recentMicApps()),'')}>Add app…</button><span className="help">Lists apps that used the microphone this week.</span></div>{recent&&<div className="note">{recent.length?recent.map(id=><div className="field" key={id}><span>{id}</span><button className="btn sm" onClick={()=>void action(async()=>{await ipc.addApp(id);setRecent(null);})}>Add {id}</button></div>):<span>No new microphone apps have been seen this week.</span>}<button className="btn sm ghost" onClick={()=>setRecent(null)}>Cancel</button></div>}</Row>
+        <Row label="Call apps" help="Voice messages don't count: messaging apps must also play sound for 5 seconds."><div className="tbl"><table><thead><tr><th>App</th><th>Counts as a call when</th><th>When a call starts</th></tr></thead><tbody>{apps.filter(app=>info?.platform!=='windows'||app.app_id!=='facetime').sort((a,b)=>(CALL_ORDER.includes(a.app_id)?CALL_ORDER.indexOf(a.app_id):99)-(CALL_ORDER.includes(b.app_id)?CALL_ORDER.indexOf(b.app_id):99)).map(app=><tr key={app.app_id}><td>{app.app_id==='browser'?'Other browser calls':app.app_id==='slack'?'Slack huddles':app.name}</td><td>{app.app_id==='meet'?'a browser window titled "Meet"':app.single_signal?'it uses the mic':app.app_id==='browser'?'a browser uses the mic and plays sound':'it uses the mic and plays sound'}</td><td><select aria-label={`When ${app.name} starts a call`} value={app.mode} onChange={e=>void action(()=>ipc.setAppMode(app.app_id,e.target.value as 'ask'|'off'))}><option value="ask">Ask</option><option value="off">Off</option></select></td></tr>)}</tbody></table></div><div className="field settings-add"><button className="btn sm" onClick={()=>void action(async()=>setRecent(await ipc.recentMicApps()),'')}>Add app…</button><span className="help">Lists apps that used the microphone this week.</span></div>{recent&&<div className="note">{recent.length?recent.map(id=><div className="field" key={id}><span>{id}</span><button className="btn sm" onClick={()=>void action(async()=>{await ipc.addApp(id);setRecent(null);})}>Add {id}</button></div>):<span>No new microphone apps have been seen this week.</span>}<button className="btn sm ghost" onClick={()=>setRecent(null)}>Cancel</button></div>}</Row>
         <Row label="Stop when the mic is quiet for"><div className="field">{number('Idle seconds','idle_stop_s',10,300)}<span>seconds</span></div></Row>
         <Row label="Discard recordings shorter than" help="0 keeps every recording."><div className="field">{number('Discard seconds','discard_short_s',0,120)}<span>seconds</span></div></Row>
       </>}
       {tab==='Models'&&<>
         <Row label="Speech"><div className="field"><select aria-label="Speech model" value={settings.speech_model} onChange={e=>void save({speech_model:e.target.value})}><option value="">Choose an installed model</option>{Array.from(new Set([settings.speech_model,...models.speech])).filter(Boolean).map(path=><option key={path} value={path}>{path.split(/[\\/]/).at(-1)}</option>)}</select><span className="chip plain">Local</span><button className="btn sm" onClick={()=>void action(async()=>{const path=await ipc.pickSpeechModel();if(path)await ipc.saveSettings({...settings,speech_model:path});})}>Choose…</button></div></Row>
         <Row label="Notes"><div className="field"><select aria-label="Notes model" value={settings.notes_model} onChange={e=>void save({notes_model:e.target.value})}><option value="">Choose an installed model</option>{Array.from(new Set([settings.notes_model,...models.notes])).filter(Boolean).map(name=><option key={name}>{name}</option>)}</select></div>{models.warning&&<div className="help" role="status">{models.warning}</div>}</Row>
-        <Row label="Call language" help="Detect handles mixed-language calls; pick one if detection guesses wrong."><div className="field"><select aria-label="Call language" value={settings.call_language} onChange={e=>void save({call_language:e.target.value})}><option value="detect">Detect</option>{LANGUAGES.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div></Row>
+        <Row label="Call language" help="Detect handles mixed-language calls; pick one if detection guesses wrong."><div className="field"><select aria-label="Call language" value={settings.call_language} onChange={e=>void save({call_language:e.target.value})}><option value="detect">Detect</option>{LANGUAGES.map(([id,label])=><option key={id} value={id}>{{en:'English',vi:'Vietnamese',zh:'Chinese',ja:'Japanese'}[id]??label}</option>)}</select></div></Row>
         <Row label="Long calls"><div className="field"><span>Summarize in parts of</span>{number('Part size in characters','part_chars',8000,48000)}<span>characters</span></div></Row>
-        <div className="note">{speed===null?'No speed test run in this window.':`Last speed test: ${speed.toFixed(2)}× real time. ${speed<=.5?'This speech model keeps up live.':'This speech model may fall behind with two tracks.'}`} <button className="btn sm" onClick={()=>void action(async()=>setSpeed(await ipc.runSpeedTest()),'Speed test complete')}>Run the speed test again</button><div className="help">Uses a generated local English sample, without recording. Model downloads and tier setup are not available in this build.</div></div>
+        <div className="note">{speed===null?'No speed test run in this window.':`Last speed test: ${speed.toFixed(2)}× real time. ${speed<=.5?'This speech model keeps up live.':'This speech model may fall behind with two tracks.'}`} <button className="btn sm" onClick={()=>void action(async()=>setSpeed(await ipc.runSpeedTest()),'Speed test complete','Running the speed test…')}>Run the speed test again</button><div className="help">Uses a generated local English sample, without recording. Model downloads and tier setup are not available in this build.</div></div>
       </>}
       {tab==='Spellings'&&<>
         <p className="settings-intro">Names and terms the models can&apos;t know. Add spellings here for future meetings. Motet uses up to 40 names as data for local speech and notes models.</p>
@@ -94,8 +97,8 @@ export default function SettingsPage(){
         <div className="note"><b>Everything stays on this {info?.platform==='windows'?'PC':'Mac'}.</b> No account, no analytics, no crash reports. The network is used only to download models when you ask.</div>
         <Row label="Keep audio" help="Notes and transcripts are kept until you delete them. Retention runs after notes finish and when Motet opens."><div className="field"><select aria-label="Keep audio" value={settings.keep_audio} onChange={e=>void save({keep_audio:e.target.value})}><option value="30_days">30 days after the notes</option><option value="forever">Until I delete the meeting</option><option value="after_notes">Delete right after the notes</option></select></div></Row>
         <Row label="Recording reminder" help={'Shows "Tell the people on the call" when Motet asks to record.'}><Switch label="Recording reminder" on={settings.recording_reminder} change={recording_reminder=>void save({recording_reminder})}/></Row>
-        <Row label="Storage"><dl className="kv settings-storage"><dt>Meetings</dt><dd>{storage?.meetings??'…'}</dd><dt>Audio</dt><dd>{storage?fileSize(storage.audio):'…'}</dd><dt>Notes and transcripts</dt><dd>{storage?fileSize(storage.documents):'…'}</dd><dt>Free on disk</dt><dd>{storage?fileSize(storage.free):'…'}</dd></dl></Row>
-        <Row label="Delete everything"><div className="field">{wipe?<><span>Delete {storage?.meetings??'all'} meetings and {storage?fileSize(storage.audio):'all'} of audio? This can&apos;t be undone. Recently deleted meetings are included.</span><button className="btn sm rec" onClick={()=>void action(async()=>{await ipc.deleteAllMeetings();setStorage(await ipc.storageSummary());setWipe(false);},'All meetings deleted')}>Delete all</button><button className="btn sm ghost" onClick={()=>setWipe(false)}>Cancel</button></>:<button className="btn sm" disabled={!storage?.meetings} onClick={()=>setWipe(true)}>Delete all meetings…</button>}</div></Row>
+        <Row label="Storage"><dl className="kv settings-storage"><dt>Meetings</dt><dd>{storage?.meetings??'…'}</dd><dt>Audio</dt><dd>{storage?fileSize(storage.audio_bytes):'…'}</dd><dt>Notes and transcripts</dt><dd>{storage?fileSize(storage.notes_bytes):'…'}</dd><dt>Free on disk</dt><dd>{storage?fileSize(storage.free_bytes):'…'}</dd></dl></Row>
+        <Row label="Delete everything"><div className="field">{wipe?<><span>Delete {storage?.meetings??'all'} meetings and {storage?fileSize(storage.audio_bytes):'all'} of audio? This can&apos;t be undone. Recently deleted meetings are included.</span><button className="btn sm rec" onClick={()=>void action(async()=>{await ipc.deleteAllMeetings();setStorage(await ipc.storageSummary());setWipe(false);},'All meetings deleted')}>Delete all</button><button className="btn sm ghost" onClick={()=>setWipe(false)}>Cancel</button></>:<button className="btn sm" disabled={!storage?.meetings} onClick={()=>setWipe(true)}>Delete all meetings…</button>}</div></Row>
         <NotificationPermission/>
       </>}
       {tab==='About'&&<>
@@ -105,7 +108,7 @@ export default function SettingsPage(){
         <Row label="Logs" help="Logs never contain transcript text."><button className="btn sm" onClick={()=>void action(ipc.openLogsFolder,'Logs folder opened')}>Show logs folder</button></Row>
       </>}
       </fieldset>}
-      <span className="saved" role="status" aria-live="polite">{pending?'Saving…':saved}</span>
+      <span className="saved" role="status" aria-live="polite">{pending?working:saved}</span>
     </section>
   </main>;
 }

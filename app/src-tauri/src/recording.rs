@@ -49,8 +49,13 @@ pub fn spawn(
                             continue;
                         };
                         let result = capture_part(&root, record, offset_ms, stop, |base, stop| {
-                            // The meeting exists from its first second: list it before capture.
+                            // The meeting exists from its first second: list it before capture, and
+                            // open it in the library (owner 2026-10-20: Record now from the tray
+                            // left the old meeting selected). Resume parts don't pull the view.
                             let _ = app.emit("motet://library-changed", ());
+                            if offset_ms == 0 {
+                                let _ = app.emit("motet://open-meeting", id.clone());
+                            }
                             crate::live::start(
                                 app.clone(),
                                 id.clone(),
@@ -159,6 +164,20 @@ pub fn spawn(
                         recording = None;
                         let _ = app.emit("motet://library-changed", ());
                     }
+                    Job::Trash { id } => {
+                        // Recoverable: Recently deleted keeps the audio and parts.json, and Write the
+                        // notes again transcribes them later. It still needs its notes, hence the status.
+                        let result = status(&root, &id, "NeedsAttention")
+                            .and_then(|_| crate::meeting_actions::move_meeting(&root, &id, false));
+                        if let Err(e) = result {
+                            let _ = app.emit(
+                                "motet://notice",
+                                format!("Couldn't discard the recording: {e}"),
+                            );
+                        }
+                        recording = None;
+                        let _ = app.emit("motet://library-changed", ());
+                    }
                     Job::Exit => {
                         allow_exit.store(true, Ordering::SeqCst);
                         app.exit(0);
@@ -221,6 +240,7 @@ fn create(root: &Path, id: &str) -> Result<PathBuf, String> {
                 notes_ms: None,
                 spellings: vec![],
                 locked: false,
+                title_source: Default::default(),
             },
         )?;
     }
@@ -242,6 +262,8 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
         return Err("No audio was captured. Check microphone and system audio permissions.".into());
     }
     status(root, &record.id, "Finishing")?;
+    // Cancel is for imports only; a late one must not stop these notes.
+    motet_core::tools::reset();
     let dir = library::folder(root, &record.id)?;
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         stage(Stage::Transcribing);
@@ -264,8 +286,9 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
         } else {
             String::new()
         };
-        summarize::notes(&dir.join("notes").to_string_lossy(), &text, &mine)?;
+        let title = summarize::notes(&dir.join("notes").to_string_lossy(), &text, &mine)?;
         let mut metadata = library::summary(root, &record.id)?;
+        metadata.titled(title);
         metadata.notes_ms = Some(started.elapsed().as_millis() as u64);
         metadata.spellings = spellings;
         library::save(root, &metadata)?;

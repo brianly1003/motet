@@ -61,7 +61,7 @@ struct Segment {
 }
 
 fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
-    let status = cmd.status()?;
+    let status = crate::tools::status(cmd)?;
     if !status.success() {
         return Err(format!("{cmd:?} failed: {status}").into());
     }

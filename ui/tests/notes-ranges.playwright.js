@@ -37,7 +37,7 @@ async (page) => {
   const before = await scroller();
   // WebKit scrolls a focused element's top into view; Chromium doesn't when it is partly visible,
   // so record how the container is focused as well as the scroll position.
-  await p.evaluate(() => { window.scrollingFocus = 0; const focus = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function (options) { if (this.matches('.notes, .tlist') && (!options?.preventScroll || getSelection().rangeCount)) window.scrollingFocus++; return focus.call(this, options); }; });
+  await p.evaluate(() => { window.scrollingFocus = 0; const focus = HTMLElement.prototype.focus; HTMLElement.prototype.focus = function (options) { if (this.matches('.notes, .tlist, .tline') && (!options?.preventScroll || getSelection().rangeCount)) window.scrollingFocus++; return focus.call(this, options); }; });
   at = await endOf(last); await p.mouse.click(at.x, at.y); await p.keyboard.type('!'); await p.keyboard.press('Escape'); await p.waitForTimeout(250);
   const after = await scroller();
   if (before === 0 || after !== before) failures.push(`Esc scrolled the notes: ${before} -> ${after}`);
@@ -45,7 +45,7 @@ async (page) => {
   // The same for a transcript line.
   await p.getByRole('tab', { name: 'Transcript' }).click(); await p.locator('.tline .words').first().click(); await p.keyboard.type('!'); await p.keyboard.press('Escape'); await p.waitForTimeout(250);
   if (await p.evaluate(() => window.scrollingFocus)) failures.push('Esc focuses the transcript in a way that scrolls');
-  if (!(await p.evaluate(() => document.activeElement.matches('.tlist')))) failures.push('Esc did not hand focus to the transcript');
+  if (!(await p.evaluate(() => document.activeElement.matches('.tline')))) failures.push('Esc did not leave its line selected');
   await p.close();
   if (failures.length || errs.length) throw Error(JSON.stringify({ failures, errs }));
   return 'ok';

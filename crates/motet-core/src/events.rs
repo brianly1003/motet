@@ -46,6 +46,21 @@ pub struct AppState {
     pub sharing: Option<Sharing>,
     pub companion: CompanionState,
     pub ask_off_pending: Option<AskOffPending>,
+    /// While the call's app has let go of the mic: the recording time (`elapsed_ms`) at which it
+    /// stops by itself, so the Pill can count down. None while someone is talking or after Keep
+    /// recording (owner, 2026-10-20: "the call ended but Motet still records").
+    #[ts(type = "number | null")]
+    pub stops_at_ms: Option<u64>,
+    /// After Discard in the Stopped Pill: the meeting went to Recently deleted; the Pill offers
+    /// Undo until `until_ms` (owner, 2026-10-20).
+    pub discarded: Option<Discarded>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Discarded {
+    pub meeting_id: String,
+    #[ts(type = "number")]
+    pub until_ms: u64,
 }
 
 impl Default for AppState {
@@ -71,6 +86,8 @@ impl Default for AppState {
                 display_id: String::new(),
             },
             ask_off_pending: None,
+            stops_at_ms: None,
+            discarded: None,
         }
     }
 }
@@ -251,6 +268,12 @@ pub enum Command {
         record: bool,
     },
     StopRecording,
+    /// Turns off the idle stop until the call's app uses the mic again.
+    KeepRecording,
+    /// The Stopped Pill's Discard: no notes; the meeting goes to Recently deleted.
+    DiscardRecording,
+    /// The Pill's Undo after Discard ends the offer; the app restores and writes the notes.
+    UndoDiscard,
     PauseRecording,
     ResumeRecording,
     CallEnded {

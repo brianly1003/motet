@@ -1,6 +1,6 @@
 //! Transcript line edits (SPEC 7.11): only the text after `[mm:ss] Speaker: ` changes, and only in
 //! transcript.edited.txt; transcript.txt stays as heard.
-use crate::{library, library_commands::Library};
+use crate::library;
 use std::{
     fs,
     io::Write,
@@ -90,16 +90,11 @@ fn save(root: &Path, id: &str, index: usize, text: &str) -> Result<String, Strin
 #[tauri::command]
 pub fn save_transcript_line(
     app: tauri::AppHandle,
-    state: tauri::State<'_, Library>,
     id: String,
     index: usize,
     text: String,
 ) -> Result<String, String> {
-    if state.busy.swap(true, Ordering::SeqCst) {
-        return Err("Wait for the current recording or processing to finish".into());
-    }
-    let result = save(&state.root, &id, index, &text);
-    state.busy.store(false, Ordering::SeqCst);
+    let result = crate::library_commands::edit(&app, &id, |root| save(root, &id, index, &text));
     if result.is_ok() {
         let _ = app.emit("motet://library-changed", ());
     }

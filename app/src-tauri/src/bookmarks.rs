@@ -21,9 +21,15 @@ pub fn save(root: &Path, value: &MeetingSummary) -> Result<(), String> {
     if path.try_exists().map_err(|e| e.to_string())? {
         // Marks and the title belong to the user once the meeting exists; a worker's status
         // update must not undo a Mark or a rename made while the notes were being written.
+        // The notes model's title (SPEC 7.6) still goes through, unless the user named it meanwhile.
         let saved = library::summary(root, &value.id)?;
         value.marks_ms = saved.marks_ms;
-        value.title = saved.title;
+        if saved.title_source == library::TitleSource::User
+            || value.title_source != library::TitleSource::Model
+        {
+            value.title = saved.title;
+            value.title_source = saved.title_source;
+        }
         value.locked = saved.locked;
     }
     write(root, &value)
@@ -57,6 +63,7 @@ pub fn rename(root: &Path, id: &str, title: &str) -> Result<MeetingSummary, Stri
     }
     if value.title != title {
         value.title = title;
+        value.title_source = library::TitleSource::User;
         write(root, &value)?;
     }
     Ok(value)
@@ -194,6 +201,36 @@ mod tests {
         assert!(rename(&root, "../123", "Escape").is_err());
         assert!(rename(&root, "999", "Missing").is_err());
         assert_eq!(library::summary(&root, "123").unwrap().title, "Weekly sync");
+        // The notes model never replaces a title the user typed...
+        let mut worker = library::summary(&root, "123").unwrap();
+        worker.titled(Some("Model title".into()));
+        save(&root, &worker).unwrap();
+        assert_eq!(library::summary(&root, "123").unwrap().title, "Weekly sync");
+        // ...but names a placeholder, even from a summary read before it was saved, and may
+        // rename its own title on Write the notes again.
+        fs::write(
+            root.join("123/meeting.json"),
+            r#"{"id":"123","title":"Recorded meeting","created_ms":0,"status":"Finishing"}"#,
+        )
+        .unwrap();
+        for title in ["Keep FCM for IGB push", "FCM device table plan"] {
+            let mut worker = library::summary(&root, "123").unwrap();
+            worker.titled(Some(title.into()));
+            save(&root, &worker).unwrap();
+            let saved = library::summary(&root, "123").unwrap();
+            assert_eq!(
+                (saved.title.as_str(), saved.title_source),
+                (title, library::TitleSource::Model)
+            );
+        }
+        // No title from the model keeps what is there.
+        let mut worker = library::summary(&root, "123").unwrap();
+        worker.titled(None);
+        save(&root, &worker).unwrap();
+        assert_eq!(
+            library::summary(&root, "123").unwrap().title,
+            "FCM device table plan"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

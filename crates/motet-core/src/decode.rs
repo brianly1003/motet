@@ -71,6 +71,7 @@ fn convert(source: &Path, destination: &Path) -> Result<(), Box<dyn Error>> {
     let mut resample: Option<Mono> = None;
     let mut samples = Vec::<f32>::new();
     while let Some(packet) = format.next_packet()? {
+        crate::tools::check()?;
         if packet.track_id != track_id {
             continue;
         }
@@ -126,24 +127,25 @@ fn ffmpeg(source: &Path, destination: &Path, why: &dyn Error) -> Result<(), Box<
         arg.push(path.as_os_str());
         arg
     };
-    let status = crate::tools::command("ffmpeg")
-        .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
-        .args(["-protocol_whitelist", "file", "-y", "-i"])
-        .arg(local(source))
-        .args([
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-c:a",
-            "pcm_f32le",
-            "-f",
-            "wav",
-        ])
-        .arg(local(destination))
-        .stdin(Stdio::null())
-        .status();
+    let status = crate::tools::status(
+        crate::tools::command("ffmpeg")
+            .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+            .args(["-protocol_whitelist", "file", "-y", "-i"])
+            .arg(local(source))
+            .args([
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "pcm_f32le",
+                "-f",
+                "wav",
+            ])
+            .arg(local(destination))
+            .stdin(Stdio::null()),
+    );
     match status {
         Ok(status) if status.success() => Ok(()),
         Ok(status) => Err(format!("{why}; ffmpeg could not read it either ({status})").into()),
