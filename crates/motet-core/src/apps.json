@@ -1,0 +1,12 @@
+[
+  {"app_id": "zoom", "name": "Zoom", "mac_ids": ["us.zoom.xos"], "win_ids": ["Zoom.exe"], "title_patterns": [], "single_signal": true, "mode": "ask"},
+  {"app_id": "teams", "name": "Microsoft Teams", "mac_ids": ["com.microsoft.teams2"], "win_ids": ["ms-teams.exe"], "title_patterns": ["| Microsoft Teams"], "single_signal": true, "mode": "ask"},
+  {"app_id": "teams_classic", "name": "Microsoft Teams (classic)", "mac_ids": ["com.microsoft.teams"], "win_ids": ["Teams.exe"], "title_patterns": [], "single_signal": true, "mode": "ask"},
+  {"app_id": "meet", "name": "Google Meet", "mac_ids": [], "win_ids": [], "title_patterns": ["^Meet - ", " - Google Meet"], "single_signal": false, "mode": "ask"},
+  {"app_id": "whatsapp", "name": "WhatsApp", "mac_ids": ["net.whatsapp.WhatsApp", "desktop.WhatsApp"], "win_ids": ["WhatsApp.exe"], "title_patterns": [], "single_signal": false, "mode": "ask"},
+  {"app_id": "telegram", "name": "Telegram", "mac_ids": ["ru.keepcoder.Telegram", "org.telegram.desktop"], "win_ids": ["Telegram.exe"], "title_patterns": [], "single_signal": false, "mode": "ask"},
+  {"app_id": "slack", "name": "Slack", "mac_ids": ["com.tinyspeck.slackmacgap"], "win_ids": ["slack.exe"], "title_patterns": [], "single_signal": false, "mode": "off"},
+  {"app_id": "webex", "name": "Webex", "mac_ids": ["Cisco-Systems.Spark", "com.cisco.webexmeetingsapp"], "win_ids": ["CiscoCollabHost.exe", "atmgr.exe"], "title_patterns": [], "single_signal": false, "mode": "off"},
+  {"app_id": "facetime", "name": "FaceTime", "mac_ids": ["com.apple.FaceTime"], "win_ids": [], "title_patterns": [], "single_signal": false, "mode": "off"},
+  {"app_id": "browser", "name": "Browser", "mac_ids": ["com.google.Chrome", "com.apple.Safari", "com.apple.WebKit.WebContent", "org.mozilla.firefox", "com.microsoft.edgemac", "com.brave.Browser", "company.thebrowser.Browser", "com.operasoftware.Opera", "com.vivaldi.Vivaldi"], "win_ids": ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"], "title_patterns": [], "single_signal": false, "mode": "ask"}
+]

@@ -1,9 +1,6 @@
 //! Local OS notices with persistent in-app fallbacks and meeting-scoped actions.
-use crate::{
-    controller::{Action as SessionAction, Controller},
-    desktop,
-};
-use motet_core::events::{AppState, Event};
+use crate::{controller::Action as SessionAction, desktop};
+use motet_core::events::{AppState, Event, Problem, SessionState};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
@@ -48,27 +45,17 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), String> {
 
 pub fn send(app: &tauri::AppHandle, title: &str, body: &str) {
     // Delivery is asynchronous and Focus can suppress it; never use success as recording consent.
-    if let Err(error) = app.notification().builder().title(title).body(body).show() {
-        eprintln!("Motet notification: {error}");
+    if !quiet(app, title, body) {
         desktop::show(app);
     }
 }
-
-pub fn recording(app: &tauri::AppHandle) {
-    if let Ok(state) = app.state::<Controller>().state() {
-        let mut notice = app
-            .notification()
-            .builder()
-            .title("Recording this call")
-            .body("Recording microphone and system audio. Tell the people on the call.")
-            .action_type_id("recording");
-        if let Some(id) = state.meeting_id {
-            notice = notice.extra("meeting_id", id);
-        }
-        if let Err(error) = notice.show() {
-            eprintln!("Motet notification: {error}");
-        }
+/// A notification with no window fallback; `false` when the OS refused it.
+pub fn quiet(app: &tauri::AppHandle, title: &str, body: &str) -> bool {
+    let result = app.notification().builder().title(title).body(body).show();
+    if let Err(error) = &result {
+        eprintln!("Motet notification: {error}");
     }
+    result.is_ok()
 }
 
 pub fn event(app: &tauri::AppHandle, event: &Event) {
@@ -96,7 +83,18 @@ fn problem(app: &tauri::AppHandle, state: &AppState) {
     let managed = app.state::<State>();
     if let Ok(mut previous) = managed.0.lock() {
         let next = state.problem.as_ref().map(|p| p.id);
-        if next != *previous && next.is_some() {
+        // A start blocker while idle was already told by its own notice: the library for a
+        // pressed Record, a quiet `cant_record` for a detected call (no window mid-call).
+        let blocker = state.state == SessionState::Idle
+            && state.problem.as_ref().is_some_and(|p| {
+                matches!(
+                    p.problem,
+                    Problem::DiskFull
+                        | Problem::PermissionMissing { .. }
+                        | Problem::ModelMissing { .. }
+                )
+            });
+        if next != *previous && next.is_some() && !blocker {
             send(
                 app,
                 "Motet needs attention",

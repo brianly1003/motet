@@ -3,7 +3,8 @@
 use crate::events::*;
 
 const GRACE_MS: u64 = 10_000;
-const ASK_MS: u64 = 60_000;
+/// The Ask card fades to the Pill after this long (DESIGN 4.2); the question itself never times out.
+const ASK_CARD_MS: u64 = 20_000;
 /// One reminder when a pause runs this long, so a forgotten pause doesn't lose the meeting.
 const PAUSE_REMIND_MS: u64 = 15 * 60_000;
 const GB: u64 = 1_000_000_000;
@@ -22,11 +23,12 @@ pub enum Effect {
     NotifyRecording {
         reason: StartReason,
     },
-    NotifyAsk {
-        call: Call,
-    },
     NotifyProblem {
         id: u64,
+    },
+    /// A detected call can't be asked about: an OS notice only, nothing pulled forward (SPEC 7.5).
+    CantRecord {
+        problem: Problem,
     },
     NotifyShort {
         seconds: u32,
@@ -52,6 +54,7 @@ pub enum Effect {
         app_id: String,
         mode: Mode,
     },
+    SetAskOnCall(bool),
     AudioPaused {
         meeting_id: String,
         at_ms: u64,
@@ -73,7 +76,8 @@ pub enum Effect {
 struct PendingAsk {
     call: Call,
     meeting_id: String,
-    until_ms: u64,
+    /// None while the pointer holds the card.
+    card_until_ms: Option<u64>,
 }
 
 /// Reducer state, including private timers and the full problem queue behind `AppState`.
@@ -84,6 +88,8 @@ pub struct Session {
     pub idle_stop_s: u32,
     readiness: Readiness,
     ask: Option<PendingAsk>,
+    /// A call detected while the last meeting's notes were written; asked once they are done.
+    queued: Option<(Call, String)>,
     call: Option<Call>,
     apps: Vec<String>,
     problems: Vec<ProblemInfo>,
@@ -104,6 +110,7 @@ impl Session {
             idle_stop_s: 30,
             readiness,
             ask: None,
+            queued: None,
             call: None,
             apps: Vec::new(),
             problems: Vec::new(),
@@ -127,7 +134,6 @@ impl Session {
         self.app.app = None;
         self.app.elapsed_ms = 0;
         self.app.started_by = None;
-        self.app.never_pending = None;
         self.ask = None;
         self.call = None;
         self.apps.clear();
@@ -154,13 +160,7 @@ impl Session {
         id
     }
 
-    fn can_start(
-        &mut self,
-        notes_only: bool,
-        automatic: bool,
-        since: &str,
-        effects: &mut Vec<Effect>,
-    ) -> bool {
+    fn can_start(&mut self, notes_only: bool, since: &str, effects: &mut Vec<Effect>) -> bool {
         let mut blocked = Vec::new();
         if self.readiness.free_bytes < GB {
             blocked.push(Problem::DiskFull);
@@ -187,13 +187,6 @@ impl Session {
                     kind: ModelKind::Speech,
                 });
             }
-            if automatic && !self.readiness.notifications {
-                self.app.auto_start = false;
-                blocked.push(Problem::PermissionMissing {
-                    kind: PermissionKind::Notifications,
-                    side: Side::TheCall,
-                });
-            }
         }
         if !blocked.is_empty() {
             for problem in blocked {
@@ -211,6 +204,55 @@ impl Session {
             );
         }
         true
+    }
+
+    /// `can_start` for a detected call: nobody pressed anything, so only the top blocker is told.
+    fn can_ask(&mut self, since: &str, effects: &mut Vec<Effect>) -> bool {
+        let mut blocked = Vec::new();
+        if self.can_start(false, since, &mut blocked) {
+            return true;
+        }
+        let top = blocked.iter().find_map(|e| match e {
+            Effect::NotifyProblem { id } => self.problems.iter().find(|p| p.id == *id),
+            _ => None,
+        });
+        if let Some(top) = top {
+            effects.push(Effect::CantRecord {
+                problem: top.problem.clone(),
+            });
+        }
+        false
+    }
+
+    fn ask(&mut self, call: Call, meeting_id: String, now: u64, effects: &mut Vec<Effect>) {
+        effects.push(Effect::Emit(Event::CallDetected {
+            call_id: call.call_id.clone(),
+            app: call.app.clone(),
+            app_id: call.app_id.clone(),
+            mode: call.mode,
+        }));
+        self.app.state = SessionState::Asking {
+            call_id: call.call_id.clone(),
+            app: call.app.clone(),
+        };
+        self.app.companion.size = CompanionSize::Ask;
+        self.ask = Some(PendingAsk {
+            call,
+            meeting_id,
+            card_until_ms: Some(now.saturating_add(ASK_CARD_MS)),
+        });
+    }
+
+    /// After Finishing returns to Idle: ask about a call that started meanwhile and is still on.
+    fn ask_queued(&mut self, now: u64, since: &str, effects: &mut Vec<Effect>) {
+        if let Some((call, meeting_id)) = self.queued.take()
+            && !self.app.quit_pending
+            && self.app.ask_on_call
+            && call.mode == Mode::Ask
+            && self.can_ask(since, effects)
+        {
+            self.ask(call, meeting_id, now, effects);
+        }
     }
 
     fn start(&mut self, meeting_id: String, reason: StartReason, effects: &mut Vec<Effect>) {
@@ -238,7 +280,6 @@ impl Session {
             self.app.state = SessionState::Finishing {
                 meeting_id: meeting_id.clone(),
             };
-            self.app.never_pending = None;
             effects.push(Effect::Finish {
                 meeting_id,
                 notes_only: !self.audio(),
@@ -270,7 +311,7 @@ impl Session {
     }
 
     fn resume(&mut self, since: &str, effects: &mut Vec<Effect>) {
-        if self.can_start(false, false, since, effects) {
+        if self.can_start(false, since, effects) {
             self.app.state = SessionState::Recording;
             self.idle_since = None;
             self.pause_remind_at = None;
@@ -304,22 +345,31 @@ impl Session {
             self.pause_remind_at = None;
             effects.push(Effect::NotifyStillPaused);
         }
-        if self.ask.as_ref().is_some_and(|a| now >= a.until_ms) {
-            self.idle();
+        if self.app.companion.size == CompanionSize::Ask
+            && let Some(ask) = self.ask.as_mut()
+            && ask.card_until_ms.is_some_and(|at| now >= at)
+        {
+            ask.card_until_ms = None;
+            self.app.companion.size = CompanionSize::Pill;
+        }
+        if self
+            .app
+            .ask_off_pending
+            .as_ref()
+            .is_some_and(|p| now >= p.until_ms)
+        {
+            self.app.ask_off_pending = None;
         }
         if let SessionState::Stopped { resume_until_ms } = self.app.state
             && now >= resume_until_ms
         {
-            let never = self.app.never_pending.is_some();
-            if never || self.app.elapsed_ms < u64::from(self.discard_short_s) * 1000 {
+            if self.app.elapsed_ms < u64::from(self.discard_short_s) * 1000 {
                 if let Some(meeting_id) = self.app.meeting_id.clone() {
                     effects.push(Effect::Discard { meeting_id });
                 }
-                if !never {
-                    effects.push(Effect::NotifyShort {
-                        seconds: self.discard_short_s,
-                    });
-                }
+                effects.push(Effect::NotifyShort {
+                    seconds: self.discard_short_s,
+                });
                 self.idle();
                 if self.app.quit_pending {
                     effects.push(Effect::PauseDownload);
@@ -348,7 +398,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             meeting_id,
             notes_only,
         } if session.app.state == SessionState::Idle => {
-            if session.can_start(notes_only, false, &input.since, &mut effects) {
+            if session.can_start(notes_only, &input.since, &mut effects) {
                 session.start(
                     meeting_id,
                     if notes_only {
@@ -361,42 +411,34 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             }
         }
         Command::CallDetected { call, meeting_id } => {
-            if session.app.state == SessionState::Recording && !session.apps.contains(&call.app_id)
-            {
-                session.apps.push(call.app_id.clone());
-                if let Some(id) = session.app.meeting_id.clone() {
-                    effects.push(Effect::AddApp {
-                        meeting_id: id,
-                        app_id: call.app_id,
-                    });
-                }
-            } else if session.app.state == SessionState::Idle
-                && session.app.auto_start
-                && call.mode != Mode::Off
-                && session.can_start(false, true, &input.since, &mut effects)
-            {
-                effects.push(Effect::Emit(Event::CallDetected {
-                    call_id: call.call_id.clone(),
-                    app: call.app.clone(),
-                    app_id: call.app_id.clone(),
-                    mode: call.mode,
-                }));
-                if call.mode == Mode::Ask {
-                    session.app.state = SessionState::Asking {
-                        call_id: call.call_id.clone(),
-                        app: call.app.clone(),
-                    };
-                    session.ask = Some(PendingAsk {
-                        call: call.clone(),
-                        meeting_id,
-                        until_ms: now.saturating_add(ASK_MS),
-                    });
-                    effects.push(Effect::NotifyAsk { call });
-                } else {
+            if matches!(
+                session.app.state,
+                SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. }
+            ) {
+                // A second call app joins the running meeting; nothing is asked.
+                if !session.apps.contains(&call.app_id) {
                     session.apps.push(call.app_id.clone());
-                    session.call = Some(call.clone());
-                    session.start(meeting_id, StartReason::App { app: call.app }, &mut effects);
+                    if let Some(id) = session.app.meeting_id.clone() {
+                        effects.push(Effect::AddApp {
+                            meeting_id: id,
+                            app_id: call.app_id,
+                        });
+                    }
                 }
+            } else if matches!(session.app.state, SessionState::Finishing { .. }) {
+                // The watcher reports a call once; keep it until the notes are done.
+                session.queued = Some((call, meeting_id));
+            } else if session.app.ask_on_call
+                && call.mode == Mode::Ask
+                && (session.app.state == SessionState::Idle
+                    || session
+                        .ask
+                        .as_ref()
+                        .is_some_and(|a| a.call.call_id != call.call_id))
+                && session.can_ask(&input.since, &mut effects)
+            {
+                // A newer call replaces an unanswered question; the card shows for 20 s again.
+                session.ask(call, meeting_id, now, &mut effects);
             }
         }
         Command::AnswerAsk { call_id, record } => {
@@ -405,7 +447,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 .as_ref()
                 .is_some_and(|a| a.call.call_id == call_id)
             {
-                if record && session.can_start(false, false, &input.since, &mut effects) {
+                if record && session.can_start(false, &input.since, &mut effects) {
                     if let Some(ask) = session.ask.take() {
                         session.apps.push(ask.call.app_id.clone());
                         session.call = Some(ask.call.clone());
@@ -420,6 +462,70 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 }
             }
         }
+        Command::CallEnded { call_id } => {
+            if session
+                .ask
+                .as_ref()
+                .is_some_and(|a| a.call.call_id == call_id)
+            {
+                session.idle();
+            } else if session
+                .queued
+                .as_ref()
+                .is_some_and(|(c, _)| c.call_id == call_id)
+            {
+                session.queued = None;
+            } else if session.app.state == SessionState::Recording
+                && session.audio()
+                && session.call.as_ref().is_some_and(|c| c.call_id == call_id)
+            {
+                // Record may come after the mic went quiet, so no Mic signal starts the idle stop.
+                session.idle_since.get_or_insert(now);
+            }
+        }
+        Command::HoldAsk(hold) if session.app.companion.size == CompanionSize::Ask => {
+            if let Some(ask) = session.ask.as_mut() {
+                ask.card_until_ms = (!hold).then(|| now.saturating_add(ASK_CARD_MS));
+            }
+        }
+        Command::DontAskForApp { call_id }
+            if session
+                .ask
+                .as_ref()
+                .is_some_and(|a| a.call.call_id == call_id) =>
+        {
+            if let Some(ask) = session.ask.clone() {
+                session.idle();
+                session.app.ask_off_pending = Some(AskOffPending {
+                    app_id: ask.call.app_id.clone(),
+                    app: ask.call.app,
+                    previous: ask.call.mode,
+                    until_ms: now.saturating_add(GRACE_MS),
+                });
+                effects.push(Effect::SetAppMode {
+                    app_id: ask.call.app_id,
+                    mode: Mode::Off,
+                });
+            }
+        }
+        Command::UndoDontAsk { app_id } => {
+            if session
+                .app
+                .ask_off_pending
+                .as_ref()
+                .is_some_and(|p| p.app_id == app_id)
+                && let Some(pending) = session.app.ask_off_pending.take()
+            {
+                effects.push(Effect::SetAppMode {
+                    app_id,
+                    mode: pending.previous,
+                });
+            }
+        }
+        Command::SetAskOnCall(on) => {
+            session.app.ask_on_call = on;
+            effects.push(Effect::SetAskOnCall(on));
+        }
         Command::StopRecording => session.stop(now, &mut effects),
         Command::PauseRecording
             if session.app.state == SessionState::Recording && session.audio() =>
@@ -429,9 +535,12 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             session.idle_since = None;
             session.pause_remind_at = Some(now.saturating_add(PAUSE_REMIND_MS));
         }
-        Command::MicActivity { active }
-            if session.app.state == SessionState::Recording && session.audio() =>
+        Command::MicActivity { app_id, active }
+            if session.app.state == SessionState::Recording
+                && session.audio()
+                && session.call.as_ref().is_none_or(|c| c.app_id == app_id) =>
         {
+            // A manual recording has no call of its own, so any app's mic signal counts.
             if active {
                 session.idle_since = None;
             } else if session.idle_since.is_none() {
@@ -447,48 +556,15 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             if matches!(
                 session.app.state,
                 SessionState::Stopped { .. } | SessionState::Paused
-            ) && session.app.never_pending.is_none() =>
+            ) =>
         {
             session.resume(&input.since, &mut effects)
-        }
-        Command::NeverForApp { call_id }
-            if session.app.state == SessionState::Recording
-                && session.call.as_ref().is_some_and(|c| c.call_id == call_id) =>
-        {
-            if let Some(call) = session.call.clone() {
-                session.stop(now, &mut effects);
-                session.app.never_pending = Some(NeverPending {
-                    app_id: call.app_id.clone(),
-                    app: call.app,
-                    previous: call.mode,
-                    until_ms: now.saturating_add(GRACE_MS),
-                });
-                effects.push(Effect::SetAppMode {
-                    app_id: call.app_id,
-                    mode: Mode::Off,
-                });
-            }
-        }
-        Command::UndoNever { app_id } => {
-            if session
-                .app
-                .never_pending
-                .as_ref()
-                .is_some_and(|n| n.app_id == app_id)
-                && let Some(pending) = session.app.never_pending.take()
-            {
-                effects.push(Effect::SetAppMode {
-                    app_id,
-                    mode: pending.previous,
-                });
-                session.resume(&input.since, &mut effects);
-            }
         }
         Command::SetCompanionSize(size)
             if matches!(
                 session.app.state,
                 SessionState::Recording | SessionState::Paused
-            ) =>
+            ) && size != CompanionSize::Ask =>
         {
             if session.app.sharing.is_some() {
                 if size == CompanionSize::Sidecar {
@@ -566,11 +642,8 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 .problems
                 .retain(|p| !resolved(&p.problem, &readiness));
             session.readiness = readiness;
-            if !session.readiness.notifications {
-                session.app.auto_start = false;
-            }
             if session.app.state == SessionState::Recording
-                && !session.can_start(!session.audio(), false, &input.since, &mut effects)
+                && !session.can_start(!session.audio(), &input.since, &mut effects)
             {
                 session.stop(now, &mut effects);
             }
@@ -585,10 +658,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 Problem::PermissionMissing { kind, .. } => match kind {
                     PermissionKind::Microphone => session.readiness.microphone = false,
                     PermissionKind::SystemAudio => session.readiness.system_audio = false,
-                    PermissionKind::Notifications => {
-                        session.readiness.notifications = false;
-                        session.app.auto_start = false;
-                    }
+                    PermissionKind::Notifications => session.readiness.notifications = false,
                 },
                 _ => {}
             }
@@ -636,6 +706,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 effects.push(Effect::PauseDownload);
                 effects.push(Effect::Exit);
             }
+            session.ask_queued(now, &input.since, &mut effects);
         }
         Command::FinishFailed { meeting_id, reason }
             if session.app.state
@@ -650,6 +721,7 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
                 .retain(|p| !matches!(p.problem, Problem::Slow));
             // Keep the failure visible instead of silently exiting with unfinished notes.
             session.app.quit_pending = false;
+            session.ask_queued(now, &input.since, &mut effects);
         }
         Command::AudioInterrupted
             if session.app.state == SessionState::Recording && session.audio() =>
@@ -675,14 +747,14 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
         session.app.companion.size = CompanionSize::Dot;
     }
     session.app.companion.visible = match session.app.state {
-        SessionState::Idle => false,
-        SessionState::Asking { .. } => session.app.dnd_active,
+        SessionState::Idle => session.app.ask_off_pending.is_some(),
+        SessionState::Asking { .. } => true,
         SessionState::Recording | SessionState::Paused | SessionState::Stopped { .. } => true,
         SessionState::Finishing { .. } => session.app.quit_pending,
     };
     if !matches!(
         session.app.state,
-        SessionState::Recording | SessionState::Paused
+        SessionState::Recording | SessionState::Paused | SessionState::Asking { .. }
     ) || session.app.quit_pending
     {
         session.app.companion.size = CompanionSize::Pill;

@@ -3,7 +3,7 @@ use motet_core::events::{AppState, SessionState};
 use std::sync::Mutex;
 use tauri::{
     Manager,
-    menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder},
+    menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItem, MenuItemBuilder},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,6 +12,7 @@ enum Action {
     Stop,
     Paused,
     Resume,
+    Asking,
     None,
 }
 fn action(state: &SessionState, importing: bool) -> Action {
@@ -19,35 +20,92 @@ fn action(state: &SessionState, importing: bool) -> Action {
         SessionState::Recording => Action::Stop,
         SessionState::Paused => Action::Paused,
         SessionState::Stopped { .. } => Action::Resume,
+        SessionState::Asking { .. } => Action::Asking,
         SessionState::Idle if !importing => Action::Record,
         _ => Action::None,
     }
 }
-pub struct State(Mutex<(Action, Option<MenuItem<tauri::Wry>>, String)>);
-impl Default for State {
-    fn default() -> Self {
-        Self(Mutex::new((Action::Record, None, String::new())))
+/// What the menu was last built from; elapsed-time ticks change none of it.
+struct Built {
+    action: Action,
+    ask_on_call: bool,
+}
+#[derive(Default)]
+struct Inner {
+    built: Option<Built>,
+    header: Option<MenuItem<tauri::Wry>>,
+    label: String,
+    stale: bool,
+}
+#[derive(Default)]
+pub struct State(Mutex<Inner>);
+
+/// Apps set to Off as (app_id, display name), read from settings.json at rebuild time.
+fn off_apps(app: &tauri::AppHandle) -> Vec<(String, String)> {
+    let Ok(dir) = app.path().app_config_dir() else {
+        return vec![];
+    };
+    let settings = crate::calls::Settings::load(&dir);
+    let rules = motet_core::watch::rules();
+    settings
+        .app_modes
+        .iter()
+        .filter(|(_, mode)| **mode == motet_core::events::Mode::Off)
+        .map(|(id, _)| {
+            let name = rules
+                .iter()
+                .find(|r| &r.app_id == id)
+                .map(|r| r.name.clone());
+            (id.clone(), name.unwrap_or_else(|| id.clone()))
+        })
+        .collect()
+}
+
+/// The next update rebuilds the menu even if the state is unchanged (an app's mode was saved).
+pub fn invalidate(app: &tauri::AppHandle) {
+    if let Ok(mut state) = app.state::<State>().0.lock() {
+        state.stale = true;
+    }
+}
+
+fn header_text(state: &AppState) -> String {
+    let seconds = state.elapsed_ms / 1000;
+    match &state.state {
+        SessionState::Recording => format!(
+            "Recording · {} · {:02}:{:02}",
+            state.app.as_deref().unwrap_or("Manual"),
+            seconds / 60,
+            seconds % 60
+        ),
+        SessionState::Paused => format!(
+            "Paused · {} · {:02}:{:02} · not recording",
+            state.app.as_deref().unwrap_or("Manual"),
+            seconds / 60,
+            seconds % 60
+        ),
+        SessionState::Asking { app, .. } => format!("{app} call · not recording"),
+        SessionState::Stopped { .. } => "Stopped · notes start soon".into(),
+        SessionState::Finishing { .. } => "Writing notes".into(),
+        _ => "Motet · ready for calls".into(),
     }
 }
 fn menu(
     app: &tauri::AppHandle,
     action: Action,
+    ask_on_call: bool,
+    off: &[(String, String)],
+    header_label: &str,
 ) -> tauri::Result<(Menu<tauri::Wry>, MenuItem<tauri::Wry>)> {
-    let header = MenuItemBuilder::with_id(
-        "status",
-        match action {
-            Action::Stop => "Recording",
-            Action::Paused => "Paused · not recording",
-            Action::Resume => "Stopped · notes start soon",
-            Action::None => "Writing notes",
-            Action::Record => "Motet · ready for calls",
-        },
-    )
-    .enabled(false)
-    .build(app)?;
+    let header = MenuItemBuilder::with_id("status", header_label)
+        .enabled(false)
+        .build(app)?;
     let mut builder = MenuBuilder::new(app).item(&header);
     for (id, label, shortcut) in match action {
         Action::Record => vec![("record", "Record now", "Ctrl+Alt+S")],
+        Action::Asking => vec![
+            ("ask-record", "Record this call", ""),
+            ("ask-no", "Not for this call", ""),
+        ],
         Action::Stop => vec![
             ("stop", "Stop recording", "Ctrl+Alt+S"),
             ("pause", "Pause recording", ""),
@@ -71,6 +129,24 @@ fn menu(
         };
         builder = builder.item(&item.build(app)?);
     }
+    if matches!(action, Action::Record | Action::Stop) {
+        builder = builder.item(
+            &CheckMenuItemBuilder::with_id("ask-on-call", "Ask when a call starts")
+                .checked(ask_on_call)
+                .build(app)?,
+        );
+    }
+    if action == Action::Record {
+        for (id, name) in off {
+            builder = builder.item(
+                &MenuItemBuilder::with_id(
+                    format!("ask-again:{id}"),
+                    format!("Ask again about {name}"),
+                )
+                .build(app)?,
+            );
+        }
+    }
     let menu = builder
         .separator()
         .item(
@@ -93,9 +169,18 @@ fn menu(
 }
 
 pub fn initial(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let (menu, header) = menu(app, Action::Record)?;
+    // The saved switch, so a launch with asking off doesn't show the tick until the first update.
+    let ask_on_call = crate::calls::Settings::load(&app.path().app_config_dir()?).ask_on_call;
+    let (menu, header) = menu(
+        app,
+        Action::Record,
+        ask_on_call,
+        &off_apps(app),
+        "Motet · ready for calls",
+    )?;
     if let Ok(mut state) = app.state::<State>().0.lock() {
-        state.1 = Some(header);
+        state.header = Some(header);
+        state.stale = true;
     }
     Ok(menu)
 }
@@ -106,39 +191,34 @@ pub fn update(app: &tauri::AppHandle, state: &AppState, importing: bool) -> Resu
         .lock()
         .map_err(|_| "Tray menu state is unavailable")?;
     let next = action(&state.state, importing);
-    if previous.0 != next {
+    let changed = previous.stale
+        || previous
+            .built
+            .as_ref()
+            .is_none_or(|b| b.action != next || b.ask_on_call != state.ask_on_call);
+    let label = header_text(state);
+    if changed {
         let tray = app.tray_by_id("motet").ok_or("Tray menu is unavailable")?;
-        let (menu, header) = menu(app, next).map_err(|e| e.to_string())?;
-        previous.1 = Some(header);
+        let off = off_apps(app);
+        let (menu, header) =
+            menu(app, next, state.ask_on_call, &off, &label).map_err(|e| e.to_string())?;
+        previous.header = Some(header);
         tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
         tray.set_icon(Some(icon(next == Action::Stop)))
             .map_err(|e| e.to_string())?;
         tray.set_icon_as_template(true).map_err(|e| e.to_string())?;
-        previous.0 = next;
+        previous.built = Some(Built {
+            action: next,
+            ask_on_call: state.ask_on_call,
+        });
+        previous.label = label.clone();
+        previous.stale = false;
     }
-    let seconds = state.elapsed_ms / 1000;
-    let label = match state.state {
-        SessionState::Recording => format!(
-            "Recording · {} · {:02}:{:02}",
-            state.app.as_deref().unwrap_or("Manual"),
-            seconds / 60,
-            seconds % 60
-        ),
-        SessionState::Paused => format!(
-            "Paused · {} · {:02}:{:02} · not recording",
-            state.app.as_deref().unwrap_or("Manual"),
-            seconds / 60,
-            seconds % 60
-        ),
-        SessionState::Stopped { .. } => "Stopped · notes start soon".into(),
-        SessionState::Finishing { .. } => "Writing notes".into(),
-        _ => "Motet · ready for calls".into(),
-    };
-    if previous.2 != label {
-        if let Some(header) = &previous.1 {
+    if previous.label != label {
+        if let Some(header) = &previous.header {
             header.set_text(&label).map_err(|e| e.to_string())?;
         }
-        previous.2 = label;
+        previous.label = label;
     }
     Ok(())
 }
@@ -182,7 +262,7 @@ mod tests {
                 },
                 false
             ),
-            Action::None
+            Action::Asking
         );
     }
 }

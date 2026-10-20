@@ -51,6 +51,25 @@ fn detect(s: Session, mode: Mode) -> (Session, Vec<Effect>) {
         },
     )
 }
+/// A call recorded through the Ask card, as the only way a call starts now.
+fn recording() -> Session {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    step(
+        s,
+        1,
+        Command::AnswerAsk {
+            call_id: "c1".into(),
+            record: true,
+        },
+    )
+    .0
+}
+fn mic(active: bool) -> Command {
+    Command::MicActivity {
+        app_id: "zoom".into(),
+        active,
+    }
+}
 fn work(effects: Vec<Effect>) -> Vec<Effect> {
     effects
         .into_iter()
@@ -93,35 +112,163 @@ fn manual_start_publishes_visible_state_and_notice_before_capture() {
 }
 
 #[test]
-fn automatic_start_and_off_mode() {
-    let (s, effects) = detect(fresh(), Mode::Auto);
+fn detected_call_asks_and_never_captures_until_record() {
+    let (s, fx) = detect(fresh(), Mode::Ask);
+    assert!(matches!(s.app.state, SessionState::Asking { .. }));
     assert_eq!(
-        s.app.started_by,
-        Some(StartReason::App { app: "Zoom".into() })
+        (s.app.companion.visible, s.app.companion.size),
+        (true, CompanionSize::Ask)
     );
-    assert!(
-        effects
-            .iter()
-            .any(|e| matches!(e, Effect::NotifyRecording { .. }))
+    assert!(!fx.iter().any(|e| matches!(e, Effect::StartCapture { .. })));
+    let (s, _) = step(s, 20_000, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill); // card fades to the Pill
+    let (s, _) = step(s, 600_000, Command::Tick);
+    assert!(matches!(s.app.state, SessionState::Asking { .. })); // no timeout to Idle
+    assert!(s.app.companion.visible);
+    let (s, fx) = step(
+        s,
+        600_001,
+        Command::AnswerAsk {
+            call_id: "c1".into(),
+            record: true,
+        },
     );
-    let (s, effects) = detect(fresh(), Mode::Off);
+    assert_eq!(s.app.state, SessionState::Recording);
+    assert!(fx.iter().any(|e| matches!(e, Effect::StartCapture { .. })));
+}
+
+#[test]
+fn hold_keeps_the_card_and_release_restarts_twenty_seconds() {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    let (s, _) = step(s, 5_000, Command::HoldAsk(true));
+    let (s, _) = step(s, 40_000, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Ask);
+    let (s, _) = step(s, 40_000, Command::HoldAsk(false));
+    let (s, _) = step(s, 59_999, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Ask);
+    let (s, _) = step(s, 60_000, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+}
+
+#[test]
+fn not_for_this_call_and_call_end_return_idle_without_work() {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    let (no, fx) = step(
+        s.clone(),
+        10,
+        Command::AnswerAsk {
+            call_id: "c1".into(),
+            record: false,
+        },
+    );
+    assert_eq!(no.app.state, SessionState::Idle);
+    assert!(!no.app.companion.visible);
+    assert!(work(fx).is_empty());
+    let (same, fx) = step(
+        s.clone(),
+        10,
+        Command::CallEnded {
+            call_id: "other".into(),
+        },
+    );
+    assert!(matches!(same.app.state, SessionState::Asking { .. }));
+    assert!(fx.is_empty());
+    let (ended, fx) = step(
+        s,
+        10,
+        Command::CallEnded {
+            call_id: "c1".into(),
+        },
+    );
+    assert_eq!(ended.app.state, SessionState::Idle);
+    assert!(work(fx).is_empty());
+}
+
+#[test]
+fn dont_ask_sets_off_with_undo_for_ten_seconds() {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    let (s, fx) = step(
+        s,
+        1_000,
+        Command::DontAskForApp {
+            call_id: "c1".into(),
+        },
+    );
     assert_eq!(s.app.state, SessionState::Idle);
-    assert!(effects.is_empty());
-    let mut s = fresh();
-    s.app.auto_start = false;
-    assert!(detect(s, Mode::Auto).1.is_empty());
+    assert_eq!(
+        work(fx),
+        vec![Effect::SetAppMode {
+            app_id: "zoom".into(),
+            mode: Mode::Off
+        }]
+    );
+    assert!(s.app.ask_off_pending.is_some());
+    assert!(s.app.companion.visible);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    let (undone, fx) = step(
+        s.clone(),
+        10_999,
+        Command::UndoDontAsk {
+            app_id: "zoom".into(),
+        },
+    );
+    assert_eq!(
+        work(fx),
+        vec![Effect::SetAppMode {
+            app_id: "zoom".into(),
+            mode: Mode::Ask
+        }]
+    );
+    assert!(undone.app.ask_off_pending.is_none());
+    let (late, fx) = step(
+        s,
+        11_000,
+        Command::UndoDontAsk {
+            app_id: "zoom".into(),
+        },
+    );
+    assert!(late.app.ask_off_pending.is_none() && !late.app.companion.visible);
+    assert!(work(fx).is_empty());
+}
+
+#[test]
+fn off_mode_and_ask_on_call_false_never_ask() {
+    let (s, fx) = detect(fresh(), Mode::Off);
+    assert_eq!(s.app.state, SessionState::Idle);
+    assert!(fx.is_empty());
+    let (s, fx) = step(fresh(), 0, Command::SetAskOnCall(false));
+    assert!(!s.app.ask_on_call);
+    assert!(fx.contains(&Effect::SetAskOnCall(false)));
+    let (s, fx) = detect(s, Mode::Ask);
+    assert_eq!(s.app.state, SessionState::Idle);
+    assert!(fx.is_empty());
+}
+
+#[test]
+fn stale_record_after_call_ended_starts_nothing() {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    let (s, _) = step(
+        s,
+        5,
+        Command::CallEnded {
+            call_id: "c1".into(),
+        },
+    );
+    let (s, fx) = step(
+        s,
+        6,
+        Command::AnswerAsk {
+            call_id: "c1".into(),
+            record: true,
+        },
+    );
+    assert_eq!(s.app.state, SessionState::Idle);
+    assert!(!fx.iter().any(|e| matches!(e, Effect::StartCapture { .. })));
 }
 
 #[test]
 fn ask_accept_decline_and_stale_answers() {
-    let mut initial = fresh();
-    initial.app.dnd_active = true;
-    let (s, effects) = detect(initial, Mode::Ask);
-    assert!(matches!(s.app.state, SessionState::Asking { .. }));
-    assert!(s.app.companion.visible);
-    assert!(effects.contains(&Effect::NotifyAsk {
-        call: call(Mode::Ask)
-    }));
+    let (s, _) = detect(fresh(), Mode::Ask);
     let (unchanged, effects) = step(
         s.clone(),
         1,
@@ -133,7 +280,7 @@ fn ask_accept_decline_and_stale_answers() {
     assert_eq!(unchanged.app, s.app);
     assert!(effects.is_empty());
     let (yes, _) = step(
-        s.clone(),
+        s,
         10,
         Command::AnswerAsk {
             call_id: "c1".into(),
@@ -141,35 +288,7 @@ fn ask_accept_decline_and_stale_answers() {
         },
     );
     assert_eq!(yes.app.state, SessionState::Recording);
-    let (no, effects) = step(
-        s,
-        10,
-        Command::AnswerAsk {
-            call_id: "c1".into(),
-            record: false,
-        },
-    );
-    assert_eq!(no.app.state, SessionState::Idle);
-    assert!(work(effects).is_empty());
-}
-
-#[test]
-fn ask_times_out_at_sixty_seconds_even_with_a_late_answer() {
-    let (s, _) = detect(fresh(), Mode::Ask);
-    assert!(matches!(
-        step(s.clone(), 59_999, Command::Tick).0.app.state,
-        SessionState::Asking { .. }
-    ));
-    let (s, effects) = step(
-        s,
-        60_000,
-        Command::AnswerAsk {
-            call_id: "c1".into(),
-            record: true,
-        },
-    );
-    assert_eq!(s.app.state, SessionState::Idle);
-    assert!(work(effects).is_empty());
+    assert_eq!(yes.app.companion.size, CompanionSize::Pill);
 }
 
 #[test]
@@ -243,23 +362,50 @@ fn zero_discard_setting_keeps_even_zero_length_recordings() {
 
 #[test]
 fn idle_mic_timeout_resets_on_activity_and_ignores_repeat_idle_signals() {
-    let s = start(fresh(), false);
-    let s = step(s, 1_000, Command::MicActivity { active: false }).0;
-    let s = step(s, 20_000, Command::MicActivity { active: false }).0;
-    let s = step(s, 30_000, Command::MicActivity { active: true }).0;
+    let s = recording();
+    let s = step(s, 1_000, mic(false)).0;
+    let s = step(s, 20_000, mic(false)).0;
+    let s = step(s, 30_000, mic(true)).0;
     assert_eq!(
         step(s.clone(), 31_000, Command::Tick).0.app.state,
         SessionState::Recording
     );
-    let s = step(s, 40_000, Command::MicActivity { active: false }).0;
+    let s = step(s, 40_000, mic(false)).0;
+    // Another app's mic never counts for this call.
+    let s = step(
+        s,
+        50_000,
+        Command::MicActivity {
+            app_id: "teams".into(),
+            active: true,
+        },
+    )
+    .0;
     let (s, effects) = step(s, 70_000, Command::Tick);
     assert!(matches!(s.app.state, SessionState::Stopped { .. }));
     assert!(effects.contains(&Effect::StopCapture));
 }
 
 #[test]
+fn manual_recording_idle_stops_on_any_app_but_a_call_ignores_other_apps() {
+    let idle_zoom = |s: Session| {
+        let s = step(s, 1_000, mic(false)).0;
+        step(s, 31_000, Command::Tick).0
+    };
+    let s = idle_zoom(start(fresh(), false));
+    assert!(matches!(s.app.state, SessionState::Stopped { .. }));
+    let other = Command::MicActivity {
+        app_id: "teams".into(),
+        active: false,
+    };
+    let s = step(recording(), 1_000, other).0;
+    let s = step(s, 31_000, Command::Tick).0;
+    assert_eq!(s.app.state, SessionState::Recording);
+}
+
+#[test]
 fn app_quit_stops_only_the_matching_call() {
-    let (s, _) = detect(fresh(), Mode::Auto);
+    let s = recording();
     assert_eq!(
         step(
             s.clone(),
@@ -289,78 +435,6 @@ fn app_quit_stops_only_the_matching_call() {
 }
 
 #[test]
-fn never_discards_without_the_short_notification_and_late_undo_is_ignored() {
-    let (s, _) = detect(fresh(), Mode::Auto);
-    let (s, effects) = step(
-        s,
-        25_000,
-        Command::NeverForApp {
-            call_id: "c1".into(),
-        },
-    );
-    assert!(s.app.never_pending.is_some());
-    assert!(effects.contains(&Effect::SetAppMode {
-        app_id: "zoom".into(),
-        mode: Mode::Off
-    }));
-    assert!(work(step(s.clone(), 25_001, Command::ResumeRecording).1).is_empty());
-    let (s, effects) = step(
-        s,
-        35_000,
-        Command::UndoNever {
-            app_id: "zoom".into(),
-        },
-    );
-    assert_eq!(s.app.state, SessionState::Idle);
-    assert_eq!(
-        work(effects),
-        vec![Effect::Discard {
-            meeting_id: "m1".into()
-        }]
-    );
-}
-
-#[test]
-fn never_undo_restores_previous_mode_and_resumes_same_meeting() {
-    let (s, _) = detect(fresh(), Mode::Ask);
-    let s = step(
-        s,
-        1,
-        Command::AnswerAsk {
-            call_id: "c1".into(),
-            record: true,
-        },
-    )
-    .0;
-    let s = step(
-        s,
-        25_000,
-        Command::NeverForApp {
-            call_id: "c1".into(),
-        },
-    )
-    .0;
-    let (s, effects) = step(
-        s,
-        30_000,
-        Command::UndoNever {
-            app_id: "zoom".into(),
-        },
-    );
-    assert_eq!(s.app.state, SessionState::Recording);
-    assert_eq!(s.app.meeting_id.as_deref(), Some("m1"));
-    assert!(s.app.never_pending.is_none());
-    assert!(effects.contains(&Effect::SetAppMode {
-        app_id: "zoom".into(),
-        mode: Mode::Ask
-    }));
-    assert!(effects.contains(&Effect::StartCapture {
-        meeting_id: "m1".into(),
-        resume: true
-    }));
-}
-
-#[test]
 fn notes_only_needs_no_audio_permissions_ignores_idle_and_skips_grace() {
     let s = Session::new(Readiness {
         free_bytes: 10 * GB,
@@ -376,7 +450,7 @@ fn notes_only_needs_no_audio_permissions_ignores_idle_and_skips_grace() {
     );
     assert_eq!(s.app.started_by, Some(StartReason::NotesOnly));
     assert!(work(effects).is_empty());
-    let s = step(s, 1, Command::MicActivity { active: false }).0;
+    let s = step(s, 1, mic(false)).0;
     assert_eq!(
         step(s.clone(), 40_000, Command::Tick).0.app.state,
         SessionState::Recording
@@ -495,41 +569,67 @@ fn completion_and_failure_return_idle_and_ignore_stale_workers() {
 
 #[test]
 fn extra_calls_are_added_once_without_starting_another_recording() {
-    let (s, _) = detect(fresh(), Mode::Auto);
-    let mut other = call(Mode::Auto);
+    let s = recording();
+    let mut other = call(Mode::Ask);
     other.app_id = "teams".into();
+    other.call_id = "c2".into();
     let command = Command::CallDetected {
         call: other,
         meeting_id: "m2".into(),
     };
-    let (s, effects) = step(s, 1, command.clone());
-    assert_eq!(s.app.meeting_id.as_deref(), Some("m1"));
-    assert_eq!(
-        work(effects),
-        vec![Effect::AddApp {
-            meeting_id: "m1".into(),
-            app_id: "teams".into()
-        }]
-    );
-    assert!(work(step(s, 2, command).1).is_empty());
+    let paused = step(s.clone(), 2, Command::PauseRecording).0;
+    let stopped = step(s.clone(), 2, Command::StopRecording).0;
+    for s in [s, paused, stopped] {
+        let before = s.app.state.clone();
+        let (s, effects) = step(s, 3, command.clone());
+        assert_eq!(s.app.state, before);
+        assert_eq!(s.app.meeting_id.as_deref(), Some("m1"));
+        assert_eq!(
+            work(effects),
+            vec![Effect::AddApp {
+                meeting_id: "m1".into(),
+                app_id: "teams".into()
+            }]
+        );
+        assert!(work(step(s, 4, command.clone()).1).is_empty());
+    }
 }
 
 #[test]
 fn missing_permissions_models_and_disk_block_start_with_prioritized_problems() {
-    let (s, effects) = detect(Session::new(Readiness::default()), Mode::Auto);
+    let (s, effects) = detect(Session::new(Readiness::default()), Mode::Ask);
     assert_eq!(s.app.state, SessionState::Idle);
     assert_eq!(s.app.problem.unwrap().problem, Problem::DiskFull);
-    assert_eq!(s.app.more_problems, 4);
-    assert!(!s.app.auto_start);
+    assert_eq!(s.app.more_problems, 3);
     assert!(
         !effects
             .iter()
             .any(|e| matches!(e, Effect::StartCapture { .. }))
     );
+    // A detected call only gets one quiet notice for the top blocker, never the user-start notice.
+    assert_eq!(
+        work(effects),
+        vec![Effect::CantRecord {
+            problem: Problem::DiskFull
+        }]
+    );
+    let (_, effects) = step(
+        Session::new(Readiness::default()),
+        0,
+        Command::StartManual {
+            meeting_id: "m1".into(),
+            notes_only: false,
+        },
+    );
     assert!(
         effects
             .iter()
             .any(|e| matches!(e, Effect::NotifyProblem { .. }))
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::CantRecord { .. }))
     );
 }
 
@@ -600,11 +700,28 @@ fn problems_are_deduplicated_prioritized_and_clear_without_changing_session() {
 }
 
 #[test]
-fn readiness_resolution_clears_blockers_but_does_not_reenable_auto_start() {
-    let (s, _) = detect(Session::new(Readiness::default()), Mode::Auto);
-    let s = step(s, 1, Command::ReadinessChanged(ready())).0;
-    assert!(s.app.problem.is_none());
-    assert!(!s.app.auto_start);
+fn readiness_changes_never_touch_ask_on_call() {
+    let mut denied = ready();
+    denied.notifications = false;
+    let s = step(fresh(), 0, Command::ReadinessChanged(denied)).0;
+    assert!(s.app.ask_on_call);
+    let s = step(
+        s,
+        1,
+        Command::ProblemRaised(Problem::PermissionMissing {
+            kind: PermissionKind::Notifications,
+            side: Side::TheCall,
+        }),
+    )
+    .0;
+    assert!(s.app.ask_on_call);
+    assert_eq!(
+        detect(s, Mode::Ask).0.app.state.clone(),
+        SessionState::Asking {
+            call_id: "c1".into(),
+            app: "Zoom".into()
+        }
+    );
 }
 
 #[test]
@@ -666,10 +783,13 @@ fn invalid_commands_do_not_start_or_stop_work() {
         Command::StopRecording,
         Command::ResumeRecording,
         Command::QuitNow,
-        Command::UndoNever {
+        Command::UndoDontAsk {
             app_id: "zoom".into(),
         },
-        Command::NeverForApp {
+        Command::DontAskForApp {
+            call_id: "old".into(),
+        },
+        Command::CallEnded {
             call_id: "old".into(),
         },
         Command::Quit {
@@ -835,6 +955,8 @@ fn companion_sizes_follow_recording_stop_quit_and_deadline() {
     let (s, _) = step(s, 1, Command::SetCompanionSize(CompanionSize::Sidecar));
     assert_eq!(s.app.companion.size, CompanionSize::Sidecar);
     let (s, _) = step(s, 2, Command::SetCompanionSize(CompanionSize::Dot));
+    let (s, _) = step(s, 2, Command::SetCompanionSize(CompanionSize::Ask));
+    assert_eq!(s.app.companion.size, CompanionSize::Dot);
     let (s, _) = step(s, 3, Command::RequestQuit);
     assert_eq!(s.app.companion.size, CompanionSize::Pill);
 }
@@ -937,9 +1059,8 @@ fn pause_is_ignored_outside_recording_and_calls_do_not_start_while_paused() {
         step(notes_only, 1_000, Command::PauseRecording).0.app.state,
         SessionState::Recording
     );
-    let mut s = step(start(fresh(), false), 1_000, Command::PauseRecording).0;
-    s.app.auto_start = true;
-    let (s, effects) = detect(s, Mode::Auto);
+    let s = step(start(fresh(), false), 1_000, Command::PauseRecording).0;
+    let (s, effects) = detect(s, Mode::Ask);
     assert_eq!(s.app.state, SessionState::Paused);
     assert!(
         !effects
@@ -958,4 +1079,159 @@ fn pause_is_ignored_outside_recording_and_calls_do_not_start_while_paused() {
     );
     assert!(matches!(s.app.state, SessionState::Finishing { .. }));
     assert!(!effects.contains(&Effect::StopCapture));
+}
+
+fn teams(meeting_id: &str) -> Command {
+    Command::CallDetected {
+        call: Call {
+            call_id: "c2".into(),
+            app_id: "teams".into(),
+            app: "Teams".into(),
+            mode: Mode::Ask,
+        },
+        meeting_id: meeting_id.into(),
+    }
+}
+fn asks(effects: &[Effect], call_id: &str) -> bool {
+    effects.iter().any(
+        |e| matches!(e, Effect::Emit(Event::CallDetected { call_id: id, .. }) if id == call_id),
+    )
+}
+
+#[test]
+fn a_second_call_while_asking_replaces_the_question_and_restarts_the_card() {
+    let (s, _) = detect(fresh(), Mode::Ask);
+    let (s, _) = step(s, 25_000, Command::Tick);
+    assert_eq!(s.app.companion.size, CompanionSize::Pill);
+    let (s, fx) = step(s, 25_000, teams("m2"));
+    assert!(asks(&fx, "c2"));
+    assert_eq!(
+        s.app.state,
+        SessionState::Asking {
+            call_id: "c2".into(),
+            app: "Teams".into()
+        }
+    );
+    assert_eq!(s.app.companion.size, CompanionSize::Ask);
+    assert_eq!(
+        step(s.clone(), 44_999, Command::Tick).0.app.companion.size,
+        CompanionSize::Ask
+    );
+    assert_eq!(
+        step(s.clone(), 45_000, Command::Tick).0.app.companion.size,
+        CompanionSize::Pill
+    );
+    // The replaced question can no longer be answered; the new one records its own meeting.
+    let answer = |call_id: &str| Command::AnswerAsk {
+        call_id: call_id.into(),
+        record: true,
+    };
+    let (s, fx) = step(s, 26_000, answer("c1"));
+    assert!(matches!(s.app.state, SessionState::Asking { .. }));
+    assert!(work(fx).is_empty());
+    let (s, _) = step(s, 27_000, answer("c2"));
+    assert_eq!(s.app.state, SessionState::Recording);
+    assert_eq!(s.app.meeting_id.as_deref(), Some("m2"));
+    assert_eq!(s.app.app.as_deref(), Some("Teams"));
+}
+
+fn finishing() -> Session {
+    let s = step(recording(), 30_000, Command::Tick).0;
+    let s = step(s, 30_000, Command::StopRecording).0;
+    let s = step(s, 40_000, Command::Tick).0;
+    assert!(matches!(s.app.state, SessionState::Finishing { .. }));
+    s
+}
+
+#[test]
+fn a_call_detected_while_finishing_asks_once_the_notes_are_done() {
+    let (s, fx) = step(finishing(), 41_000, teams("m2"));
+    assert!(!asks(&fx, "c2"));
+    assert!(matches!(s.app.state, SessionState::Finishing { .. }));
+    let (s, fx) = step(s, 50_000, finished());
+    assert!(asks(&fx, "c2"));
+    assert_eq!(
+        s.app.state,
+        SessionState::Asking {
+            call_id: "c2".into(),
+            app: "Teams".into()
+        }
+    );
+    assert_eq!(s.app.companion.size, CompanionSize::Ask);
+    let (s, _) = step(
+        s,
+        51_000,
+        Command::AnswerAsk {
+            call_id: "c2".into(),
+            record: true,
+        },
+    );
+    assert_eq!(s.app.meeting_id.as_deref(), Some("m2"));
+
+    // A failed finish asks too.
+    let s = step(finishing(), 41_000, teams("m2")).0;
+    let (s, fx) = step(
+        s,
+        50_000,
+        Command::FinishFailed {
+            meeting_id: "m1".into(),
+            reason: "model".into(),
+        },
+    );
+    assert!(asks(&fx, "c2"));
+    assert!(matches!(s.app.state, SessionState::Asking { .. }));
+
+    // A call that ended meanwhile is not asked about.
+    let s = step(finishing(), 41_000, teams("m2")).0;
+    let s = step(
+        s,
+        45_000,
+        Command::CallEnded {
+            call_id: "c2".into(),
+        },
+    )
+    .0;
+    let (s, fx) = step(s, 50_000, finished());
+    assert!(!asks(&fx, "c2"));
+    assert_eq!(s.app.state, SessionState::Idle);
+    // Nor once the user turned asking off.
+    let s = step(finishing(), 41_000, teams("m2")).0;
+    let s = step(s, 42_000, Command::SetAskOnCall(false)).0;
+    let (s, fx) = step(s, 50_000, finished());
+    assert!(!asks(&fx, "c2"));
+    assert_eq!(s.app.state, SessionState::Idle);
+}
+
+#[test]
+fn a_call_that_ends_while_recording_starts_the_idle_stop() {
+    // Record was pressed after the mic went quiet, so no Mic{false} reached the recording.
+    let s = recording();
+    let s = step(
+        s,
+        5_000,
+        Command::CallEnded {
+            call_id: "c1".into(),
+        },
+    )
+    .0;
+    assert_eq!(
+        step(s.clone(), 34_999, Command::Tick).0.app.state,
+        SessionState::Recording
+    );
+    let (s, fx) = step(s, 35_000, Command::Tick);
+    assert!(matches!(s.app.state, SessionState::Stopped { .. }));
+    assert!(fx.contains(&Effect::StopCapture));
+    // Another call's end never stops this recording.
+    let s = step(
+        recording(),
+        5_000,
+        Command::CallEnded {
+            call_id: "other".into(),
+        },
+    )
+    .0;
+    assert_eq!(
+        step(s, 60_000, Command::Tick).0.app.state,
+        SessionState::Recording
+    );
 }

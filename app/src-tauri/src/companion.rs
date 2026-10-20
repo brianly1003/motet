@@ -10,6 +10,8 @@ use tauri::{LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBui
 pub struct State {
     ready: AtomicBool,
     previous: Mutex<Option<(bool, CompanionSize, bool)>>,
+    /// Where the window was before the Ask card moved it to the top middle.
+    before_ask: Mutex<Option<PhysicalPosition<i32>>>,
 }
 
 pub fn create(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -19,6 +21,9 @@ pub fn create(app: &tauri::AppHandle) -> tauri::Result<()> {
         .inner_size(460.0, 72.0)
         .decorations(false)
         .transparent(true)
+        // The page draws each size's own shadow; the native one outlines the whole transparent
+        // window as a dark rectangle around the Ask card and the Pill.
+        .shadow(false)
         .resizable(false)
         .always_on_top(true)
         .skip_taskbar(true)
@@ -83,8 +88,36 @@ pub fn update(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
         .get_webview_window("companion")
         .ok_or("Recording controls are unavailable")?;
     let (width, height) = dimensions(next.1, next.2);
+    let was_ask = previous.is_some_and(|p| p.1 == CompanionSize::Ask);
+    let mut before_ask = managed
+        .before_ask
+        .lock()
+        .map_err(|_| "Companion state is unavailable")?;
     let result = (|| -> tauri::Result<()> {
-        resize(&window, width, height)?;
+        if next.1 == CompanionSize::Ask {
+            if !was_ask {
+                *before_ask = Some(window.outer_position()?);
+            }
+            window.set_size(LogicalSize::new(width, height))?;
+            // primary display, not the call's display (SPEC 7.10).
+            if let Some(monitor) = window.primary_monitor()? {
+                let area = monitor.work_area();
+                let (x, y) = top_middle(
+                    (area.position.x, area.position.y, area.size.width as i32),
+                    width,
+                    monitor.scale_factor(),
+                );
+                window.set_position(PhysicalPosition::new(x, y))?;
+            }
+        } else {
+            if was_ask && let Some(position) = before_ask.take() {
+                // Back where it was at the new width, so resize() below keeps x and only
+                // clamps it on screen (it anchors on the right edge of the old size).
+                window.set_size(LogicalSize::new(width, 72.0))?;
+                window.set_position(position)?;
+            }
+            resize(&window, width, height)?;
+        }
         if next.1 == CompanionSize::Tucked && !next.2 {
             snap_to_edge(&window)?;
         }
@@ -141,6 +174,15 @@ fn edge_position(
     (x, y.clamp(top, (ay + ah - h - edge).max(top)))
 }
 
+/// The Ask card: centred on the work area (x, y, width), 12 px below its top (DESIGN 4.2).
+fn top_middle(area: (i32, i32, i32), width: f64, scale: f64) -> (i32, i32) {
+    let (ax, ay, aw) = area;
+    (
+        ax + (aw - (width * scale) as i32) / 2,
+        ay + (12.0 * scale) as i32,
+    )
+}
+
 fn snap_to_edge(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = window.current_monitor()? else {
         return Ok(());
@@ -188,7 +230,14 @@ fn compact(state: &AppState) -> bool {
             _ => true,
         }
 }
+/// Height of the Ask card's open menu: 76 px measured in the rendered component (two items, 1 px gap,
+/// 5 px padding, 1 px borders); ui/tests/companion.playwright.js asserts it.
+const ASK_MENU_HEIGHT: f64 = 76.0;
 fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
+    if size == CompanionSize::Ask {
+        // The 460 px card plus 10 px each side for its hover close button.
+        return (480.0, 124.0);
+    }
     if compact {
         // Stopped and the quit question show a Pill with its caption row, as in the mockup.
         return (460.0, 72.0);
@@ -199,7 +248,7 @@ fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
         // Fills the work area 16 px from top and bottom, as in the mockup (DESIGN 4.3: 40-100 %);
         // resize() clamps it. no splitter or saved height yet (SPEC sidecar_height_pct).
         CompanionSize::Sidecar => (340.0, f64::INFINITY),
-        CompanionSize::Pill => (460.0, 72.0),
+        CompanionSize::Ask | CompanionSize::Pill => (460.0, 72.0),
     }
 }
 #[tauri::command]
@@ -208,6 +257,18 @@ pub fn companion_menu(window: tauri::WebviewWindow, open: bool) -> Result<(), St
         return Err("Only recording controls can resize this window".into());
     }
     let state = window.state::<crate::controller::Controller>().state()?;
+    // The Ask card keeps its place (top middle) and grows downward only while its menu is open.
+    if state.companion.size == CompanionSize::Ask {
+        let (width, height) = dimensions(CompanionSize::Ask, false);
+        let height = if open {
+            height + ASK_MENU_HEIGHT + 8.0
+        } else {
+            height
+        };
+        return window
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|e| e.to_string());
+    }
     let (width, height) = dimensions(state.companion.size, compact(&state));
     resize(
         &window,
@@ -238,7 +299,21 @@ pub async fn sharing_mode(app: tauri::AppHandle, active: bool) -> Result<(), Str
 
 #[cfg(test)]
 mod tests {
-    use super::edge_position;
+    use super::{dimensions, edge_position, top_middle};
+    use motet_core::events::CompanionSize;
+
+    #[test]
+    fn ask_card_is_fixed_and_sits_top_middle_of_the_work_area() {
+        assert_eq!(dimensions(CompanionSize::Ask, true), (480.0, 124.0));
+        assert_eq!(dimensions(CompanionSize::Ask, false), (480.0, 124.0));
+        assert_eq!(dimensions(CompanionSize::Pill, true), (460.0, 72.0));
+        // 1440 px wide at 2x under a 25 px menu bar: 960 px card, centred, 12 px down.
+        assert_eq!(
+            top_middle((0, 50, 2880), 480.0, 2.0),
+            ((2880 - 960) / 2, 50 + 24)
+        );
+        assert_eq!(top_middle((-1920, 0, 1920), 480.0, 1.0), (-1920 + 720, 12));
+    }
 
     #[test]
     fn tucked_snaps_to_the_nearer_side_edge_and_stays_on_screen() {

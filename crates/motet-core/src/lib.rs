@@ -18,5 +18,6 @@ pub mod transcribe;
 pub mod whisper;
 
 pub mod tools;
+pub mod watch;
 
 pub mod echo;

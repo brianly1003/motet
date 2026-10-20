@@ -36,7 +36,8 @@ pub struct AppState {
     #[ts(type = "number")]
     pub elapsed_ms: u64,
     pub started_by: Option<StartReason>,
-    pub auto_start: bool,
+    /// Master switch for the Ask card on detected calls (Settings > Calls); default on.
+    pub ask_on_call: bool,
     pub problem: Option<ProblemInfo>,
     pub more_problems: u32,
     pub quit_pending: bool,
@@ -44,7 +45,7 @@ pub struct AppState {
     pub onboarding_done: bool,
     pub sharing: Option<Sharing>,
     pub companion: CompanionState,
-    pub never_pending: Option<NeverPending>,
+    pub ask_off_pending: Option<AskOffPending>,
 }
 
 impl Default for AppState {
@@ -55,7 +56,7 @@ impl Default for AppState {
             app: None,
             elapsed_ms: 0,
             started_by: None,
-            auto_start: true,
+            ask_on_call: true,
             problem: None,
             more_problems: 0,
             quit_pending: false,
@@ -69,7 +70,7 @@ impl Default for AppState {
                 peeking: false,
                 display_id: String::new(),
             },
-            never_pending: None,
+            ask_off_pending: None,
         }
     }
 }
@@ -84,6 +85,8 @@ pub struct CompanionState {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum CompanionSize {
+    /// The 460 px Ask card; fades to the Pill after 20 s.
+    Ask,
     Dot,
     Pill,
     Sidecar,
@@ -92,12 +95,12 @@ pub enum CompanionSize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
-    Auto,
     Ask,
     Off,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-pub struct NeverPending {
+/// "Don't ask for {App}" with its ten-second Undo.
+pub struct AskOffPending {
     pub app_id: String,
     pub app: String,
     pub previous: Mode,
@@ -250,18 +253,25 @@ pub enum Command {
     StopRecording,
     PauseRecording,
     ResumeRecording,
+    CallEnded {
+        call_id: String,
+    },
     MicActivity {
+        app_id: String,
         active: bool,
     },
     AppQuit {
         app_id: String,
     },
-    NeverForApp {
+    DontAskForApp {
         call_id: String,
     },
-    UndoNever {
+    UndoDontAsk {
         app_id: String,
     },
+    /// Pointer over the Ask card holds it; leaving restarts the 20 s.
+    HoldAsk(bool),
+    SetAskOnCall(bool),
     SetCompanionSize(CompanionSize),
     SetCompanionPinned(bool),
     SetSharing(bool),
@@ -319,7 +329,7 @@ mod tests {
         assert!(AppState::decl(&ts_rs::Config::default()).contains("elapsed_ms: number"));
         assert!(SessionState::decl(&ts_rs::Config::default()).contains("resume_until_ms: number"));
         assert!(Problem::decl(&ts_rs::Config::default()).contains("free_bytes: number"));
-        assert_eq!(serde_json::to_string(&Mode::Auto).unwrap(), "\"auto\"");
+        assert_eq!(serde_json::to_string(&Mode::Ask).unwrap(), "\"ask\"");
     }
 
     #[test]

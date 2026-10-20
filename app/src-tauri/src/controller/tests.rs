@@ -5,13 +5,17 @@ struct Fake {
     stops: Arc<Mutex<Vec<Stop>>>,
     allowed: Arc<AtomicBool>,
     announce_ok: bool,
+    mode: Mode,
+    modes: Arc<Mutex<Vec<String>>>,
+    requests: Arc<Mutex<Vec<bool>>>,
 }
 impl Host for Fake {
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
         self.log.lock().unwrap().push(format!("mark:{id}:{at_ms}"));
         Ok(())
     }
-    fn readiness(&self) -> Result<Readiness, String> {
+    fn readiness(&self, request: bool) -> Result<Readiness, String> {
+        self.requests.lock().unwrap().push(request);
         Ok(Readiness {
             microphone: self.allowed.load(Ordering::SeqCst),
             system_audio: true,
@@ -54,8 +58,28 @@ impl Host for Fake {
     fn notice(&self, message: &str) {
         self.log.lock().unwrap().push(format!("notice:{message}"));
     }
+    fn cant_record(&self, body: &str) {
+        self.log.lock().unwrap().push(format!("cant_record:{body}"));
+    }
     fn exit(&self) {
         self.log.lock().unwrap().push("exit".into());
+    }
+    fn app_mode(&self, _app_id: &str) -> Mode {
+        self.mode
+    }
+    fn set_app_mode(&self, app_id: &str, mode: Mode) -> Result<(), String> {
+        self.modes
+            .lock()
+            .unwrap()
+            .push(format!("{app_id}:{mode:?}"));
+        Ok(())
+    }
+    fn ask_on_call(&self) -> bool {
+        true
+    }
+    fn set_ask_on_call(&self, on: bool) -> Result<(), String> {
+        self.log.lock().unwrap().push(format!("ask_on_call:{on}"));
+        Ok(())
     }
 }
 fn engine() -> Engine<Fake> {
@@ -65,6 +89,9 @@ fn engine() -> Engine<Fake> {
             stops: Arc::default(),
             allowed: Arc::new(AtomicBool::new(true)),
             announce_ok: true,
+            mode: Mode::Ask,
+            modes: Arc::default(),
+            requests: Arc::default(),
         },
         Arc::new(AtomicBool::new(false)),
         Arc::new(Mutex::new(AppState::default())),
@@ -281,4 +308,205 @@ fn pause_stops_capture_resume_starts_a_fresh_part_and_the_long_pause_reminds() {
             .iter()
             .any(|s| s == "capture:30000")
     );
+}
+
+fn zoom_call(e: &mut Engine<Fake>, now: u64) -> String {
+    e.watch(
+        WatchEvent::Started {
+            call_id: "zoom-1".into(),
+            app_id: "zoom".into(),
+            app: "Zoom".into(),
+        },
+        now,
+    );
+    "zoom-1".into()
+}
+#[test]
+fn detected_call_asks_and_records_only_after_answer() {
+    let mut e = engine();
+    let call_id = zoom_call(&mut e, 0);
+    {
+        let log = e.host.log.lock().unwrap();
+        assert!(log.iter().any(|s| s.starts_with("state:Asking")));
+        assert!(!log.iter().any(|s| s.starts_with("capture")));
+        assert!(!log.iter().any(|s| s == "announce"));
+    }
+    assert!(!e.busy.load(Ordering::SeqCst));
+    e.action(
+        Action::AnswerAsk {
+            call_id,
+            record: true,
+        },
+        1_000,
+    )
+    .unwrap();
+    // Detection only queries permissions; Record may prompt for them.
+    assert_eq!(*e.host.requests.lock().unwrap(), [false, true]);
+    let log = e.host.log.lock().unwrap();
+    let announce = log.iter().position(|s| s == "announce").unwrap();
+    assert_eq!(log[announce + 1], "capture:0");
+    assert_eq!(e.session.app.state, SessionState::Recording);
+    assert!(e.busy.load(Ordering::SeqCst));
+}
+#[test]
+fn answer_while_importing_is_refused_and_keeps_asking() {
+    let mut e = engine();
+    let call_id = zoom_call(&mut e, 0);
+    e.busy.store(true, Ordering::SeqCst);
+    assert!(
+        e.action(
+            Action::AnswerAsk {
+                call_id,
+                record: true
+            },
+            1_000
+        )
+        .is_err()
+    );
+    assert!(matches!(e.session.app.state, SessionState::Asking { .. }));
+    assert!(e.busy.load(Ordering::SeqCst));
+}
+#[test]
+fn not_this_call_and_stale_answers_take_no_reservation() {
+    let mut e = engine();
+    let call_id = zoom_call(&mut e, 0);
+    e.action(
+        Action::AnswerAsk {
+            call_id: "zoom-0".into(),
+            record: true,
+        },
+        500,
+    )
+    .unwrap();
+    assert!(matches!(e.session.app.state, SessionState::Asking { .. }));
+    assert!(!e.busy.load(Ordering::SeqCst));
+    e.action(
+        Action::AnswerAsk {
+            call_id,
+            record: false,
+        },
+        1_000,
+    )
+    .unwrap();
+    assert_eq!(e.session.app.state, SessionState::Idle);
+    assert!(!e.busy.load(Ordering::SeqCst));
+    assert!(e.host.stops.lock().unwrap().is_empty());
+}
+#[test]
+fn dont_ask_saves_off_and_undo_restores_ask() {
+    let mut e = engine();
+    let call_id = zoom_call(&mut e, 0);
+    e.action(Action::DontAsk { call_id }, 1_000).unwrap();
+    assert_eq!(e.session.app.state, SessionState::Idle);
+    e.action(
+        Action::UndoDontAsk {
+            app_id: "zoom".into(),
+        },
+        2_000,
+    )
+    .unwrap();
+    assert_eq!(*e.host.modes.lock().unwrap(), ["zoom:Off", "zoom:Ask"]);
+    assert!(e.session.app.problem.is_none());
+}
+#[test]
+fn off_app_never_asks() {
+    let mut e = engine();
+    e.host.mode = Mode::Off;
+    zoom_call(&mut e, 0);
+    assert_eq!(e.session.app.state, SessionState::Idle);
+    assert!(e.host.log.lock().unwrap().is_empty());
+}
+#[test]
+fn second_call_app_while_recording_raises_no_problem() {
+    let mut e = engine();
+    e.action(Action::Start, 0).unwrap();
+    zoom_call(&mut e, 1_000);
+    e.watch(
+        WatchEvent::Mic {
+            app_id: "zoom".into(),
+            active: true,
+        },
+        2_000,
+    );
+    assert_eq!(e.session.app.state, SessionState::Recording);
+    assert!(e.session.app.problem.is_none());
+    assert!(!e.host.stops.lock().unwrap()[0].load(Ordering::SeqCst));
+}
+#[test]
+fn hold_and_ask_on_call_reach_the_session_and_the_host() {
+    let mut e = engine();
+    assert!(e.session.app.ask_on_call);
+    e.action(Action::AskOnCall(false), 0).unwrap();
+    assert!(!e.session.app.ask_on_call);
+    assert!(
+        e.host
+            .log
+            .lock()
+            .unwrap()
+            .contains(&"ask_on_call:false".into())
+    );
+    zoom_call(&mut e, 1_000);
+    assert_eq!(e.session.app.state, SessionState::Idle);
+    e.action(Action::AskOnCall(true), 2_000).unwrap();
+    zoom_call(&mut e, 3_000);
+    e.action(Action::HoldAsk(true), 4_000).unwrap();
+    e.apply(Command::Tick, 60_000);
+    assert_eq!(e.session.app.companion.size, CompanionSize::Ask);
+}
+#[test]
+fn app_mode_action_saves_the_mode_through_the_host() {
+    let mut e = engine();
+    e.action(
+        Action::AppMode {
+            app_id: "zoom".into(),
+            mode: Mode::Ask,
+        },
+        0,
+    )
+    .unwrap();
+    assert_eq!(*e.host.modes.lock().unwrap(), vec!["zoom:Ask".to_string()]);
+    assert_eq!(e.session.app.state, SessionState::Idle);
+}
+#[test]
+fn a_blocked_detected_call_notifies_quietly_and_a_blocked_start_still_shows_motet() {
+    let mut e = engine();
+    e.host.allowed.store(false, Ordering::SeqCst);
+    zoom_call(&mut e, 0);
+    assert_eq!(e.session.app.state, SessionState::Idle);
+    {
+        let log = e.host.log.lock().unwrap();
+        // `notice` is what pulls the library forward (Desktop::notice -> show()).
+        assert!(!log.iter().any(|s| s.starts_with("notice:")));
+        assert_eq!(
+            log.iter()
+                .filter(|s| s.starts_with("cant_record:"))
+                .collect::<Vec<_>>(),
+            ["cant_record:Microphone is off. Turn it on in System Settings."]
+        );
+    }
+    e.action(Action::Start, 1_000).unwrap();
+    let log = e.host.log.lock().unwrap();
+    assert!(log.iter().any(|s| s.starts_with("notice:")));
+    assert_eq!(
+        log.iter().filter(|s| s.starts_with("cant_record:")).count(),
+        1
+    );
+}
+#[test]
+fn record_now_while_asking_records_the_asked_call_or_releases_the_gate() {
+    let mut e = engine();
+    zoom_call(&mut e, 0);
+    e.action(Action::Start, 1_000).unwrap();
+    assert_eq!(e.session.app.state, SessionState::Recording);
+    assert_eq!(e.session.app.app.as_deref(), Some("Zoom"));
+    assert!(e.busy.load(Ordering::SeqCst));
+    assert!(e.host.log.lock().unwrap().iter().any(|s| s == "capture:0"));
+
+    // Blocked at Record: no recording, so the reservation is not kept.
+    let mut e = engine();
+    zoom_call(&mut e, 0);
+    e.host.allowed.store(false, Ordering::SeqCst);
+    e.action(Action::Start, 1_000).unwrap();
+    assert_ne!(e.session.app.state, SessionState::Recording);
+    assert!(!e.busy.load(Ordering::SeqCst));
 }

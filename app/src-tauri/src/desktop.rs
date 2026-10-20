@@ -4,10 +4,10 @@ use crate::{
     controller::{Action, Controller, Host, Job},
     library, permissions, recording,
 };
-use motet_core::events::{AppState, Event, Readiness, SessionState};
+use motet_core::events::{AppState, Event, Mode, Readiness, SessionState};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use tauri::{Emitter, Manager};
 
 pub(crate) fn show(app: &tauri::AppHandle) {
@@ -57,7 +57,12 @@ pub fn run() {
             crate::live::get_levels,
             crate::live::live_transcript,
             resume_remaining_ms,
-            notification_permission
+            notification_permission,
+            answer_ask,
+            dont_ask_for_app,
+            undo_dont_ask,
+            hold_ask,
+            set_ask_on_call
         ])
         .setup(|app| {
             let root = app.path().document_dir()?.join("Motet").join("imports");
@@ -77,12 +82,20 @@ pub fn run() {
                 sender.clone(),
                 allow_exit.clone(),
             )?;
+            let config = app.path().app_config_dir()?;
             let host = Desktop {
                 app: app.handle().clone(),
                 root: root.clone(),
                 jobs,
+                settings: Mutex::new(crate::calls::Settings::load(&config)),
+                config,
             };
-            app.manage(Controller::spawn(host, sender, receiver, busy.clone())?);
+            app.manage(Controller::spawn(
+                host,
+                sender.clone(),
+                receiver,
+                busy.clone(),
+            )?);
             app.manage(Library {
                 root,
                 busy,
@@ -93,6 +106,8 @@ pub fn run() {
             crate::companion::create(app.handle())?;
             crate::notifications::setup(app.handle())?;
             crate::shortcuts::install(app.handle())?;
+            // After the companion exists: a detected call shows its Ask card there.
+            crate::calls::spawn(app.handle().clone(), sender)?;
             app.manage(crate::tray::State::default());
             let menu = crate::tray::initial(app.handle())?;
             tauri::tray::TrayIconBuilder::with_id("motet")
@@ -122,6 +137,29 @@ pub fn run() {
                         let _ = app.emit("motet://open-settings", ());
                     }
                     "quit" => app.exit(0),
+                    "ask-record" | "ask-no" => {
+                        // The menu is rebuilt per state, so the call id is read when clicked.
+                        if let Ok(AppState {
+                            state: SessionState::Asking { call_id, .. },
+                            ..
+                        }) = app.state::<Controller>().state()
+                        {
+                            let record = event.id.as_ref() == "ask-record";
+                            dispatch(app.clone(), Action::AnswerAsk { call_id, record });
+                        }
+                    }
+                    "ask-on-call" => {
+                        if let Ok(state) = app.state::<Controller>().state() {
+                            dispatch(app.clone(), Action::AskOnCall(!state.ask_on_call));
+                        }
+                    }
+                    id if id.starts_with("ask-again:") => dispatch(
+                        app.clone(),
+                        Action::AppMode {
+                            app_id: id["ask-again:".len()..].to_string(),
+                            mode: Mode::Ask,
+                        },
+                    ),
                     _ => {}
                 })
                 .build(app)?;
@@ -234,18 +272,56 @@ async fn quit(app: tauri::AppHandle, stop_and_save: bool) -> Result<(), String> 
 async fn dismiss_problem(app: tauri::AppHandle, id: u64) -> Result<(), String> {
     act(app, Action::Dismiss(id)).await
 }
+#[tauri::command]
+async fn answer_ask(app: tauri::AppHandle, call_id: String, record: bool) -> Result<(), String> {
+    act(app, Action::AnswerAsk { call_id, record }).await
+}
+#[tauri::command]
+async fn dont_ask_for_app(app: tauri::AppHandle, call_id: String) -> Result<(), String> {
+    act(app, Action::DontAsk { call_id }).await
+}
+#[tauri::command]
+async fn undo_dont_ask(app: tauri::AppHandle, app_id: String) -> Result<(), String> {
+    act(app, Action::UndoDontAsk { app_id }).await
+}
+#[tauri::command]
+async fn hold_ask(app: tauri::AppHandle, hold: bool) -> Result<(), String> {
+    act(app, Action::HoldAsk(hold)).await
+}
+#[tauri::command]
+async fn set_ask_on_call(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    act(app, Action::AskOnCall(on)).await
+}
 
 struct Desktop {
     app: tauri::AppHandle,
     root: PathBuf,
     jobs: mpsc::Sender<Job>,
+    /// app_config_dir: settings.json lives here.
+    config: PathBuf,
+    settings: Mutex<crate::calls::Settings>,
+}
+impl Desktop {
+    fn save(&self, change: impl FnOnce(&mut crate::calls::Settings)) -> Result<(), String> {
+        let mut settings = self
+            .settings
+            .lock()
+            .map_err(|_| "Settings are unavailable")?;
+        let mut next = settings.clone();
+        change(&mut next);
+        if next != *settings {
+            next.save(&self.config)?;
+            *settings = next;
+        }
+        Ok(())
+    }
 }
 impl Host for Desktop {
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String> {
         crate::bookmarks::mark(&self.root, id, at_ms)
     }
-    fn readiness(&self) -> Result<Readiness, String> {
-        let (microphone, system_audio) = permissions::audio()?;
+    fn readiness(&self, request: bool) -> Result<Readiness, String> {
+        let (microphone, system_audio) = permissions::audio(request)?;
         let disk = std::process::Command::new("df")
             .arg("-Pk")
             .arg(&self.root)
@@ -316,8 +392,8 @@ impl Host for Desktop {
             .emit("motet://event", event)
             .map_err(|e| e.to_string())
     }
+    /// No OS notice (SPEC 7.5): a visible companion or library window is the confirmation.
     fn announce(&self) -> Result<(), String> {
-        crate::notifications::recording(&self.app);
         if crate::companion::available(&self.app) {
             return Ok(());
         }
@@ -349,6 +425,11 @@ impl Host for Desktop {
         show(&self.app);
         let _ = self.app.emit("motet://notice", message);
     }
+    fn cant_record(&self, body: &str) {
+        // Mid-call, nobody pressed anything: never pull a window forward, even if this fails.
+        crate::notifications::quiet(&self.app, "Motet can't record", body);
+        let _ = self.app.emit("motet://notice", body);
+    }
     fn exit(&self) {
         if self.jobs.send(Job::Exit).is_err() {
             // A disconnected queue means the worker has already stopped; no WAV is still open.
@@ -358,6 +439,35 @@ impl Host for Desktop {
                 .store(true, Ordering::SeqCst);
             self.app.exit(0);
         }
+    }
+    fn app_mode(&self, app_id: &str) -> Mode {
+        let saved = self
+            .settings
+            .lock()
+            .ok()
+            .and_then(|s| s.app_modes.get(app_id).copied());
+        saved.unwrap_or_else(|| {
+            motet_core::watch::rules()
+                .into_iter()
+                .find(|r| r.app_id == app_id)
+                .map_or(Mode::Off, |r| r.mode)
+        })
+    }
+    fn set_app_mode(&self, app_id: &str, mode: Mode) -> Result<(), String> {
+        self.save(|s| {
+            s.app_modes.insert(app_id.to_string(), mode);
+        })?;
+        // The tray lists Off apps; rebuild it off this thread (the controller may hold the state).
+        crate::tray::invalidate(&self.app);
+        let app = self.app.clone();
+        tauri::async_runtime::spawn_blocking(move || refresh_tray(&app));
+        Ok(())
+    }
+    fn ask_on_call(&self) -> bool {
+        self.settings.lock().is_ok_and(|s| s.ask_on_call)
+    }
+    fn set_ask_on_call(&self, on: bool) -> Result<(), String> {
+        self.save(|s| s.ask_on_call = on)
     }
 }
 

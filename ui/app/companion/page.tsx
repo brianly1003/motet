@@ -6,6 +6,7 @@ import { elapsedLabel } from "@/lib/session";
 import { strings as s } from "@/lib/strings";
 import MotetMark from "@/components/MotetMark";
 import { Duet } from "@/components/Duet";
+import { AskCard } from "@/components/AskCard";
 import { MyNotes } from "@/components/MyNotes";
 import { gapLabel, transcriptLines } from "@/lib/transcript";
 import "../../styles/companion.css";
@@ -95,15 +96,20 @@ export default function Companion() {
     return () => { active = false; clearTimeout(timer); };
   }, [stopped]);
   if (!state) return <div className="companion-loading">{s.loading}</div>;
-  const dot = state.companion.size === "Dot" && !state.quit_pending && !stopped && !paused;
-  const sidecar = state.companion.size === "Sidecar" && !stopped && !state.quit_pending;
-  const tucked = state.companion.size === "Tucked" && !stopped && !state.quit_pending && !paused;
+  const asking = state.state.type === "Asking" ? state.state : null;
+  const offPending = !asking && state.state.type === "Idle" ? state.ask_off_pending : null;
+  // Asking and the Undo prompt are Pill-only: Rust sizes them (Ask card, then Pill), never Dot or Tucked.
+  const prompting = !!(asking || offPending);
+  if (asking && state.companion.size === "Ask") return <AskCard app={asking.app} callId={asking.call_id}/>;
+  const dot = state.companion.size === "Dot" && !state.quit_pending && !stopped && !paused && !prompting;
+  const sidecar = state.companion.size === "Sidecar" && !stopped && !state.quit_pending && !prompting;
+  const tucked = state.companion.size === "Tucked" && !stopped && !state.quit_pending && !paused && !prompting;
   const lines = transcriptLines(live, []);
   // Each pause shows as one muted line before the first line spoken after it.
   const gapsBefore = (index: number) => gaps.filter(gap => lines.findIndex(line => line.ms !== null && line.ms >= gap.at_ms) === index);
   const gapRows = (index: number) => gapsBefore(index).map(gap => <div className="line gap" key={`gap-${gap.at_ms}`}><span className="ts">{elapsedLabel(gap.at_ms)}</span><span className="who"/><span className="tx">{s.pausedFor} {gapLabel(gap.ms)}</span></div>);
   const latest = lines.at(-1);
-  return <><main className="pill" data-size={dot ? "dot" : tucked ? "tucked" : sidecar ? "sidecar" : "pill"} data-peek={state.companion.peeking} data-leaving={leaving || undefined} role="toolbar" tabIndex={0} aria-label={s.companion}
+  return <><main className="pill" data-size={dot ? "dot" : tucked ? "tucked" : sidecar ? "sidecar" : "pill"} data-peek={state.companion.peeking} data-leaving={leaving || undefined} data-asking={prompting || undefined} role="toolbar" tabIndex={0} aria-label={s.companion}
     onKeyDown={event => {
       if (event.code === "Space" && event.target === event.currentTarget && state.state.type === "Recording") { event.preventDefault(); void mark(); }
       if (event.key === "Escape" && (state.state.type === "Recording" || paused)) {
@@ -126,6 +132,15 @@ export default function Companion() {
           <span className="pillmsg">{notice || (state.state.type === "Finishing" ? s.quitPending : s.pillQuitQuestion)}</span>
           <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(false))}>{state.state.type === "Recording" ? s.keepRecording : s.stayOpen}</button>
           {state.state.type !== "Finishing" && <button className="primary" disabled={pending} onClick={() => act(async () => { await flushNotes.current(); await ipc.quitRecording(true); })}>{s.stopAndSave}</button>}
+        </> : asking ? <>
+          <span className="dot amber" aria-hidden="true" />
+          <span className="pillmsg" role="status">{notice || s.askPill.replace("{App}", asking.app)}</span>
+          <button className="primary" disabled={pending} onClick={() => act(() => ipc.answerAsk(asking.call_id, true))}>{s.askRecord}</button>
+          <button className="iconbtn" disabled={pending} aria-label={s.askNotThisCall} title={s.askNotThisCall} onClick={() => act(() => ipc.answerAsk(asking.call_id, false))}>✕</button>
+        </> : offPending ? <>
+          <span className="dot stopped" aria-hidden="true" />
+          <span className="pillmsg" role="status">{notice || s.askOffDone.replace("{App}", offPending.app)}</span>
+          <button className="quiet" disabled={pending} onClick={() => act(() => ipc.undoDontAsk(offPending.app_id))}>{s.undo}</button>
         </> : paused ? <>
           <span className="dot stopped" aria-hidden="true" />
           <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
@@ -145,9 +160,9 @@ export default function Companion() {
           {sidecar ? <><button className="iconbtn" aria-label="Keep open" title="Keep open while I work elsewhere" aria-pressed={pinned} onClick={() => act(() => ipc.pinCompanion(!pinned))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M6 2h4l-.5 4 2.5 2.5H4L6.5 6zM8 8.5V14"/></svg></button><button className="iconbtn" aria-label="Tuck to the screen edge" onClick={() => act(() => size("Tucked"))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M3 8h8M8 5l3 3-3 3M13.5 3v10"/></svg></button></> : <button className="iconbtn" aria-label="Open my notes" title="Take a note (⌃⌥N)" onClick={() => act(async () => { await size("Sidecar"); await ipc.takeNote(); })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg></button>}
         </>}
       </div>}
-    {!dot && !tucked && !sidecar && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}
+    {!dot && !tucked && !sidecar && !prompting && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}
     {jotOpen && <form className="jotbar" onSubmit={event => { event.preventDefault(); void act(async () => { await flushNotes.current(); await ipc.addJot(jot); setJot(""); setNotesKey(key => key + 1); setJotOpen(false); await ipc.companionMenu(false); }); }}><input type={state.sharing ? "password" : "text"} autoFocus value={jot} onChange={event => setJot(event.target.value)} placeholder="Jot a line into My notes…" aria-label="Jot a line into My notes"/><kbd>⌃⌥J</kbd><button type="submit" className="quiet">Add</button></form>}
-    {sidecar && meetingId && <div className="pilldrawer">{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? `Started because ${state.started_by.app} is using your microphone.` : "Started manually.")}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>]).concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts">··:··</span><span className="who them">…</span><span className="tx">listening</span></div>] : []) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><MyNotes key={`${meetingId}-${notesKey}`} meetingId={meetingId} elapsed={state.elapsed_ms} registerFlush={flush => { flushNotes.current = flush; }}/></div>}
+    {sidecar && meetingId && <div className="pilldrawer">{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? s.whyStarted.replace("{App}", state.started_by.app) : s.startedManually)}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>]).concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts">··:··</span><span className="who them">…</span><span className="tx">listening</span></div>] : []) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><MyNotes key={`${meetingId}-${notesKey}`} meetingId={meetingId} elapsed={state.elapsed_ms} registerFlush={flush => { flushNotes.current = flush; }}/></div>}
     {markedAt !== null && <span className="sr-only" role="status">{s.marked} {elapsedLabel(markedAt)}</span>}
     {notice && <span className="sr-only" role="alert">{notice}</span>}
   </main></>;

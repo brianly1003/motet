@@ -2,6 +2,7 @@
 use motet_core::{
     events::*,
     session::{self, Effect, Input, Session},
+    watch::WatchEvent,
 };
 use std::sync::{
     Arc, Mutex,
@@ -22,10 +23,28 @@ pub enum Action {
     RequestQuit,
     Quit(bool),
     Dismiss(u64),
+    AnswerAsk {
+        call_id: String,
+        record: bool,
+    },
+    DontAsk {
+        call_id: String,
+    },
+    UndoDontAsk {
+        app_id: String,
+    },
+    HoldAsk(bool),
+    AskOnCall(bool),
+    /// Sets an app's mode at any time (the tray's "Ask again about {App}"); no session command.
+    AppMode {
+        app_id: String,
+        mode: Mode,
+    },
 }
 pub enum Message {
     Mark(mpsc::Sender<Result<u64, String>>),
     Action(Action, mpsc::Sender<Result<(), String>>),
+    Watch(WatchEvent),
     CaptureFailed {
         id: String,
         reason: String,
@@ -53,12 +72,20 @@ pub enum Job {
 /// Native effects are injected so controller ordering can be tested without opening a microphone.
 pub trait Host: Send + 'static {
     fn mark(&self, id: &str, at_ms: u64) -> Result<(), String>;
-    fn readiness(&self) -> Result<Readiness, String>;
+    /// `request` may show the OS permission prompts; `false` only queries (a detected call).
+    fn readiness(&self, request: bool) -> Result<Readiness, String>;
     fn event(&self, event: Event) -> Result<(), String>;
     fn announce(&self) -> Result<(), String>;
     fn job(&self, job: Job) -> Result<(), String>;
     fn notice(&self, message: &str);
+    /// SPEC 7.5 `cant_record` for a detected call: an OS notification only, no window comes forward.
+    fn cant_record(&self, body: &str);
     fn exit(&self);
+    /// The saved Ask/Off choice for a call app, or its bundled default.
+    fn app_mode(&self, app_id: &str) -> Mode;
+    fn set_app_mode(&self, app_id: &str, mode: Mode) -> Result<(), String>;
+    fn ask_on_call(&self) -> bool;
+    fn set_ask_on_call(&self, on: bool) -> Result<(), String>;
 }
 
 pub struct Controller {
@@ -93,6 +120,7 @@ impl Controller {
                         Ok(Message::Action(action, reply)) => {
                             let _ = reply.send(engine.action(action, now));
                         }
+                        Ok(Message::Watch(event)) => engine.watch(event, now),
                         Ok(Message::CaptureFailed { id, reason })
                             if engine.session.app.meeting_id.as_ref() == Some(&id) =>
                         {
@@ -181,7 +209,18 @@ impl<H: Host> Engine<H> {
     fn new(host: H, busy: Arc<AtomicBool>, shared: Arc<Mutex<AppState>>) -> Self {
         let mut session = Session::new(Readiness::default());
         session.app.dnd_active = true; // Focus fallback: the companion always announces recording.
-        session.app.auto_start = false; // Automatic detection belongs to M6.
+        // The saved switch is already on disk and no window exists yet: keep the state only.
+        let (session, _) = session::next(
+            session,
+            Input {
+                now_ms: 0,
+                since: timestamp(),
+                command: Command::SetAskOnCall(host.ask_on_call()),
+            },
+        );
+        if let Ok(mut state) = shared.lock() {
+            *state = session.app.clone();
+        }
         Self {
             host,
             session,
@@ -212,40 +251,54 @@ impl<H: Host> Engine<H> {
         if self.exiting {
             return Err("Motet is shutting down".into());
         }
+        // Record now while asking is the answer to the question (guardrail 2): record that call.
+        let action = match (action, &self.session.app.state) {
+            (Action::Start, SessionState::Asking { call_id, .. }) => Action::AnswerAsk {
+                call_id: call_id.clone(),
+                record: true,
+            },
+            (action, _) => action,
+        };
         let command = match action {
             Action::Start => {
-                if self
-                    .busy
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_err()
-                {
-                    return Err("A meeting is already active or being imported".into());
-                }
-                self.owns_busy = true;
-                self.capture_failed = false;
-                let readiness = match self.host.readiness() {
-                    Ok(r) => r,
-                    Err(e) => {
-                        self.release();
-                        return Err(e);
-                    }
-                };
-                // Apply readiness without releasing the reservation before StartManual.
-                let (session, effects) = session::next(
-                    self.session.clone(),
-                    Input {
-                        now_ms: now,
-                        since: timestamp(),
-                        command: Command::ReadinessChanged(readiness),
+                self.reserve(now)?;
+                self.apply(
+                    Command::StartManual {
+                        meeting_id: timestamp(),
+                        notes_only: false,
                     },
+                    now,
                 );
-                self.session = session;
-                self.effects(effects, now);
-                Command::StartManual {
-                    meeting_id: timestamp(),
-                    notes_only: false,
+                // A blocked or ignored start leaves no recording to hold the gate for.
+                if self.session.app.state != SessionState::Recording {
+                    self.release();
                 }
+                return Ok(());
             }
+            Action::AnswerAsk {
+                call_id,
+                record: true,
+            } => {
+                self.reserve(now)?;
+                self.apply(
+                    Command::AnswerAsk {
+                        call_id,
+                        record: true,
+                    },
+                    now,
+                );
+                // A stale call or a blocked start leaves no recording to hold the gate for.
+                if self.session.app.state != SessionState::Recording {
+                    self.release();
+                }
+                return Ok(());
+            }
+            Action::AnswerAsk { call_id, record } => Command::AnswerAsk { call_id, record },
+            Action::DontAsk { call_id } => Command::DontAskForApp { call_id },
+            Action::UndoDontAsk { app_id } => Command::UndoDontAsk { app_id },
+            Action::AppMode { app_id, mode } => return self.host.set_app_mode(&app_id, mode),
+            Action::HoldAsk(hold) => Command::HoldAsk(hold),
+            Action::AskOnCall(on) => Command::SetAskOnCall(on),
             Action::Resume => {
                 if self.capture_failed {
                     return Err(
@@ -259,7 +312,7 @@ impl<H: Host> Engine<H> {
                 ) {
                     return Err("There is no paused or stopped recording to resume".into());
                 }
-                let readiness = self.host.readiness()?;
+                let readiness = self.host.readiness(true)?;
                 self.apply(Command::ReadinessChanged(readiness), now);
                 Command::ResumeRecording
             }
@@ -292,6 +345,80 @@ impl<H: Host> Engine<H> {
         };
         self.apply(command, now);
         Ok(())
+    }
+    /// Take the one-meeting reservation and fresh readiness before a recording can start.
+    fn reserve(&mut self, now: u64) -> Result<(), String> {
+        if self
+            .busy
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err("A meeting is already active or being imported".into());
+        }
+        self.owns_busy = true;
+        self.capture_failed = false;
+        let readiness = match self.host.readiness(true) {
+            Ok(r) => r,
+            Err(e) => {
+                self.release();
+                return Err(e);
+            }
+        };
+        // Apply readiness without releasing the reservation before the start command.
+        let (session, effects) = session::next(
+            self.session.clone(),
+            Input {
+                now_ms: now,
+                since: timestamp(),
+                command: Command::ReadinessChanged(readiness),
+            },
+        );
+        self.session = session;
+        self.effects(effects, now);
+        Ok(())
+    }
+    /// Detector events. A detected call only ever asks; nothing records until AnswerAsk.
+    pub(crate) fn watch(&mut self, event: WatchEvent, now: u64) {
+        if self.exiting {
+            return;
+        }
+        let command = match event {
+            WatchEvent::Started {
+                call_id,
+                app_id,
+                app,
+            } => {
+                let mode = self.host.app_mode(&app_id);
+                if matches!(
+                    self.session.app.state,
+                    SessionState::Idle | SessionState::Asking { .. }
+                ) && self.session.app.ask_on_call
+                    && mode == Mode::Ask
+                {
+                    // The question is only asked if a recording could start; check that freshly,
+                    // without permission prompts in the middle of someone's call (SPEC 6.1).
+                    match self.host.readiness(false) {
+                        Ok(readiness) => self.apply(Command::ReadinessChanged(readiness), now),
+                        Err(e) => {
+                            eprintln!("Motet: not asking about the {app} call: {e}");
+                            return;
+                        }
+                    }
+                }
+                Command::CallDetected {
+                    call: Call {
+                        call_id,
+                        app_id,
+                        app,
+                        mode,
+                    },
+                    meeting_id: timestamp(),
+                }
+            }
+            WatchEvent::Ended { call_id } => Command::CallEnded { call_id },
+            WatchEvent::Mic { app_id, active } => Command::MicActivity { app_id, active },
+        };
+        self.apply(command, now);
     }
     fn stop(&mut self) {
         if let Some(stop) = self.stop.take() {
@@ -364,6 +491,10 @@ impl<H: Host> Engine<H> {
                         .notice("Recording could not start. Check the problem shown in Motet.");
                     Ok(())
                 }
+                Effect::CantRecord { problem } => {
+                    self.host.cant_record(&cant_record(&problem));
+                    Ok(())
+                }
                 Effect::Exit => {
                     self.exiting = true;
                     self.busy.store(true, Ordering::SeqCst);
@@ -371,6 +502,23 @@ impl<H: Host> Engine<H> {
                     Ok(())
                 }
                 Effect::PauseDownload => Ok(()), // No downloader runs in this M4 shell.
+                // A settings write that fails must not stop a recording; say so and go on.
+                Effect::SetAppMode { app_id, mode } => {
+                    if let Err(e) = self.host.set_app_mode(&app_id, mode) {
+                        self.host
+                            .notice(&format!("Couldn't save the Calls setting: {e}"));
+                    }
+                    Ok(())
+                }
+                Effect::SetAskOnCall(on) => {
+                    if let Err(e) = self.host.set_ask_on_call(on) {
+                        self.host
+                            .notice(&format!("Couldn't save the Calls setting: {e}"));
+                    }
+                    Ok(())
+                }
+                // meeting.json `apps` is written when the full metadata lands.
+                Effect::AddApp { .. } => Ok(()),
                 _ => Err(
                     "This session effect is not available in the manual recording controller"
                         .into(),
@@ -413,6 +561,28 @@ impl<H: Host> Engine<H> {
 }
 pub(crate) const STILL_PAUSED: &str =
     "Still paused. Nothing has been recorded for 15 minutes. Resume or stop the recording.";
+/// SPEC 7.5 `cant_record` body: "{Permission} is off. Turn it on in {Settings name}.", or a
+/// plain one-line reason for a blocker that is not a permission.
+fn cant_record(problem: &Problem) -> String {
+    let settings = if cfg!(windows) {
+        "Windows Settings"
+    } else {
+        "System Settings"
+    };
+    match problem {
+        Problem::PermissionMissing { kind, .. } => {
+            let permission = match kind {
+                PermissionKind::Microphone => "Microphone",
+                PermissionKind::SystemAudio => "Screen & System Audio Recording",
+                PermissionKind::Notifications => "Notifications",
+            };
+            format!("{permission} is off. Turn it on in {settings}.")
+        }
+        Problem::ModelMissing { .. } => "The speech model is missing.".into(),
+        Problem::DiskFull | Problem::DiskLow { .. } => "The disk is full.".into(),
+        _ => "Check the problem shown in Motet.".into(),
+    }
+}
 fn timestamp() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

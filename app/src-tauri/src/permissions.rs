@@ -1,6 +1,7 @@
 //! Native permission queries; unsafe Objective-C calls stay behind this boundary.
+/// `request` shows the macOS prompts for undecided access; `false` only queries.
 #[cfg(target_os = "macos")]
-pub fn audio() -> Result<(bool, bool), String> {
+pub fn audio(request: bool) -> Result<(bool, bool), String> {
     use objc2::{
         msg_send,
         runtime::{AnyClass, AnyObject, Bool},
@@ -20,12 +21,12 @@ pub fn audio() -> Result<(bool, bool), String> {
     // by the linked AVFoundation framework; NSInteger is isize and BOOL uses objc2::Bool.
     unsafe {
         let status: isize = msg_send![device, authorizationStatusForMediaType: AVMediaTypeAudio];
-        if status == 0 {
+        if request && status == 0 {
             let callback = block2::RcBlock::new(|_: Bool| {});
             let _: () = msg_send![device, requestAccessForMediaType: AVMediaTypeAudio, completionHandler: &*callback];
         }
         let screen = CGPreflightScreenCaptureAccess();
-        if !screen {
+        if request && !screen {
             CGRequestScreenCaptureAccess();
         }
         // Prompting is not permission. A later user start/resume performs fresh checks.
@@ -33,7 +34,7 @@ pub fn audio() -> Result<(bool, bool), String> {
     }
 }
 #[cfg(not(target_os = "macos"))]
-pub fn audio() -> Result<(bool, bool), String> {
+pub fn audio(_request: bool) -> Result<(bool, bool), String> {
     Err("Desktop recording permission checks are currently implemented for macOS only".into())
 }
 

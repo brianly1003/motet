@@ -45,6 +45,11 @@ export async function onOpenMeeting(callback: (id: string) => void) {
   return listen<string>("motet://open-meeting", event => callback(event.payload));
 }
 
+export const answerAsk = (callId: string, record: boolean) => invoke<void>("answer_ask", { callId, record });
+export const dontAskForApp = (callId: string) => invoke<void>("dont_ask_for_app", { callId });
+export const undoDontAsk = (appId: string) => invoke<void>("undo_dont_ask", { appId });
+export const holdAsk = (hold: boolean) => invoke<void>("hold_ask", { hold });
+
 export const markMoment = () => invoke<number>("mark_moment");
 
 import type { MyNotes } from "./bindings/MyNotes";

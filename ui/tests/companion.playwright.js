@@ -172,6 +172,68 @@ async (page) => {
     await p.getByRole('button', {name: 'Keep recording', exact: true}).waitFor();
     if (!await p.locator('.caption').isVisible()) throw Error('Quit question lost its caption row (mockup keeps it)');
     await p.locator('.pill').screenshot({path: `.playwright-out/parity-quit-${theme}.png`});
+    // Ask first (M6): a detected call asks in the Ask card; nothing records until Record.
+    const call = name => p.evaluate(name => window.testCalls.filter(c => c.command === name).at(-1)?.args, name);
+    const ask = (size, extra = {}) => p.evaluate(([size, extra]) => window.fixtureState({quit_pending: false, meeting_id: null, state: {type: 'Asking', call_id: 'c1', app: 'Zoom'}, companion: {visible: true, size, pinned: false, peeking: false, display_id: null}, ...extra}), [size, extra]);
+    await p.setViewportSize({width: 480, height: 124});
+    await ask('Ask');
+    await p.getByText('Record this Zoom call?', {exact: true}).waitFor();
+    await p.getByText('Nothing is recorded until you choose Record.', {exact: true}).waitFor();
+    await p.getByText('Tell the people on the call before you record.', {exact: true}).waitFor();
+    const cardBox = await p.locator('.askcard').boundingBox();
+    if (Math.round(cardBox.width) !== 460) throw Error(`Ask card is ${cardBox.width}px wide`);
+    if (await p.locator('.pill').count()) throw Error('Ask card rendered inside the recording Pill');
+    await p.mouse.move(1, 1);
+    await p.locator('.askcard').hover();
+    await p.waitForFunction(() => window.testCalls.some(c => c.command === 'hold_ask' && c.args.hold === true));
+    await p.waitForTimeout(200);
+    if (await p.locator('.askcard .x').evaluate(e => getComputedStyle(e).opacity) !== '1') throw Error('Close x not shown on hover');
+    await p.screenshot({path: `.playwright-out/ask-card-${theme}.png`});
+    await p.mouse.move(2, 2);
+    await p.waitForFunction(() => window.testCalls.some(c => c.command === 'hold_ask' && c.args.hold === false));
+    if (!await p.getByRole('button', {name: 'Record', exact: true}).evaluate(e => { const probe = document.createElement('i'); probe.style.color = 'var(--ink-1)'; document.body.append(probe); const ink = getComputedStyle(probe).color; probe.remove(); return getComputedStyle(e).backgroundColor === ink; })) throw Error('Record must be ink, not red');
+    await p.getByRole('button', {name: 'Record', exact: true}).click();
+    const yes = await call('answer_ask');
+    if (yes?.callId !== 'c1' || yes.record !== true) throw Error(`Record sent ${JSON.stringify(yes)}`);
+    await p.getByRole('button', {name: 'Close: not this call'}).click({force: true});
+    const no = await call('answer_ask');
+    if (no?.callId !== 'c1' || no.record !== false) throw Error(`Close sent ${JSON.stringify(no)}`);
+    await p.getByRole('button', {name: 'More choices'}).click();
+    await p.getByRole('menuitem', {name: 'Not for this call'}).waitFor();
+    // Rust grows the Ask window to 124 + menu height + 8 while the menu is open (ASK_MENU_HEIGHT in companion.rs).
+    const menuBox = await p.locator('.askcard .dropdown').boundingBox();
+    const menuWindow = 124 + 76 + 8;
+    if (Math.round(menuBox.height) !== 76) throw Error(`Menu is ${menuBox.height}px tall, companion.rs assumes 76`);
+    if (menuBox.y + menuBox.height > menuWindow) throw Error(`Open menu ends at ${menuBox.y + menuBox.height}px, past the ${menuWindow}px window`);
+    if ((await call('companion_menu'))?.open !== true) throw Error('Opening the menu did not call companion_menu(true)');
+    await p.setViewportSize({width: 480, height: menuWindow});
+    await p.screenshot({path: `.playwright-out/ask-menu-${theme}.png`});
+    await p.mouse.click(5, 5);
+    await p.locator('.askcard .dropdown').waitFor({state: 'detached'});
+    if ((await call('companion_menu'))?.open !== false) throw Error('Closing the menu did not call companion_menu(false)');
+    await p.setViewportSize({width: 480, height: 124});
+    await p.getByRole('button', {name: 'More choices'}).click();
+    await p.getByRole('menuitem', {name: "Don't ask for Zoom"}).waitFor();
+    await p.getByRole('menuitem', {name: "Don't ask for Zoom"}).click();
+    if ((await call('dont_ask_for_app'))?.callId !== 'c1') throw Error("Don't ask did not send dont_ask_for_app");
+    // After 20 s Rust sizes the session to the Pill: amber dot, Record, close, no caption row.
+    await p.setViewportSize({width: 460, height: 72});
+    await ask('Pill');
+    await p.getByText('Zoom call · not recording', {exact: true}).waitFor();
+    if (await p.locator('.caption').isVisible()) throw Error('Asking Pill shows the caption row');
+    if (await p.locator('.pillbar .dot.pulse').count()) throw Error('Asking Pill shows the red recording dot');
+    await p.locator('.pill').screenshot({path: `.playwright-out/ask-pill-${theme}.png`});
+    await p.getByRole('button', {name: 'Record', exact: true}).click();
+    if ((await call('answer_ask')).record !== true) throw Error('Pill Record did not answer');
+    await p.getByRole('button', {name: 'Not for this call', exact: true}).click();
+    if ((await call('answer_ask')).record !== false) throw Error('Pill close did not answer false');
+    await p.evaluate(() => window.fixtureState({state: {type: 'Idle'}, ask_off_pending: {app_id: 'zoom', app: 'Zoom', previous: 'Ask', until_ms: 10000}}));
+    await p.getByText("Motet won't ask about Zoom calls. Turn it back on in Settings › Calls.", {exact: true}).waitFor();
+    await p.getByRole('button', {name: 'Undo', exact: true}).click();
+    if ((await call('undo_dont_ask'))?.appId !== 'zoom') throw Error('Undo did not send undo_dont_ask');
+    // The Sidecar's why line names the choice, not the microphone.
+    await p.evaluate(() => window.fixtureState({ask_off_pending: null, meeting_id: 'fixture', state: {type: 'Recording'}, started_by: {type: 'App', app: 'Zoom'}, companion: {visible: true, size: 'Sidecar', pinned: false, peeking: false, display_id: null}}));
+    await p.getByText('Recording because you chose Record for this Zoom call.', {exact: true}).waitFor();
     results.push({theme, differences, errors});
     await p.close();
   }

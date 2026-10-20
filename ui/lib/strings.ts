@@ -1,4 +1,7 @@
 export const strings = {
+  askTitle: "Record this {App} call?", askBody: "Nothing is recorded until you choose Record.", askConsent: "Tell the people on the call before you record.", askRecord: "Record",
+  askNotThisCall: "Not for this call", askDontAsk: "Don't ask for {App}", askClose: "Close: not this call", askMore: "More choices", askPill: "{App} call · not recording",
+  askOffDone: "Motet won't ask about {App} calls. Turn it back on in Settings › Calls.", whyStarted: "Recording because you chose Record for this {App} call.", startedManually: "Started manually.",
   deletePermanently: "Delete permanently", permanentDeleteWarning: "Its audio, transcript and notes are removed from this computer. This can't be undone.",
   rename: "Rename", renamed: "Renamed.", renameSave: "save", renameCancel: "cancel",
   rowActions: "Actions for", open: "Open", copyActionItems: "Copy action items", deleted: "Deleted.", undo: "Undo", restored: "Restored.", purged: "Deleted permanently.", restoreAll: "Restore all", deleteAll: "Delete all…", confirmPurgeAll: "Delete all {n} permanently?", purgeAllBody: "Their audio, transcripts and notes are removed from this computer. This can't be undone.", restoredAll: "Restored {n}.", purgedAll: "Deleted {n} permanently.", deleteBusy: "Wait until the notes are written",
