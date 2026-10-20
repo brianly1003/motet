@@ -1,5 +1,6 @@
 //! Summarize stage: the transcript through a local Ollama model into Markdown notes.
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 
@@ -20,7 +21,7 @@ TITLE: <what the call was about or decided, at most 8 words, no date>\n\
 ### Action items\n\
 - [ ] <Owner>: <task> [mm:ss]   (or \"- None\")\n\
 ### Overview\n\
-- <what the call was for and what came out of it: two to four bullets>\n\
+- <what the call was for and what came out of it: one to four bullets, fewer for a short call>\n\
 ### <Topic>\n\
 - <what was said or decided> [mm:ss]\n\
 Rules:\n\
@@ -33,6 +34,8 @@ all, write \"- None\".\n\
 - One \"### <Topic>\" section per main topic, in the order discussed; end each bullet with the [mm:ss] \
 of the line it comes from. Put **bold** on decisions, numbers and key terms. Say each point once: the \
 Overview sums up, the topics hold the detail.\n\
+- Write only what the transcript says. A short or unclear transcript gets short notes: never fill \
+the layout with guesses, and every task and topic bullet must cite a line that says it.
 - Do not invent facts, owners or dates, and never describe how anyone felt. Leave out lines that look \
 misheard or make no sense instead of guessing, and leave out greetings, small talk, sound checks and \
 swearing.\n\
@@ -63,6 +66,8 @@ Do not add anything that is not in the parts.\n\nPARTS:\n";
 // better notes from shorter input. A model with a bigger window can take more.
 const CHUNK_CHARS: usize = 24_000;
 
+const NO_SPEECH: &str = "No speech was heard in this recording, so there is no summary.";
+
 /// Summarizes the transcript with `OLLAMA_MODEL` and writes `<base>.md` (summary + transcript).
 /// A transcript longer than `SUMMARY_CHUNK_CHARS` (default 24,000) is summarized part by part,
 /// then the partial notes are merged in one more pass. `my_notes` is the user's my-notes.md
@@ -73,6 +78,14 @@ pub fn notes(
     transcript: &str,
     my_notes: &str,
 ) -> Result<Option<String>, Box<dyn Error>> {
+    // An empty transcript makes the model invent a whole meeting: write no summary instead,
+    // keeping the user's own "[] " tasks.
+    if transcript.trim().is_empty() {
+        let summary = with_my_tasks(NO_SPEECH, &clean_notes(my_notes));
+        fs::write(format!("{base}.md"), format!("{summary}\n"))?;
+        println!("No speech heard; skipped the summary. Notes: {base}.md");
+        return Ok(None);
+    }
     let llm = config::var("OLLAMA_MODEL").ok_or("set OLLAMA_MODEL (see `ollama list`)")?;
     let max_chars = config::var("SUMMARY_CHUNK_CHARS")
         .and_then(|v| v.parse().ok())
@@ -116,7 +129,7 @@ pub fn notes(
         )?
     };
     let (title, summary) = split_title(&tidy_headings(&summary));
-    let summary = tidy_tasks(&summary);
+    let summary = tidy_tasks(&grounded(&summary, transcript));
     let summary = with_my_tasks(&summary, &my_notes);
     let (summary, transcript) = (defang(&summary), defang(transcript));
     let notes = format!(
@@ -128,6 +141,42 @@ pub fn notes(
         println!("Title: {title}");
     }
     Ok(title)
+}
+
+/// Drops every note line that cites a [mm:ss] no transcript line starts with: given little to go
+/// on, small models fill the layout with invented points at invented times. A section left empty
+/// goes too; Action items says "- None" instead. Uncited lines (the Overview) can't be checked.
+fn grounded(summary: &str, transcript: &str) -> String {
+    let times: HashSet<&str> = transcript
+        .lines()
+        .filter_map(|l| Some(l.strip_prefix('[')?.split_once(']')?.0))
+        .collect();
+    // "[02:15]", "[00:53, 01:00]" or "[00:35-00:52]"; "[ ]" and "[link](url)" aren't times.
+    let cites_real_lines = |line: &str| {
+        line.split('[')
+            .skip(1)
+            .filter_map(|s| Some(s.split_once(']')?.0))
+            .filter(|t| {
+                t.contains(':') && t.chars().all(|c| c.is_ascii_digit() || ":,- ".contains(c))
+            })
+            .flat_map(|t| t.split([',', '-']).map(str::trim))
+            .all(|t| times.contains(t))
+    };
+    let lines: Vec<&str> = summary.lines().filter(|l| cites_real_lines(l)).collect();
+    let mut out = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let empty = line.starts_with("### ")
+            && lines[i + 1..]
+                .iter()
+                .take_while(|l| !l.starts_with('#'))
+                .all(|l| l.trim().is_empty());
+        if !empty {
+            out.push(*line);
+        } else if line.trim() == "### Action items" {
+            out.extend([*line, "- None"]);
+        }
+    }
+    out.join("\n")
 }
 
 /// "## ### Action items" -> "### Action items": small models sometimes stack heading marks, and
@@ -496,6 +545,39 @@ mod tests {
             "[a](u) [b][r] &lt;img src=x>"
         );
         assert_eq!(defang("plain [link](u)"), "plain [link](u)");
+    }
+
+    #[test]
+    fn grounded_drops_lines_citing_times_the_transcript_lacks() {
+        let transcript = "[00:01] Me: I'll send it\n[00:53] Them: ok\n[01:00] Them: bye\n";
+        let notes = "### Action items\n- [ ] You: Send it [00:01]\n- [ ] Them: Review [02:15]\n\
+                     ### Overview\n- A short call.\n\
+                     ### Made up\n- Invented [05:30]\n- Also invented [00:53, 07:20]\n\
+                     ### Real\n- Both [00:53, 01:00]\n- Range [00:01-01:00]\n- Unchecked, by 3:00 PM";
+        assert_eq!(
+            grounded(notes, transcript),
+            "### Action items\n- [ ] You: Send it [00:01]\n### Overview\n- A short call.\n\
+             ### Real\n- Both [00:53, 01:00]\n- Range [00:01-01:00]\n- Unchecked, by 3:00 PM"
+        );
+        assert_eq!(
+            grounded(
+                "### Action items\n- [ ] Them: Review [02:15]\n### Overview\n- x",
+                transcript
+            ),
+            "### Action items\n- None\n### Overview\n- x"
+        );
+    }
+
+    #[test]
+    fn blank_transcript_skips_the_model() {
+        let base = std::env::temp_dir().join(format!("motet-blank-{}", std::process::id()));
+        let base = base.to_string_lossy();
+        // No OLLAMA_MODEL needed: the model must not be asked at all.
+        assert_eq!(notes(&base, " \n", "[] call Linh").unwrap(), None);
+        let md = fs::read_to_string(format!("{base}.md")).unwrap();
+        let _ = fs::remove_file(format!("{base}.md"));
+        assert!(md.contains(NO_SPEECH));
+        assert!(md.contains("- [ ] You: call Linh"));
     }
 
     #[test]
