@@ -69,6 +69,57 @@ pub fn cut(levels: &[f32], min: usize, max: usize, done: bool) -> Option<usize> 
         .or(Some(max))
 }
 
+/// Speech intervals in ms that the Silero `model` finds in a WAV, from whisper.cpp's
+/// `whisper-vad-speech-segments` (installed with `whisper-server`). Gaps under 300 ms are merged.
+pub fn speech(path: &Path, model: &str) -> Result<Vec<(u64, u64)>, Box<dyn Error>> {
+    // Not `tools::output`: a Cancel of an after-call job must not stop live captions.
+    let output = crate::tools::command("whisper-vad-speech-segments")
+        .args(["-np", "-vsd", "300", "-vm", model, "-f"])
+        .arg(path)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("whisper-vad-speech-segments failed ({})", output.status).into());
+    }
+    parse_speech(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// `Speech segment 0: start = 0.00, end = 96.00`, in centiseconds.
+fn parse_speech(stdout: &str) -> Result<Vec<(u64, u64)>, Box<dyn Error>> {
+    let ms = |field: &str| -> Result<u64, Box<dyn Error>> {
+        Ok((field.trim().parse::<f64>()? * 10.0).round() as u64)
+    };
+    stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix("Speech segment "))
+        .map(|line| {
+            let (_, times) = line.split_once("start =").ok_or("unexpected VAD output")?;
+            let (start, end) = times.split_once(", end =").ok_or("unexpected VAD output")?;
+            Ok((ms(start)?, ms(end)?))
+        })
+        .collect()
+}
+
+/// Like `cut`, from speech intervals (ms after the slice start, any tracks, any order) in the
+/// first `available` ms: ends in the middle of the latest gap of 300 ms or more without speech
+/// that is `min` ms or later. `None` means no such gap yet.
+pub fn speech_cut(speech: &[(u64, u64)], available: u64, min: u64) -> Option<u64> {
+    let mut spoken = speech.to_vec();
+    spoken.sort_unstable();
+    let (mut gaps, mut last) = (Vec::new(), 0);
+    for (start, end) in spoken {
+        if start > last {
+            gaps.push((last, start.min(available)));
+        }
+        last = last.max(end);
+    }
+    gaps.push((last, available));
+    gaps.into_iter()
+        .rev()
+        .filter(|(start, end)| end.saturating_sub(*start) >= PAUSE as u64 * FRAME_MS)
+        .map(|(start, end)| (start + end) / 2)
+        .find(|middle| *middle >= min)
+}
+
 /// Copies `start_ms..end_ms` (or to the end of the file) of a WAV, keeping its format.
 pub fn write(
     source: &Path,
@@ -134,6 +185,38 @@ mod tests {
         assert_eq!(cut(&[], 3, 10, true), None);
         // Longer than `max`: still cut at a pause so the next slice gets the rest.
         assert_eq!(cut(&frames("111110001111111"), 3, 10, true), Some(6));
+    }
+
+    #[test]
+    fn speech_cut_ends_in_the_latest_shared_gap_after_min() {
+        // Me speaks 0-3.5 s and 4.5-8 s; Them 3.6-4.0 s, so the only shared gap is 4.0-4.5 s.
+        let speech = [(4500, 8000), (0, 3500), (3600, 4000)];
+        assert_eq!(speech_cut(&speech, 8000, 3000), Some(4250));
+        // A trailing gap counts once it lasts 300 ms; one before `min` never does.
+        assert_eq!(speech_cut(&speech, 8200, 3000), Some(4250));
+        assert_eq!(speech_cut(&speech, 8400, 3000), Some(8200));
+        assert_eq!(speech_cut(&speech, 8000, 5000), None);
+        assert_eq!(speech_cut(&[(0, 9000)], 9000, 3000), None);
+        assert_eq!(speech_cut(&[], 4000, 3000), None);
+        assert_eq!(speech_cut(&[], 6000, 3000), Some(3000));
+        // Speech reported past the window does not make a gap.
+        assert_eq!(
+            speech_cut(&[(0, 2000), (9900, 10_500)], 9800, 3000),
+            Some(5900)
+        );
+    }
+
+    #[test]
+    fn parse_speech_reads_centiseconds() {
+        let out = "Detected 2 speech segments:\nSpeech segment 0: start = 0.00, end = 96.00\n\
+                   Speech segment 1: start = 186.50, end = 493.00\n";
+        assert_eq!(parse_speech(out).unwrap(), [(0, 960), (1865, 4930)]);
+        assert!(
+            parse_speech("Detected 0 speech segments:\n")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(parse_speech("Speech segment 0: start = x, end = 1.00").is_err());
     }
 
     #[test]

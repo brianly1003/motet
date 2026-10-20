@@ -73,6 +73,7 @@ pub fn start(
                     return;
                 }
             };
+            let vad = motet_core::config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty());
             let mut cursor = 0;
             let mut recent = Vec::new();
             while !stop.load(Ordering::SeqCst) {
@@ -95,7 +96,9 @@ pub fn start(
                                 / u64::from(reader.spec().sample_rate),
                         );
                     }
-                    let Some(end) = preview_end(&base, cursor, duration)? else {
+                    let Some(end) =
+                        preview_end(&base, &directory, cursor, duration, vad.as_deref())?
+                    else {
                         return Ok(None);
                     };
                     let segments = transcribe_slice(
@@ -205,10 +208,15 @@ fn transcribe_slice(
 // Preview 3-10 s at a time, ending in the latest pause both tracks share, so a word or a
 // sentence is not split and each slice usually holds one language. When the model is behind,
 // the slice grows to 10 s and still ends in a pause, so catch-up never skips audio.
+// When that energy rule finds no pause (room noise or speaker echo hide it) and `vad` (the
+// Silero model) is set, the pause is a gap in detected speech; with neither by 10 s, the energy
+// rule's quietest 300 ms. VAD runs only then: it costs ~0.2 s per track per check.
 fn preview_end(
     base: &str,
+    directory: &Path,
     cursor: u64,
     duration: u64,
+    vad: Option<&str>,
 ) -> Result<Option<u64>, Box<dyn std::error::Error>> {
     if duration.saturating_sub(cursor) < 3000 {
         return Ok(None);
@@ -217,7 +225,21 @@ fn preview_end(
     let mic = slice::levels(Path::new(&format!("{base}.mic.wav")), cursor, end)?;
     let system = slice::levels(Path::new(&format!("{base}.system.wav")), cursor, end)?;
     let levels: Vec<f32> = mic.iter().zip(&system).map(|(a, b)| a.max(*b)).collect();
-    Ok(slice::cut(&levels, 30, 100, false).map(|frames| cursor + frames as u64 * slice::FRAME_MS))
+    let energy =
+        slice::cut(&levels, 30, 100, false).map(|frames| cursor + frames as u64 * slice::FRAME_MS);
+    let full = end == cursor + 10_000;
+    let Some(model) = vad.filter(|_| energy.is_none() || full) else {
+        return Ok(energy);
+    };
+    let mut speech = Vec::new();
+    for side in ["mic", "system"] {
+        let file = directory.join(format!("vad.{side}.wav"));
+        slice::write(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
+        speech.extend(slice::speech(&file, model)?);
+    }
+    Ok(slice::speech_cut(&speech, end - cursor, 3000)
+        .map(|cut| cursor + cut)
+        .or(energy))
 }
 
 fn failed(app: &tauri::AppHandle, id: &str, stop: &Stop) {
@@ -270,12 +292,18 @@ mod tests {
         let system = format!("{}00000{}", "1".repeat(60), "1".repeat(105));
         track(Path::new(&format!("{base}.mic.wav")), &mic);
         track(Path::new(&format!("{base}.system.wav")), &system);
-        assert_eq!(preview_end(&base, 0, 2999).unwrap(), None);
-        assert_eq!(preview_end(&base, 0, 5000).unwrap(), None);
-        assert_eq!(preview_end(&base, 0, 13_000).unwrap(), Some(6200));
+        assert_eq!(preview_end(&base, &root, 0, 2999, None).unwrap(), None);
+        assert_eq!(preview_end(&base, &root, 0, 5000, None).unwrap(), None);
+        assert_eq!(
+            preview_end(&base, &root, 0, 13_000, None).unwrap(),
+            Some(6200)
+        );
         // No pause: wait while under 10 s, then end near 10 s; the next slice starts there.
-        assert_eq!(preview_end(&base, 6200, 13_000).unwrap(), None);
-        assert_eq!(preview_end(&base, 6200, 17_000).unwrap(), Some(16_000));
+        assert_eq!(preview_end(&base, &root, 6200, 13_000, None).unwrap(), None);
+        assert_eq!(
+            preview_end(&base, &root, 6200, 17_000, None).unwrap(),
+            Some(16_000)
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -298,18 +326,26 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("motet-measure-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let mut server = crate::speech::Server::start(&stop).unwrap();
+        // MOTET_MEASURE_VAD=0 measures the energy rule alone.
+        let vad = motet_core::config::var("WHISPER_VAD_MODEL")
+            .filter(|v| !v.is_empty() && std::env::var("MOTET_MEASURE_VAD").as_deref() != Ok("0"));
         let (mut clock, mut cursor, mut slices, mut busy) = (0_u64, 0_u64, 0, 0_u64);
         let mut delays = Vec::new();
         let mut lines = String::new();
         loop {
-            let Some(end) = preview_end(&base, cursor, clock.min(total)).unwrap() else {
+            // Finding the cut (a VAD run per track) takes real time too.
+            let asked = std::time::Instant::now();
+            let Some(end) =
+                preview_end(&base, &directory, cursor, clock.min(total), vad.as_deref()).unwrap()
+            else {
                 // A tail without a pause is never cut while recording; Stop ends it.
                 if clock >= total {
                     break;
                 }
-                clock += 250;
+                clock += 250 + asked.elapsed().as_millis() as u64;
                 continue;
             };
+            clock += asked.elapsed().as_millis() as u64;
             let started = std::time::Instant::now();
             let rows =
                 transcribe_slice(&mut server, &base, &directory, (cursor, end), 0, &stop).unwrap();
