@@ -72,7 +72,7 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
           {liveError && <p className="tip" role="status">{liveError}</p>}
           {lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flush.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(n => n + 1); setTab("notes"); })}>
             <span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>])
-            .concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts">··:··</span><span className="who them">…</span><span className="tx">listening</span></div>] : [])
+            .concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts"><span>·</span><span>·</span><span>:</span><span>·</span><span>·</span></span><span className="who them dots"><i>.</i><i>.</i><i>.</i></span><span className="tx">listening</span></div>] : [])
             : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}
         </div>
         <p className="tip">Click a line to quote it into My notes.</p>

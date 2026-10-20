@@ -1,0 +1,58 @@
+// Mockup-first document find: keyboard, highlights and unmodified editable content.
+async (page) => {
+ const results=[];
+ for(const theme of ['light','dark']){
+  const p=await page.context().newPage();p.setDefaultTimeout(7000);
+  const errors=[];p.on('pageerror',e=>errors.push(e.message));
+  await p.route('https://**/*',r=>r.abort());
+  await p.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await p.getByRole('button',{name:'macOS',exact:true}).click();
+  await p.getByRole('button',{name:'After the call',exact:true}).click();
+  await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);
+  for(const width of [760,1200]){
+   await p.setViewportSize({width,height:1000});
+   for(const tab of ['Notes','Transcript']){
+    await p.getByRole('tab',{name:tab,exact:true}).click();
+    const scope=tab==='Notes'?'#notesText':'.tlist';
+    const content=()=>p.locator(scope).evaluate(e=>{const copy=e.cloneNode(true);copy.querySelectorAll('[style=""]').forEach(e=>e.removeAttribute('style'));return copy.innerHTML;});
+    const before=await content();
+    await p.keyboard.press('Meta+f');
+    const input=p.getByRole('textbox',{name:'Find in '+tab.toLowerCase(),exact:true});
+    await input.fill('FCM');
+    await p.waitForFunction(()=>CSS.highlights.get('motet-find')?.size>1);
+    const count=await p.evaluate(()=>CSS.highlights.get('motet-find').size);
+    if(await p.locator('#findCount').innerText()!==`${count} matches`)throw Error('Wrong initial count');
+    await input.press('Enter');
+    if(await p.locator('#findCount').innerText()!==`1 of ${count}`)throw Error('Enter did not jump to first');
+    await input.press('Shift+Enter');
+    if(await p.locator('#findCount').innerText()!==`${count} of ${count}`)throw Error('Previous did not wrap');
+    const rect=await p.evaluate(()=>{const r=[...CSS.highlights.get('motet-find-current')][0].getBoundingClientRect(),b=document.querySelector('.docbody').getBoundingClientRect();return {top:r.top,bottom:r.bottom,min:b.top,max:b.bottom};});
+    if(rect.top<rect.min||rect.bottom>rect.max)throw Error('Active result not scrolled into view: '+JSON.stringify(rect));
+    await p.getByRole('button',{name:'Next match',exact:true}).click();
+    if(await p.locator('#findCount').innerText()!==`1 of ${count}`)throw Error('Next button did not wrap');
+    await input.fill('fcm');await input.press('Enter');
+    if(await p.evaluate(()=>CSS.highlights.get('motet-find').size)!==count)throw Error('Case-insensitive search changed count');
+    await p.keyboard.press('Control+f');
+    if(!await input.evaluate(e=>e===document.activeElement&&e.selectionEnd===e.value.length&&e.selectionStart===0))throw Error('Ctrl+F did not select query');
+    await p.locator('.findbar').screenshot({path:`.playwright-out/find-${tab}-${theme}-${width}.png`});
+    if(width===1200)await p.locator('.doc').screenshot({path:`.playwright-out/find-document-${tab}-${theme}.png`});
+    await input.fill('[not a regex]*');await input.press('Enter');
+    if(await p.locator('#findCount').innerText()!=='No matches')throw Error('No matches state missing');
+    if(!await p.getByRole('button',{name:'Next match',exact:true}).isDisabled())throw Error('No matches still navigable');
+    await input.fill('');if(await p.locator('#findCount').innerText()!=='')throw Error('Empty query should clear');
+    await input.fill('FCM');await input.press('Enter');await input.press('Escape');
+    if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Escape left find visible');
+    const after=await content();if(after!==before){let i=0;while(before[i]===after[i])i++;throw Error('Find changed editable content '+tab+' at '+i+': '+before.slice(i-60,i+180)+' -> '+after.slice(i-60,i+180));}
+   }
+  }
+  await p.keyboard.press('Meta+f');await p.getByRole('textbox',{name:'Find in transcript',exact:true}).fill('FCM');
+  await p.getByRole('tab',{name:'Audio',exact:true}).click();
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Tab switch left stale highlights');
+  await p.getByRole('tab',{name:'Notes',exact:true}).click();await p.keyboard.press('Meta+f');
+  await p.getByRole('button',{name:'Close find',exact:true}).click();
+  if(await p.locator('.findbar').count())throw Error('Close button failed');
+  if(errors.length)throw Error(errors.join('\n'));
+  await p.close();results.push(theme+' PASS');
+ }
+ return results;
+}

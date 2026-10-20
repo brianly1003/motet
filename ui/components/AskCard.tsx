@@ -37,7 +37,7 @@ export function AskCard({ app, callId }: { app: string; callId: string }) {
     <div><b>{s.askTitle.replace("{App}", app)}</b><p>{notice || s.askBody}</p></div>
     <div className="split" ref={split}>
       <button type="button" className="primary" onClick={() => run(() => ipc.answerAsk(callId, true))}>{s.askRecord}</button>
-      <button type="button" className="primary more" aria-haspopup="menu" aria-expanded={menu} aria-label={s.askMore} onClick={() => setMenu(open => !open)}>▾</button>
+      <button type="button" className="primary more" aria-haspopup="menu" aria-expanded={menu} aria-label={s.askMore} onClick={() => setMenu(open => !open)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       {menu && <div className="dropdown" role="menu">
         <button type="button" role="menuitem" autoFocus onClick={() => run(() => ipc.answerAsk(callId, false))}><span>{s.askNotThisCall}</span></button>
         <button type="button" role="menuitem" onClick={() => run(() => ipc.dontAskForApp(callId))}><span>{s.askDontAsk.replace("{App}", app)}</span></button>
