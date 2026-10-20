@@ -110,6 +110,10 @@ pub fn transcript_parts(
             // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
             // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
             whisper.args(["-bs", "1", "-bo", "1"]);
+            // No previous-text context: with it, whisper looped an earlier line four times in
+            // 100 ms rows on a real call (2026-10-21); without it, no duplicates on 7 calls and
+            // the same languages, often faster. --carry-initial-prompt keeps TERMS in every window.
+            whisper.args(["-mc", "0", "--carry-initial-prompt"]);
             // VAD gives real segment start times (else leading silence is folded in) and
             // stops hallucinated lines in the long silent stretches of each track.
             if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
