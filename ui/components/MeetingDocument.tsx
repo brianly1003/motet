@@ -4,6 +4,7 @@ import type {MeetingMedia} from '@/lib/bindings/MeetingMedia';
 import MeetingActions, { deletable } from './MeetingActions';
 import NotesView from './NotesView';
 import Transcript from './Transcript';
+import DocumentFind from './DocumentFind';
 import {meetingDate, meetingTitle, timeLabel, fileSize, durationLabel, myNoteTimes, withoutTranscript, taskLine} from '@/lib/document';
 import {RecordingPage, ProcessingPage} from './RecordingPage';
 import type {AppState} from '@/lib/bindings/AppState';
@@ -20,6 +21,7 @@ export type LiveSession = {state:AppState|null; stage:Stage|null; gaps:Gap[]; pe
 
 export default function MeetingDocument({meeting, onChange, onChanged, onError, onRename, onDelete, renameRequest=0, session}: {session?:LiveSession; meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
   const [tab,setTab]=useState('Notes');
+  const body=useRef<HTMLDivElement>(null);
   // While this meeting records it is a working page; after Stop, the notes are being written.
   const liveType=session?.state?.meeting_id===meeting.summary.id?session.state.state.type:null;
   const live=liveType==='Recording'||liveType==='Paused'||liveType==='Stopped';
@@ -174,13 +176,13 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
       </div>}
     </header>
     {live&&session?.state?<RecordingPage session={{state:session.state,gaps:session.gaps,pending:session.pending,act:session.act}}/>:writing?<ProcessingPage stage={session?.stage??null} durationMs={meeting.summary.duration_ms??session?.state?.elapsed_ms??0}/>:<>
-    <div className="tabs" role="tablist" aria-label={s.meetingViews}>{['Notes','Transcript','Audio'].map((name,index)=><button key={name} id={`tab-${name}`} type="button" role="tab" aria-selected={tab===name} aria-controls="meeting-panel" tabIndex={tab===name?0:-1} onClick={()=>setTab(name)} onKeyDown={event=>{
+    <div className="doctools"><div className="tabs" role="tablist" aria-label={s.meetingViews}>{['Notes','Transcript','Audio'].map((name,index)=><button key={name} id={`tab-${name}`} type="button" role="tab" aria-selected={tab===name} aria-controls="meeting-panel" tabIndex={tab===name?0:-1} onClick={()=>setTab(name)} onKeyDown={event=>{
       if(event.key===' ' && tab==='Transcript' && name==='Transcript' && !event.altKey && !event.ctrlKey && !event.metaKey){event.preventDefault();event.stopPropagation();togglePlay();return;}
       const names=['Notes','Transcript','Audio'];let next=index;
       if(event.key==='ArrowRight')next=(index+1)%3;else if(event.key==='ArrowLeft')next=(index+2)%3;else if(event.key==='Home')next=0;else if(event.key==='End')next=2;else return;
       event.preventDefault();setTab(names[next]);document.getElementById(`tab-${names[next]}`)?.focus();
-    }}>{name}</button>)}</div>
-    <div className="docbody" id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
+    }}>{name}</button>)}</div><DocumentFind tab={tab} body={body}/></div>
+    <div ref={body} className="docbody" id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} locked={locked} durationMs={duration} onSeek={duration?ms=>{seek(ms);setTab('Transcript');}:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript onTogglePlay={togglePlay} id={meeting.summary.id} text={meeting.transcript} heard={meeting.transcript_heard} locked={locked} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined} onReplay={duration?replay:undefined} onChange={(transcript,transcript_heard)=>onChange({...meeting,transcript,transcript_heard})} onError={onError} position={showPlayer?position:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td className="mono"><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td className="mono">{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
       <aside className="meeting-aside">
         <div className="panel"><h5>This meeting</h5><dl className="kv"><dt>Length</dt><dd>{duration?timeLabel(duration):'Not recorded'}</dd><dt>Language</dt><dd>Not recorded</dd><dt>Notes in</dt><dd>{meeting.summary.notes_ms!=null?`${Math.round(meeting.summary.notes_ms/1000)} s`:"Not recorded"}</dd><dt>Marks</dt><dd>{meeting.summary.marks_ms.length}</dd></dl></div>

@@ -11,12 +11,18 @@ async (page) => {
   await p.evaluate(t=>document.documentElement.dataset.theme=t,theme);
   for(const width of [760,1200]){
    await p.setViewportSize({width,height:1000});
+   await p.locator('.mainwin').evaluate((e,width)=>{e.style.width=width+'px';e.style.left='0';},width);
    for(const tab of ['Notes','Transcript']){
     await p.getByRole('tab',{name:tab,exact:true}).click();
     const scope=tab==='Notes'?'#notesText':'.tlist';
     const content=()=>p.locator(scope).evaluate(e=>{const copy=e.cloneNode(true);copy.querySelectorAll('[style=""]').forEach(e=>e.removeAttribute('style'));return copy.innerHTML;});
     const before=await content();
+    const topBefore=await p.locator('.docbody').evaluate(e=>e.getBoundingClientRect().top);
     await p.keyboard.press('Meta+f');
+    const layout=await p.evaluate(()=>{const tabs=document.querySelector('.tabs').getBoundingClientRect(),find=document.querySelector('.findbar').getBoundingClientRect(),tools=document.querySelector('.doctools').getBoundingClientRect();return {tabs:{left:tabs.left,right:tabs.right,top:tabs.top,bottom:tabs.bottom},find:{left:find.left,right:find.right,top:find.top,bottom:find.bottom},right:tools.right,overflow:document.querySelector('.findbar').scrollWidth>document.querySelector('.findbar').clientWidth};});
+    if(layout.find.right-layout.find.left>280.5)throw Error('Find is wider than the compact 280px limit');
+    if(layout.find.left<layout.tabs.right||layout.find.top>=layout.tabs.bottom||layout.find.bottom<=layout.tabs.top||layout.find.right>layout.right||layout.overflow)throw Error('Find does not fit beside tabs: '+JSON.stringify(layout));
+    if(await p.locator('.docbody').evaluate(e=>e.getBoundingClientRect().top)!==topBefore)throw Error('Opening find consumed vertical space');
     const input=p.getByRole('textbox',{name:'Find in '+tab.toLowerCase(),exact:true});
     await input.fill('FCM');
     await p.waitForFunction(()=>CSS.highlights.get('motet-find')?.size>1);
@@ -34,8 +40,12 @@ async (page) => {
     if(await p.evaluate(()=>CSS.highlights.get('motet-find').size)!==count)throw Error('Case-insensitive search changed count');
     await p.keyboard.press('Control+f');
     if(!await input.evaluate(e=>e===document.activeElement&&e.selectionEnd===e.value.length&&e.selectionStart===0))throw Error('Ctrl+F did not select query');
-    await p.locator('.findbar').screenshot({path:`.playwright-out/find-${tab}-${theme}-${width}.png`});
+    await p.locator('.doctools').screenshot({path:`.playwright-out/find-${tab}-${theme}-${width}.png`});
     if(width===1200)await p.locator('.doc').screenshot({path:`.playwright-out/find-document-${tab}-${theme}.png`});
+    if(tab==='Notes'){
+     await input.fill('keep FCM');await input.press('Enter');
+     if(await p.locator('#findCount').innerText()!=='1 of 1')throw Error('Phrase across inline formatting not found');
+    }
     await input.fill('[not a regex]*');await input.press('Enter');
     if(await p.locator('#findCount').innerText()!=='No matches')throw Error('No matches state missing');
     if(!await p.getByRole('button',{name:'Next match',exact:true}).isDisabled())throw Error('No matches still navigable');
@@ -51,6 +61,9 @@ async (page) => {
   await p.getByRole('tab',{name:'Notes',exact:true}).click();await p.keyboard.press('Meta+f');
   await p.getByRole('button',{name:'Close find',exact:true}).click();
   if(await p.locator('.findbar').count())throw Error('Close button failed');
+  await p.keyboard.press('Meta+f');
+  await p.locator('.side .mitem').nth(1).click();
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Meeting switch left stale search');
   if(errors.length)throw Error(errors.join('\n'));
   await p.close();results.push(theme+' PASS');
  }
