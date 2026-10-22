@@ -115,8 +115,19 @@ pub fn notes(
     } else {
         format!("{MY_NOTES}{my_notes}\n")
     };
+    // qwen3:8b writes English notes for a Vietnamese call whatever the prompt's language rule
+    // says, so the language is named: the user's choice, else the one the transcript is written in.
     let language = config::notes_language()
-        .map(|code| format!("Write the notes in {code}.\n"))
+        .as_deref()
+        .or_else(|| written_in(transcript))
+        .and_then(|code| match code {
+            "en" => Some("English"),
+            "vi" => Some("Vietnamese"),
+            "zh" => Some("Chinese"),
+            "ja" => Some("Japanese"),
+            _ => None,
+        })
+        .map(|name| format!("Write the notes in {name}, keeping technical terms as said.\n"))
         .unwrap_or_default();
     let labeled = labeled(transcript);
     let who = if labeled { "" } else { UNLABELED };
@@ -156,6 +167,32 @@ pub fn notes(
         println!("Title: {title}");
     }
     Ok(title)
+}
+
+/// "vi", "ja" or "zh" when the transcript is mostly written in that script; None for English or
+/// anything else, where the prompt's own language rule applies. Vietnamese words with a letter no
+/// other language uses run near 40 %, English ones 0; mixed-in English terms don't change that.
+fn written_in(transcript: &str) -> Option<&'static str> {
+    let kana = |c: char| ('\u{3040}'..='\u{30ff}').contains(&c);
+    let han = |c: char| ('\u{4e00}'..='\u{9fff}').contains(&c);
+    let vi = |c: char| ('\u{1ea0}'..='\u{1ef9}').contains(&c) || "đĐăĂơƠưƯ".contains(c);
+    let (kanas, hans) = transcript.chars().fold((0, 0), |(k, h), c| {
+        (k + kana(c) as usize, h + han(c) as usize)
+    });
+    let words: Vec<&str> = transcript
+        .split(|c: char| !c.is_alphabetic() || kana(c) || han(c))
+        .filter(|w| !w.is_empty())
+        .collect();
+    // A CJK character carries about half a word: more of them than words means a CJK call.
+    if kanas + hans > words.len() * 2 {
+        return Some(if kanas * 10 >= kanas + hans {
+            "ja"
+        } else {
+            "zh"
+        });
+    }
+    let vietnamese = words.iter().filter(|w| w.chars().any(vi)).count();
+    (vietnamese * 100 >= words.len() * 15 && vietnamese > 0).then_some("vi")
 }
 
 /// True when any line carries a track or diarizer label (`[mm:ss] Me: `, `Them: `, `Speaker N: `).
@@ -640,6 +677,24 @@ mod tests {
             ),
             "### Action items\n- None\n### Overview\n- x"
         );
+    }
+
+    #[test]
+    fn written_in_names_the_transcript_language() {
+        let vi = "[00:01] Me: Hiện tại mình muốn tập trung vào deposit, workflow cũng chuẩn bị xong rồi.\n\
+                  [00:09] Them: Ok, bên em sẽ check lại API với vendor.\n";
+        assert_eq!(written_in(vi), Some("vi"));
+        let en = "[00:01] Me: Send the deck to Nguyễn Văn An by Friday, then we review the API.\n";
+        assert_eq!(written_in(en), None);
+        assert_eq!(
+            written_in("[00:01] Me: 明日までに資料を送ります。OK\n"),
+            Some("ja")
+        );
+        assert_eq!(
+            written_in("[00:01] Them: 我们明天再检查一下 API 的问题。\n"),
+            Some("zh")
+        );
+        assert_eq!(written_in(""), None);
     }
 
     #[test]
