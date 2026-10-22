@@ -43,8 +43,9 @@ export default function MeetingActions({ meeting, hasAudio, onChanged, onError, 
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, [meeting.notes_md]);
-  async function copy(kind: "items" | "markdown" | "plain") {
-    try { await navigator.clipboard.writeText(notesText(meeting.notes_md, kind)); setMessage(s.copied); setMenu(null); }
+  // The transcript copies as saved, with your corrections: "[mm:ss] Me: …" and "Them:" per line.
+  async function copy(kind: "items" | "markdown" | "plain" | "transcript") {
+    try { await navigator.clipboard.writeText(kind === "transcript" ? meeting.transcript.trim() : notesText(meeting.notes_md, kind)); setMessage(s.copied); setMenu(null); }
     catch (error) { onError(String(error)); }
   }
   async function run(action: "reveal" | "regenerate" | "retranscribe") {
@@ -66,7 +67,7 @@ export default function MeetingActions({ meeting, hasAudio, onChanged, onError, 
     <button className="doc-action" data-menu="copy" aria-haspopup="menu" aria-expanded={menu === "copy"} disabled={busy} onClick={() => setMenu(menu === "copy" ? null : "copy")}>{s.copyMenu}</button>
     <button className="doc-action ghost" data-menu="more" aria-label={s.moreActions} aria-haspopup="menu" aria-expanded={menu === "more"} disabled={busy} onClick={() => setMenu(menu === "more" ? null : "more")}>•••</button>
     {menu === "copy" && <div className="doc-dropdown" role="menu" aria-label="Copy">
-      <button role="menuitem" onClick={() => copy("items")}><span>{s.copyItems}</span><kbd>⇧⌘C</kbd></button><button role="menuitem" onClick={() => copy("markdown")}>{s.copyMarkdown}</button><button role="menuitem" onClick={() => copy("plain")}>{s.copyPlain}</button>
+      <button role="menuitem" onClick={() => copy("items")}><span>{s.copyItems}</span><kbd>⇧⌘C</kbd></button><button role="menuitem" onClick={() => copy("markdown")}>{s.copyMarkdown}</button><button role="menuitem" onClick={() => copy("plain")}>{s.copyPlain}</button><div className="sep"/><button role="menuitem" disabled={!meeting.transcript.trim()} onClick={() => copy("transcript")}>{s.copyTranscript}</button>
     </div>}
     {menu === "more" && <div className="doc-dropdown gmenu" role="menu" aria-label={s.moreActions}>
       {/* Locked notes are read-only for review (SPEC 7.11): no rename, no new notes over them. */}

@@ -5,6 +5,7 @@ import { elapsedLabel } from "@/lib/session";
 import { strings as s } from "@/lib/strings";
 import { gapLabel, transcriptLines } from "@/lib/transcript";
 import { MyNotes } from "./MyNotes";
+import { JumpToNow, useFollow } from "./JumpToNow";
 import type { AppState } from "@/lib/bindings/AppState";
 import type { Stage } from "@/lib/bindings/Stage";
 import type { Gap } from "@/lib/useSession";
@@ -41,7 +42,7 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
   }, [stopped]);
   useEffect(() => { if (marked === null) return; const t = setTimeout(() => setMarked(null), 2000); return () => clearTimeout(t); }, [marked]);
   const lines = transcriptLines(live, []);
-  useEffect(() => { box.current?.lastElementChild?.scrollIntoView({ block: "nearest" }); }, [live, tab]);
+  const follow = useFollow(box, tab === "live");
   const gapRows = (index: number) => gaps.filter(gap => lines.findIndex(line => line.ms !== null && line.ms >= gap.at_ms) === index)
     .map(gap => <div className="line gap" key={`gap-${gap.at_ms}`}><span className="ts">{elapsedLabel(gap.at_ms)}</span><span className="who"/><span className="tx">{s.pausedFor} {gapLabel(gap.ms)}</span></div>);
   const count = lines.length;
@@ -63,12 +64,12 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
     <div className="tabs" role="tablist" aria-label={s.meetingViews}>
       {(["notes", "live"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { void flush.current(); setTab(key); }}>{key === "notes" ? "My notes" : "Live transcript"}</button>)}
     </div>
-    <div className="recbody" role="tabpanel">
+    <div ref={box} className="recbody" role="tabpanel" onScroll={follow.onScroll}>
       {tab === "notes" ? <>
         <p className="tip">Each line keeps the time you wrote it. Start a line with <code>[]</code> action, <code>!</code> decision, <code>?</code> question or <code>#</code> topic. The companion shows the same notes.</p>
         <MyNotes key={`${id}-${notesKey}`} meetingId={id} elapsed={state.elapsed_ms} registerFlush={f => { flush.current = f; }} hints={false}/>
       </> : <>
-        <div ref={box} className="lines reclines" aria-live="polite">
+        <div className="lines reclines" aria-live="polite">
           {liveError && <p className="tip" role="status">{liveError}</p>}
           {lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flush.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(n => n + 1); setTab("notes"); })}>
             <span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>])
@@ -76,6 +77,7 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
             : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}
         </div>
         <p className="tip">Click a line to quote it into My notes.</p>
+        <JumpToNow show={follow.behind} onJump={follow.jump}/>
       </>}
     </div>
     <p className="tip recfoot">{stopped ? "Resume keeps it one meeting." : paused ? "Paused time isn't recorded or transcribed. Motet reminds you if a pause runs past 15 minutes." : "After you stop, the transcript and notes are written on this computer. You can close this window; recording continues."}</p>

@@ -64,6 +64,30 @@ pub struct Meeting {
     pub transcript_heard: String,
 }
 
+/// A search result: the meeting, and the line the words were found in when it isn't only the title.
+#[derive(Serialize, TS)]
+pub struct SearchHit {
+    pub meeting: MeetingSummary,
+    pub snippet: Option<Snippet>,
+}
+
+#[derive(Serialize, TS)]
+pub struct Snippet {
+    pub source: SnippetSource,
+    /// The matching line without its time, label or Markdown markers, cut around the match.
+    pub text: String,
+    /// The line's `[mm:ss]` (transcript and My notes lines).
+    #[ts(type = "number | null")]
+    pub at_ms: Option<u64>,
+}
+
+#[derive(Serialize, TS)]
+pub enum SnippetSource {
+    Notes,
+    Transcript,
+    MyNotes,
+}
+
 pub fn folder(root: &Path, id: &str) -> Result<PathBuf, String> {
     if !is_id(id) {
         return Err("Invalid meeting ID".into());
@@ -137,31 +161,101 @@ pub fn bytes(root: &Path) -> Result<u64, String> {
     Ok(total)
 }
 
-/// Search locally, including saved text, without loading every meeting into the webview.
-pub fn search(root: &Path, query: &str) -> Result<Vec<MeetingSummary>, String> {
+/// Search locally, including saved text, without loading every meeting into the webview. Each hit
+/// carries the first line that matched, so the sidebar can show where.
+pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>, String> {
     let query = query.trim().to_lowercase();
     Ok(list(root)?
         .into_iter()
-        .filter(|meeting| {
-            if meeting.title.to_lowercase().contains(&query) {
-                return true;
-            }
-            let Ok(folder) = folder(root, &meeting.id) else {
-                return false;
-            };
-            [
-                "notes.md",
-                "transcript.txt",
-                crate::transcript_edits::EDITED,
-                "transcript.fixed.txt",
-                "my-notes.md",
-            ]
-            .iter()
-            .any(|name| {
-                text(&folder.join(name)).is_ok_and(|text| text.to_lowercase().contains(&query))
-            })
+        .filter_map(|meeting| {
+            let snippet = folder(root, &meeting.id).ok().and_then(|folder| {
+                [
+                    (SnippetSource::Notes, "notes.md"),
+                    (SnippetSource::Transcript, crate::transcript_edits::EDITED),
+                    (SnippetSource::Transcript, "transcript.txt"),
+                    (SnippetSource::Transcript, "transcript.fixed.txt"),
+                    (SnippetSource::MyNotes, "my-notes.md"),
+                ]
+                .into_iter()
+                .find_map(|(source, name)| {
+                    let text = text(&folder.join(name)).ok()?;
+                    // The notes' folded-away transcript is searched through the transcript files.
+                    let text = text.split("<details>").next().unwrap_or_default();
+                    let line = text
+                        .lines()
+                        .find(|line| line.to_lowercase().contains(&query))?;
+                    Some(snippet(source, line, &query))
+                })
+            });
+            (snippet.is_some() || meeting.title.to_lowercase().contains(&query))
+                .then_some(SearchHit { meeting, snippet })
         })
         .collect())
+}
+
+/// Characters kept before the match, and in the whole snippet; the sidebar clamps it to two lines.
+const BEFORE: usize = 40;
+const LONGEST: usize = 160;
+
+/// `query` is lower case. Cuts count characters, not bytes, so Vietnamese or CJK text can't split
+/// inside a character.
+fn snippet(source: SnippetSource, line: &str, query: &str) -> Snippet {
+    let mut at_ms = None;
+    let mut line = line.trim();
+    // "[mm:ss] Speaker: text" in transcripts, "[mm:ss] text" in My notes.
+    if let Some((stamp, rest)) = line.strip_prefix('[').and_then(|l| l.split_once("] "))
+        && let Some((m, s)) = stamp.split_once(':')
+        && let (Ok(m), Ok(s)) = (m.parse::<u64>(), s.parse::<u64>())
+    {
+        at_ms = Some((m * 60 + s) * 1000);
+        line = rest;
+        if matches!(source, SnippetSource::Transcript)
+            && let Some((label, text)) = line.split_once(": ")
+            && (matches!(label, "Me" | "Them") || label.strip_prefix("Speaker ").is_some())
+        {
+            line = text;
+        }
+    }
+    let line = line
+        .trim_start_matches(['#', '-', '*', '>', ' '])
+        .trim_start_matches("[ ] ")
+        .trim_start_matches("[x] ")
+        .trim_start_matches("[] ")
+        .replace("**", "");
+    // Folding can change length (final sigma), so a match found per line may be missed here;
+    // the snippet then starts at the line's beginning.
+    let at = line
+        .char_indices()
+        .find(|&(i, _)| {
+            let mut folded = line[i..].chars().flat_map(char::to_lowercase);
+            query.chars().all(|q| folded.next() == Some(q))
+        })
+        .map_or(0, |(i, _)| i);
+    let mut from = line[..at]
+        .char_indices()
+        .rev()
+        .nth(BEFORE - 1)
+        .map_or(0, |(i, _)| i);
+    if from > 0
+        && let Some(space) = line[from..at].find(' ')
+    {
+        from += space + 1;
+    }
+    let to = line[from..]
+        .char_indices()
+        .nth(LONGEST)
+        .map_or(line.len(), |(i, _)| from + i);
+    let text = format!(
+        "{}{}{}",
+        if from > 0 { "…" } else { "" },
+        &line[from..to],
+        if to < line.len() { "…" } else { "" }
+    );
+    Snippet {
+        source,
+        text,
+        at_ms,
+    }
 }
 
 fn is_id(id: &str) -> bool {
@@ -446,10 +540,42 @@ mod tests {
             "[00:05] [] Follow up Thursday",
         )
         .unwrap();
-        assert_eq!(search(&root, " ROADMAP ").unwrap().len(), 1);
-        assert_eq!(search(&root, "Thursday").unwrap().len(), 1);
+        let hits = search(&root, " ROADMAP ").unwrap();
+        let snippet = hits[0].snippet.as_ref().unwrap();
+        assert!(matches!(snippet.source, SnippetSource::Transcript));
+        assert_eq!(
+            (snippet.text.as_str(), snippet.at_ms),
+            ("Publish the roadmap", Some(4000))
+        );
+        let hits = search(&root, "Thursday").unwrap();
+        let snippet = hits[0].snippet.as_ref().unwrap();
+        assert!(matches!(snippet.source, SnippetSource::MyNotes));
+        assert_eq!(snippet.text, "Follow up Thursday");
+        let hits = search(&root, "design").unwrap();
+        assert!(hits[0].snippet.is_none(), "a title-only match has no line");
         assert!(search(&root, "unrelated").unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn snippets_cut_on_characters_around_the_match() {
+        let long = "Chúng ta đã thống nhất rằng nhóm thiết kế sẽ hoàn thiện bản mẫu trước thứ Sáu, \
+                    sau đó gửi báo cáo cho khách hàng.";
+        let cut = snippet(
+            SnippetSource::Notes,
+            &format!("- **{long}**"),
+            "gửi báo cáo",
+        );
+        assert!(cut.text.starts_with('…') && !cut.text.ends_with('…'));
+        assert!(cut.text.contains("gửi báo cáo cho khách hàng."));
+        assert!(!cut.text.contains("**"));
+        // The cut lands after a space, not inside a word.
+        assert!(cut.text[3..].starts_with(|c: char| c.is_alphabetic()));
+        let line = format!("[61:05] Speaker 2: {}", "ừ ".repeat(200));
+        let cut = snippet(SnippetSource::Transcript, &line, "ừ");
+        assert_eq!(cut.at_ms, Some(3_665_000));
+        assert_eq!(cut.text.chars().count(), LONGEST + 1);
+        let cut = snippet(SnippetSource::Notes, "- [ ] Send the ΣΟΦΟΣ deck", "σοφος");
+        assert_eq!(cut.text, "Send the ΣΟΦΟΣ deck");
     }
     #[test]
     fn rejects_paths_outside_library() {
@@ -627,6 +753,7 @@ mod tests {
     fn export_bindings() {
         let config = ts_rs::Config::default().with_out_dir("../../ui/lib/bindings");
         Meeting::export_all(&config).unwrap();
+        SearchHit::export_all(&config).unwrap();
         motet_core::events::Event::export_all(&config).unwrap();
     }
 }

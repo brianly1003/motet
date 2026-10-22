@@ -20,7 +20,7 @@ export default function CommandPalette({onClose, onSelect, onImport, onHome, can
   }, []);
   useEffect(() => {
     let active = true;
-    const timer = setTimeout(() => { ipc.searchMeetings(query).then(rows => { if (active) setMeetings(rows.slice(0, 5)); }).catch(error => { if (active) setError(String(error)); }); }, 100);
+    const timer = setTimeout(() => { ipc.searchMeetings(query).then(rows => { if (active) setMeetings(rows.slice(0, 5).map(hit => hit.meeting)); }).catch(error => { if (active) setError(String(error)); }); }, 100);
     return () => { active = false; clearTimeout(timer); };
   }, [query]);
   const actions = [

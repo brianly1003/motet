@@ -124,12 +124,22 @@ async (page) => {
     const focusSession = await p.context().newCDPSession(p);
     await focusSession.send("Emulation.setFocusEmulationEnabled", {enabled:false});
     await reference.bringToFront();
+    // Scrolled up (DESIGN 4.4): a new line doesn't pull the reader down; Jump to now appears.
+    await p.getByRole('button', {name: 'Jump to now'}).waitFor();
+    await p.evaluate(() => { window.fixtureTranscript += '\n[05:30] Them: Arrived while reading back'; });
+    await p.waitForFunction(() => [...document.querySelectorAll('.lines button.line')].at(-1)?.textContent.includes('Arrived while reading back'));
+    await p.waitForTimeout(1200);
+    if (await p.evaluate(() => document.querySelector('.lines').scrollTop) !== 0) throw Error('Live followed while scrolled up');
+    // Back at the end, it follows again, without taking the editor's focus.
+    await p.evaluate(() => { const box=document.querySelector('.lines'); box.scrollTop=box.scrollHeight; });
+    await p.waitForFunction(() => !document.querySelector('.jumpnow'));
     await p.evaluate(() => { window.fixtureTranscript += '\n[05:31] Them: Newest background message'; });
     await p.waitForFunction(() => { const box=document.querySelector('.lines'); return [...(box?.querySelectorAll('button.line')||[])].at(-1)?.textContent.includes('Newest background message') && Math.abs(box.scrollHeight-box.clientHeight-box.scrollTop)<2; });
     if (await p.evaluate(() => document.hasFocus())) throw Error('Background fixture unexpectedly has window focus');
     if (!await editor.evaluate(e => e===document.activeElement)) throw Error('Auto-scroll stole editor focus');
     await p.screenshot({path: `.playwright-out/live-autoscroll-${theme}.png`});
-    if (await p.locator('.lines > .line.pending:last-child').innerText() !== '··:··\n...\nlistening') throw Error('Listening row missing after the newest line');
+    // textContent: .ts is a grid (one cell per dot), so innerText puts each cell on its own line.
+    if (await p.locator('.lines > .line.pending:last-child').textContent() !== '··:··...listening') throw Error('Listening row missing after the newest line');
     // The three dots brighten in turn, but stay still under Reduce Motion (DESIGN 2.4).
     const dotMotion = () => p.locator('.lines > .line.pending .dots i').evaluateAll(dots => dots.map(d => `${getComputedStyle(d).animationName} ${getComputedStyle(d).animationDelay}`).join(','));
     if (await dotMotion() !== 'none 0s,none 0.2s,none 0.4s') throw Error(`Listening dots move under Reduce Motion: ${await dotMotion()}`);

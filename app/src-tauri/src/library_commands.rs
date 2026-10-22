@@ -221,7 +221,7 @@ pub(crate) fn cancel_import(state: tauri::State<'_, Library>) {
 pub(crate) async fn search_meetings(
     app: tauri::AppHandle,
     query: String,
-) -> Result<Vec<library::MeetingSummary>, String> {
+) -> Result<Vec<library::SearchHit>, String> {
     if query.len() > 1024 {
         return Err("Search is too long".into());
     }

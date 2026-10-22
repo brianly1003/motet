@@ -24,7 +24,7 @@ async (page)=>{
         if (command === 'rename_meeting') { meeting.summary = {...meeting.summary, title: args.title}; return meeting.summary; }
         if (command === 'get_meeting') return meeting;
         if (command === 'meeting_media') return {tracks:[],duration_ms:60000,folder:'/local/meeting'};
-        if (command === 'search_meetings') return JSON.stringify(meeting).toLowerCase().includes(args.query.trim().toLowerCase()) ? [meeting.summary] : [];
+        if (command === 'search_meetings') return JSON.stringify(meeting).toLowerCase().includes(args.query.trim().toLowerCase()) ? [{meeting: meeting.summary, snippet: null}] : [];
         return false;
       }};
     });

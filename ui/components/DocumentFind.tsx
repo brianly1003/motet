@@ -28,17 +28,21 @@ function FindIcon({children}:{children:React.ReactNode}) {
   return <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 }
 
-export default function DocumentFind({tab,body}:{tab:string;body:RefObject<HTMLDivElement|null>}) {
+/** `start` opens Find on those words and goes to the first match (a sidebar search result). */
+export default function DocumentFind({tab,body,start}:{tab:string;body:RefObject<HTMLDivElement|null>;start?:string}) {
   const [scope,setScope]=useState<string|null>(null),[query,setQuery]=useState('');
   const [ranges,setRanges]=useState<Range[]>([]),[index,setIndex]=useState(-1);
   const input=useRef<HTMLInputElement>(null),back=useRef<HTMLElement|null>(null);
+  const jump=useRef(false);
   const open=scope===tab;
   function close(restore=true){
-    setScope(null);setQuery('');setRanges([]);setIndex(-1);
+    setScope(null);setQuery('');setRanges([]);setIndex(-1);jump.current=false;
     if(restore)(back.current?.isConnected?back.current:document.getElementById(`tab-${tab}`))?.focus({preventScroll:true});
   }
   useEffect(()=>{close(false);},[tab]);
-  useLayoutEffect(()=>{if(open){input.current?.focus();input.current?.select();}},[open]);
+  useEffect(()=>{if(start&&['Notes','Transcript'].includes(tab)){jump.current=true;back.current=document.activeElement as HTMLElement|null;setScope(tab);setQuery(start);}},[]);
+  // Opened from a search result, focus stays in the sidebar (arrow keys keep moving through results).
+  useLayoutEffect(()=>{if(open&&!jump.current){input.current?.focus();input.current?.select();}},[open]);
   useEffect(()=>{
     const keys=(event:KeyboardEvent)=>{
       if((event.metaKey||event.ctrlKey)&&!event.altKey&&event.key.toLowerCase()==='f'&&['Notes','Transcript'].includes(tab)&&!document.querySelector('.palette, [aria-modal="true"]')){
@@ -73,6 +77,7 @@ export default function DocumentFind({tab,body}:{tab:string;body:RefObject<HTMLD
     const rect=ranges[next].getBoundingClientRect(),element=body.current;
     element.scrollTop+=rect.top-element.getBoundingClientRect().top-Math.max(12,(element.clientHeight-rect.height)/2);
   }
+  useEffect(()=>{if(jump.current&&ranges.length){jump.current=false;step(1);}});
   if(!open)return null;
   const label=`Find in ${tab.toLowerCase()}`;
   const count=!query.trim()?'':!ranges.length?'No matches':index<0?`${ranges.length} matches`:`${index+1} of ${ranges.length}`;

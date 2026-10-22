@@ -37,6 +37,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 :root .sidebar :is(.homerow, .meeting-row, .trash):focus-visible { box-shadow: inset 0 0 0 1px var(--ink-3); }
 .meeting-row strong { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meeting-row > span { display: flex; justify-content: space-between; align-items: center; gap: 6px; color: var(--ink-3); font-size: 11.5px; }
+/* Search results (mockup sideHtml: .mitem .snip, mark): the matching line, then where it was. */
+.meeting-row .snip { font-style: normal; font-size: 12px; line-height: 1.4; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 1px 0; }
+.meeting-row mark { background: var(--hl); color: inherit; border-radius: 3px; padding: 0 2px; }
+.meeting-row .where { font-weight: 400; font-size: 11px; white-space: nowrap; font-feature-settings: "tnum"; }
 .meeting-row i { display: inline-flex; gap: 5px; padding: 1px 8px; border-radius: 99px; font: 500 11px/1.6 var(--font-data); white-space: nowrap; font-feature-settings: "tnum"; }
 .ready { background: var(--ok-soft); color: var(--ok); }
 .attention { background: var(--accent-soft); color: var(--accent-ink); }
@@ -73,6 +77,19 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .openitems .from { font-size: 12px; color: var(--ink-3); border: 0; background: none; padding: 0; text-align: right; }
 .openitems .from:hover { color: var(--ink-1); text-decoration: underline; }
 .drop { border: 1.5px dashed var(--line-2); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-3); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+/* A file dragged over the window (Tauri drag-enter): the drop zone answers; a drop anywhere in the
+   library window imports, so other screens get the same frame over the workspace. */
+.drop, .home .empty { transition: border-color .12s, background-color .12s, color .12s; }
+.shell[data-drag] :is(.drop, .home .empty) { border-style: solid; border-color: var(--ink-2); background: var(--surface-2); color: var(--ink-1); }
+.shell[data-drag]:not(:has(.drop, .home .empty))::after { content: attr(data-drag); grid-area: 1 / 2; margin: 12px; z-index: 30; pointer-events: none; display: grid; place-items: center; border: 1.5px solid var(--ink-2); border-radius: 12px; background: color-mix(in srgb, var(--surface-2) 88%, transparent); color: var(--ink-1); font-size: 13px; font-weight: 500; }
+.shell[data-drag][data-blocked] :is(.drop, .home .empty), .shell[data-drag][data-blocked]::after { border-style: dashed; color: var(--ink-3); }
+/* Jump to now (DESIGN 4.4): appears once the reader scrolls up from the newest live line. */
+.jumpnow { position: sticky; bottom: 8px; justify-self: center; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 8px; border: 1px solid var(--line-2); border-radius: 99px; background: var(--surface-1); color: var(--ink-1); font: 500 11.5px/1.5 var(--font-ui); box-shadow: 0 6px 16px -8px rgba(28,32,24,.4); }
+.jumpnow svg { width: 12px; height: 12px; flex: none; }
+.jumpnow:hover { background: var(--surface-2); }
+.live-pane { position: relative; }
+.live-pane > .jumpnow { position: absolute; left: 50%; transform: translateX(-50%); }
+@media (prefers-reduced-motion: reduce) { .drop, .home .empty { transition: none; } }
 .empty { border: 1.5px dashed var(--line-2); border-radius: 12px; padding: 28px; display: grid; gap: 10px; justify-items: start; color: var(--ink-2); }
 .empty b { color: var(--ink-1); font: 400 22px var(--font-doc); }
 /* Empty library (mockup .empty): the mark, then Record now (bordered) beside Import (quiet). */
@@ -200,6 +217,7 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 .doc-dropdown button { border: 0; background: transparent; text-align: left; padding: 6px 9px; border-radius: 6px; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; }
 .doc-dropdown button:hover { background: var(--surface-2); }
 .doc-dropdown .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+.doc-dropdown button[disabled] { opacity: .45; cursor: not-allowed; background: transparent; }
 .doc-confirm { position: absolute; right: 0; top: 34px; width: min(360px, calc(100vw - 300px)); margin: 0; z-index: 31; }
 @media (prefers-reduced-transparency: reduce) { .doc-dropdown { background: var(--surface-1); } }
 

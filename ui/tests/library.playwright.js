@@ -29,7 +29,7 @@ async (page) => {
         if (command === 'rename_meeting') { meeting.summary = {...meeting.summary, title: args.title}; return meeting.summary; }
         if (command === 'get_meeting') return meeting;
         if (command === 'meeting_media') return {tracks:[],duration_ms:0,folder:'/local/meeting'};
-        if (command === 'search_meetings') return JSON.stringify(meeting).toLowerCase().includes(args.query.trim().toLowerCase()) ? [meeting.summary] : [];
+        if (command === 'search_meetings') return JSON.stringify(meeting).toLowerCase().includes(args.query.trim().toLowerCase()) ? [{meeting: meeting.summary, snippet: null}] : [];
         return false;
       }};
     });
@@ -103,6 +103,8 @@ async (page) => {
     await p.getByRole('button', {name: 'Command palette', exact: true}).click();
     await p.keyboard.press('Escape');
     // The row's "•••": hidden until the row is hovered, opens beside it, deletes in two clicks.
+    // Search results (mockup sideHtml) have no •••, so clear the search first.
+    await p.getByPlaceholder('Search notes and transcripts').fill('');
     const row = p.locator('.mrow').first();
     if (await row.locator('.rowmore').evaluate(e => getComputedStyle(e).opacity) !== '0') throw Error('Row ••• shows before hover');
     await row.hover();

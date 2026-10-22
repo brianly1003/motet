@@ -12,7 +12,7 @@ async (page) => {
     window.__TAURI_INTERNALS__ = { convertFileSrc: x => x, transformCallback: () => ++next, unregisterCallback: () => {}, invoke: async (c, a) => {
       if (c === 'plugin:event|listen') return next; if (c === 'get_state') return { state: { type: 'Idle' }, meeting_id: null, companion: { visible: false, size: 'Pill' }, elapsed_ms: 0, quit_pending: false };
       if (c === 'list_meetings') return ms.map(m => m.summary); if (c === 'deleted_meetings') return [{...ms[0].summary,id:'gone',title:'Deleted meeting'}]; if (c === 'get_meeting') return ms.find(m => m.summary.id === a.id);
-      if (c === 'search_meetings') return ms.filter(m=>m.summary.title.toLowerCase().includes(a.query.toLowerCase())).map(m=>m.summary);
+      if (c === 'search_meetings') return ms.filter(m=>m.summary.title.toLowerCase().includes(a.query.toLowerCase())).map(m=>({meeting:m.summary,snippet:null}));
       if (c === 'open_action_items') return ms.map(m => [m.summary, m.notes_md]);
       if (c === 'set_action_item_done') { const m = ms.find(m => m.summary.id === a.id); const l = m.notes_md.split('\n'); l[a.line] = l[a.line].replace('[ ]', a.done ? '[x]' : '[ ]'); m.notes_md = l.join('\n'); return m.notes_md; }
       if (c === 'meeting_media') return { tracks: [], duration_ms: 87000, folder: 'x' }; if (c === 'library_bytes') return 1000; return false; } };

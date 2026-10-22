@@ -1,5 +1,6 @@
 import type { Meeting } from "./bindings/Meeting";
 import type { MeetingSummary } from "./bindings/MeetingSummary";
+import type { SearchHit } from "./bindings/SearchHit";
 
 export function desktopAvailable() { return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window; }
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -46,6 +47,12 @@ export const takeNote = () => invoke<void>("take_note");
 export const resumeRemainingMs = () => invoke<number>("resume_remaining_ms");
 export const notificationPermission = (request = false) => invoke<boolean>("notification_permission", { request });
 
+/** Files dragged over this window: true while over it, false on leave or drop (Rust imports a drop). */
+export async function onFileDrag(callback: (over: boolean) => void) {
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  return getCurrentWebview().onDragDropEvent(event => callback(event.payload.type === "enter" || event.payload.type === "over"));
+}
+
 export async function onOpenMeeting(callback: (id: string) => void) {
   const { listen } = await import("@tauri-apps/api/event");
   return listen<string>("motet://open-meeting", event => callback(event.payload));
@@ -86,7 +93,7 @@ export const pinCompanion = (pinned: boolean) => invoke<void>("pin_companion", {
 export const sharingMode = (active: boolean) => invoke<void>("sharing_mode", { active });
 
 export const openActionItems = () => invoke<[MeetingSummary, string][]>("open_action_items");
-export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("search_meetings", { query });
+export const searchMeetings = (query: string) => invoke<SearchHit[]>("search_meetings", { query });
 
 export const meetingAction = (id: string, action: "reveal" | "regenerate" | "retranscribe" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
 export const deletedMeetings = () => invoke<MeetingSummary[]>("deleted_meetings");

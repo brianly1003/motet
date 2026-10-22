@@ -19,8 +19,8 @@ const TITLE_MAX=80;
 
 export type LiveSession = {state:AppState|null; stage:Stage|null; gaps:Gap[]; pending:boolean; act:(command:()=>Promise<void>)=>Promise<void>};
 
-export default function MeetingDocument({meeting, onChange, onChanged, onError, onRename, onDelete, renameRequest=0, session, rewriting, onToast}: {session?:LiveSession; rewriting?:{stage:Stage|null; transcribe:boolean}; onToast?:(text:string)=>void; meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
-  const [tab,setTab]=useState('Notes');
+export default function MeetingDocument({meeting, find, onChange, onChanged, onError, onRename, onDelete, renameRequest=0, session, rewriting, onToast}: {find?:{tab:string;query:string}; session?:LiveSession; rewriting?:{stage:Stage|null; transcribe:boolean}; onToast?:(text:string)=>void; meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
+  const [tab,setTab]=useState(find?.tab??'Notes');
   const body=useRef<HTMLDivElement>(null);
   // While this meeting records it is a working page; after Stop, the notes are being written.
   const liveType=session?.state?.meeting_id===meeting.summary.id?session.state.state.type:null;
@@ -181,7 +181,7 @@ export default function MeetingDocument({meeting, onChange, onChanged, onError, 
       const names=['Notes','Transcript','Audio'];let next=index;
       if(event.key==='ArrowRight')next=(index+1)%3;else if(event.key==='ArrowLeft')next=(index+2)%3;else if(event.key==='Home')next=0;else if(event.key==='End')next=2;else return;
       event.preventDefault();setTab(names[next]);document.getElementById(`tab-${names[next]}`)?.focus();
-    }}>{name}</button>)}</div><DocumentFind tab={tab} body={body}/></div>
+    }}>{name}</button>)}</div><DocumentFind tab={tab} body={body} start={find?.query}/></div>
     <div ref={body} className="docbody" id="meeting-panel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab==='Notes'?(meeting.notes_md?<NotesView id={meeting.summary.id} markdown={meeting.notes_md} locked={locked} durationMs={duration} onSeek={duration?ms=>{seek(ms);setTab('Transcript');}:undefined} onChange={notes_md=>onChange({...meeting,notes_md})} onError={onError}/>:<p className="muted">{s.noNotes}</p>):tab==='Transcript'?<Transcript onTogglePlay={togglePlay} id={meeting.summary.id} text={meeting.transcript} heard={meeting.transcript_heard} locked={locked} marks={meeting.summary.marks_ms} onSeek={duration?seek:undefined} onReplay={duration?replay:undefined} onChange={(transcript,transcript_heard)=>onChange({...meeting,transcript,transcript_heard})} onError={onError} position={showPlayer?position:undefined}/>:<div className="notes"><section><h3>Audio</h3>{tracks.length?<div className="audio-table"><table><thead><tr><th>Track</th><th>Who</th><th>Size</th></tr></thead><tbody>{tracks.map(track=><tr key={track.path}><td className="mono"><button className="track-play" onClick={()=>seek(track.offset_ms)}>{track.name}</button></td><td>{track.speaker}</td><td className="mono">{fileSize(track.bytes)}</td></tr>)}</tbody></table></div>:<p className="tip">No saved audio is available. Notes and transcript are kept.</p>}</section></div>}
       <aside className="meeting-aside">

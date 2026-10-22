@@ -20,7 +20,7 @@ export function openItems(open: unknown): Item[] {
 }
 
 // Library home (mockup renderHome): unchecked action items across meetings, then the import drop zone.
-export default function LibraryHome({version, onOpen, onImport, onDone, onError, onCount, disabled, disabledReason, interrupted = [], onRecover, onDiscard}: {version: number; disabledReason?: string; onCount: (n: number) => void; onOpen: (id: string) => void; onImport: () => void; onDone: (undo: () => Promise<void>) => void; onError: (error: string) => void; disabled: boolean;
+export default function LibraryHome({version, dropText, onOpen, onImport, onDone, onError, onCount, disabled, disabledReason, interrupted = [], onRecover, onDiscard}: {version: number; disabledReason?: string; dropText?: string; onCount: (n: number) => void; onOpen: (id: string) => void; onImport: () => void; onDone: (undo: () => Promise<void>) => void; onError: (error: string) => void; disabled: boolean;
   /** Recordings cut off by a quit or crash (status Interrupted), offered first (SPEC 6.1, mockup renderHome). */
   interrupted?: MeetingSummary[]; onRecover?: (ids: string[]) => void; onDiscard?: (ids: string[]) => void}) {
   const [items, setItems] = useState<Item[] | null>(null);
@@ -51,6 +51,6 @@ export default function LibraryHome({version, onOpen, onImport, onDone, onError,
       <span>{item.owner && <span className={`owner${item.owner === "You" ? " me" : ""}`}>{item.owner}</span>}<span dangerouslySetInnerHTML={{__html: renderInline(item.text)}}/></span>
       <button type="button" className="from" onClick={() => onOpen(item.meeting.id)}>{item.meeting.title}{item.src && ` · ${item.src}`}</button>
     </div>)}</div> : <p className="tip">{s.noOpenItems}</p>)}
-    <div className="drop"><span>{s.dropHint}</span><button type="button" className="doc-action" onClick={onImport} disabled={disabled} title={disabledReason || undefined}>{s.import}</button></div>
+    <div className="drop"><span aria-live="polite">{dropText ?? s.dropHint}</span><button type="button" className="doc-action" onClick={onImport} disabled={disabled} title={disabledReason || undefined}>{s.import}</button></div>
   </div>;
 }
