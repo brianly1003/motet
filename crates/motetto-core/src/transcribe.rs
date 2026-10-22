@@ -60,6 +60,9 @@ struct Segment {
     text: String,
 }
 
+/// A whisper row: start and end in ms, text.
+type Row = (u64, u64, String);
+
 fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
     let status = crate::tools::status(cmd)?;
     if !status.success() {
@@ -93,46 +96,8 @@ pub fn transcript_parts(
             let wav16 = format!("{stem}.16k.wav");
             decode::to_wav(Path::new(src), Path::new(&wav16))?;
             println!("Transcribing {src} with {model}...");
-            let mut whisper = crate::tools::command("whisper-cli");
-            whisper.args([
-                "-m",
-                &model,
-                "-f",
-                &wav16,
-                "-l",
-                config::call_language().as_deref().unwrap_or("auto"),
-                "-np",
-                "-ocsv",
-                "-of",
-                &stem,
-            ]);
-            // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
-            // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
-            // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
-            whisper.args(["-bs", "1", "-bo", "1"]);
-            // 64 tokens of previous text (2026-10-21): the default full context looped one
-            // sentence for a minute on a real call, replacing what was said; none (-mc 0) cut the
-            // rest into run-on chunks. 64 kept sentences whole with no loop on both calls and the
-            // songs. --carry-initial-prompt keeps TERMS, which a short context would push out.
-            whisper.args(["-mc", "64", "--carry-initial-prompt"]);
-            // VAD gives real segment start times (else leading silence is folded in) and
-            // stops hallucinated lines in the long silent stretches of each track.
-            if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
-                whisper.args(["--vad", "-vm", &vad]);
-            }
-            // Names whisper can't know (new products, people, project codes) bias it toward the right
-            // spelling; tested not to push English words into a Vietnamese call.
-            // whisper keeps only the last ~224 prompt tokens; long lists lose their start.
-            if let Some(terms) = config::terms() {
-                whisper.args(["--prompt", &terms]);
-            }
-            if quiet {
-                whisper
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null());
-            }
-            run(&mut whisper)?;
-            let rows = parse_csv(&fs::read_to_string(format!("{stem}.csv"))?);
+            let rows = whisper(&model, &wav16, &stem, quiet)?;
+            let rows = split_joined(&model, &wav16, &stem, rows, quiet)?;
             // A short loop can still slip through the 64-token context; drop it here.
             let loops = crate::echo::loops(&rows);
             let rows: Vec<_> = rows
@@ -161,6 +126,157 @@ pub fn transcript_parts(
         }
     }
     Ok(merge(segments))
+}
+
+/// whisper-cli on one 16 kHz WAV: rows written to `<stem>.csv` and returned.
+fn whisper(model: &str, wav16: &str, stem: &str, quiet: bool) -> Result<Vec<Row>, Box<dyn Error>> {
+    let mut whisper = crate::tools::command("whisper-cli");
+    whisper.args([
+        "-m",
+        model,
+        "-f",
+        wav16,
+        "-l",
+        config::call_language().as_deref().unwrap_or("auto"),
+        "-np",
+        "-ocsv",
+        "-of",
+        stem,
+    ]);
+    // Greedy decoding: 1.5x faster than the default 5-beam search with the same accuracy
+    // (10 min of Vietnamese call: 54 s vs 80 s, differences mostly filler words). Splitting
+    // the audio (-p) was faster still but dropped speech at the seams, so it stays off.
+    whisper.args(["-bs", "1", "-bo", "1"]);
+    // 64 tokens of previous text (2026-10-21): the default full context looped one
+    // sentence for a minute on a real call, replacing what was said; none (-mc 0) cut the
+    // rest into run-on chunks. 64 kept sentences whole with no loop on both calls and the
+    // songs. --carry-initial-prompt keeps TERMS, which a short context would push out.
+    whisper.args(["-mc", "64", "--carry-initial-prompt"]);
+    // VAD gives real segment start times (else leading silence is folded in) and
+    // stops hallucinated lines in the long silent stretches of each track.
+    if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
+        whisper.args(["--vad", "-vm", &vad]);
+    }
+    // Names whisper can't know (new products, people, project codes) bias it toward the right
+    // spelling; tested not to push English words into a Vietnamese call.
+    // whisper keeps only the last ~224 prompt tokens; long lists lose their start.
+    if let Some(terms) = config::terms() {
+        whisper.args(["--prompt", &terms]);
+    }
+    if quiet {
+        whisper
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+    }
+    run(&mut whisper)?;
+    Ok(parse_csv(&fs::read_to_string(format!("{stem}.csv"))?))
+}
+
+/// A silence at least this long inside one row means whisper joined two utterances.
+const JOINED_GAP_MS: u64 = 5_000;
+
+/// With VAD, whisper drops the silence between utterances and decodes what is left as one stream,
+/// so speech either side of a long silence can land in one row stamped with the first one's
+/// start: "Anything else?" at 0:28 and "Hello hello hello" at 2:04 became one 0:25 row, which
+/// sorts the later words before the other side's reply (2026-10-23). A row that holds a silence
+/// of 5 s or more by Silero (typing and clicks are not speech) is transcribed again in pieces
+/// cut in the middle of each silence; the other rows, nearly all, stay as whisper wrote them.
+/// Optional like diarizing: if the speech check or a piece fails, or a piece comes back empty,
+/// the row stays whole. Cancel still stops the job.
+fn split_joined(
+    model: &str,
+    wav16: &str,
+    stem: &str,
+    rows: Vec<Row>,
+    quiet: bool,
+) -> Result<Vec<Row>, Box<dyn Error>> {
+    let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) else {
+        return Ok(rows); // without VAD whisper keeps the silence and splits there itself
+    };
+    let speech = match slice::speech(Path::new(wav16), &vad) {
+        Ok(speech) => speech,
+        Err(e) => {
+            eprintln!("Long-silence check skipped for {wav16}: {e}");
+            return Ok(rows);
+        }
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    for (start, end, text) in rows {
+        let cuts = cuts(start, end, &speech);
+        if cuts.is_empty() {
+            out.push((start, end, text));
+            continue;
+        }
+        match pieces(model, wav16, stem, start, end, &cuts, quiet) {
+            Ok(Some(rows)) => out.extend(rows),
+            Ok(None) => out.push((start, end, text)),
+            Err(e) => {
+                crate::tools::check()?;
+                eprintln!("Kept a long row whole in {wav16}: {e}");
+                out.push((start, end, text));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The middle of every silence of `JOINED_GAP_MS` or more between the speech heard in
+/// `start..end`.
+fn cuts(start: u64, end: u64, speech: &[(u64, u64)]) -> Vec<u64> {
+    let mut heard: Vec<_> = speech
+        .iter()
+        .filter(|(s, e)| *e > start && *s < end)
+        .copied()
+        .collect();
+    heard.sort_unstable();
+    let mut cuts = vec![];
+    let mut last = None::<u64>;
+    for (s, e) in heard {
+        if let Some(last) = last.filter(|last| s.saturating_sub(*last) >= JOINED_GAP_MS) {
+            let middle = (last + s) / 2;
+            if middle > start && middle < end {
+                cuts.push(middle);
+            }
+        }
+        last = Some(last.map_or(e, |last| last.max(e)));
+    }
+    cuts
+}
+
+/// Whisper on each piece of `start..end` between `cuts`, times put back on the track. `None`
+/// when a piece comes back empty, so no words are lost.
+/// one whisper-cli per piece (model loaded each time); rare enough not to matter.
+fn pieces(
+    model: &str,
+    wav16: &str,
+    stem: &str,
+    start: u64,
+    end: u64,
+    cuts: &[u64],
+    quiet: bool,
+) -> Result<Option<Vec<Row>>, Box<dyn Error>> {
+    let bounds: Vec<u64> = std::iter::once(start)
+        .chain(cuts.iter().copied())
+        .chain(std::iter::once(end))
+        .collect();
+    let mut out = vec![];
+    for (i, piece) in bounds.windows(2).enumerate() {
+        let piece_stem = format!("{stem}.piece{i}");
+        let piece_wav = format!("{piece_stem}.16k.wav");
+        let rows = slice::write(Path::new(wav16), Path::new(&piece_wav), piece[0], piece[1])
+            .and_then(|()| whisper(model, &piece_wav, &piece_stem, quiet));
+        let _ = fs::remove_file(&piece_wav);
+        let _ = fs::remove_file(format!("{piece_stem}.csv"));
+        let rows = rows?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        out.extend(
+            rows.into_iter()
+                .map(|(s, e, text)| (s + piece[0], e.min(piece[1] - piece[0]) + piece[0], text)),
+        );
+    }
+    Ok(Some(out))
 }
 
 /// When the track also holds a quiet voice (a video playing near the mic), VAD counts it as
@@ -276,6 +392,28 @@ fn parse_csv(csv: &str) -> Vec<(u64, u64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_row_is_cut_in_each_long_silence_inside_it() {
+        // 2026-10-23, Silero on the mic: speech until 30.3 s, typing only, speech from 124.87 s;
+        // whisper's row ran 25.72-129.05 s.
+        let speech = [
+            (20_870, 25_410),
+            (25_860, 27_230),
+            (28_740, 30_300),
+            (124_870, 125_730),
+        ];
+        assert_eq!(cuts(25_720, 129_050, &speech), vec![77_585]);
+        // Short pauses and a silence outside the row don't cut it.
+        assert_eq!(cuts(20_000, 30_500, &speech), Vec::<u64>::new());
+        assert_eq!(cuts(124_000, 126_000, &speech), Vec::<u64>::new());
+        // Overlapping intervals in any order; a silence counts from the latest end before it.
+        assert_eq!(
+            cuts(0, 30_000, &[(20_000, 21_000), (0, 9_000), (1_000, 3_000)]),
+            vec![14_500]
+        );
+        assert_eq!(cuts(0, 10_000, &[]), Vec::<u64>::new());
+    }
 
     #[test]
     fn a_long_row_starts_where_the_speaker_got_loud() {
