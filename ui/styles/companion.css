@@ -151,6 +151,8 @@ html:has(.pill), body:has(.pill), html:has(.askwrap), body:has(.askwrap), body:h
 /* Native dragging must hit the region itself, including over the timer and waveform. */
 .pillbar[data-tauri-drag-region] { cursor: grab; user-select: none; outline: none; }
 .pillbar[data-tauri-drag-region] > :not(button) { pointer-events: none; }
+/* The Duet stays a drag handle except its "You", the microphone button (DESIGN 4.15). */
+.pillbar[data-tauri-drag-region] .duet .micbtn { pointer-events: auto; }
 
 /* Ask card (DESIGN 4.2): 460 px card in a 480 px window, 10 px each side for the hover X. */
 :root { --ask-dot: #8a590b; }
@@ -181,3 +183,12 @@ html:has(.pill), body:has(.pill), html:has(.askwrap), body:has(.askwrap), body:h
 .askcard .dropdown button:hover { background: var(--surface-2); }
 .pill[data-asking] .caption { display: none !important; }
 .dot.amber { background: var(--ask-dot); }
+/* Microphone (DESIGN 4.15): "You" opens Record from; a problem takes the caption's line. */
+.duet .lm.micbtn { border: 0; background: transparent; padding: 0 3px; margin: 0 -3px; border-radius: 4px; font: inherit; color: var(--me); display: inline-flex; align-items: center; gap: 3px; min-height: 0; height: auto; }
+.duet .lm.micbtn:hover { background: var(--me-soft); }
+.duet .lm.micbtn.warn { color: var(--accent-ink); }
+.duet .lm.micbtn.warn::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--attention); }
+.dot.micwarn { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--attention); }
+.pill .micnote { height: 26px; padding-top: 0; padding-bottom: 0; }
+.pill .micnote .btn.sm { padding-top: 1px; padding-bottom: 1px; }
+.pill[data-size="sidecar"] .micnote { height: auto; padding: 5px 6px 5px 12px; border-top: 0; border-bottom: 1px solid var(--line); }

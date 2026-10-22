@@ -1091,6 +1091,38 @@ fn pause_stops_capture_keeps_the_meeting_and_freezes_the_clock() {
 }
 
 #[test]
+fn switching_the_mic_starts_a_new_part_only_while_recording() {
+    let s = start(fresh(), false);
+    let (s, effects) = step(s, 20_000, Command::SwitchMicrophone);
+    assert_eq!(s.app.state, SessionState::Recording);
+    assert_eq!(
+        work(effects.clone()),
+        vec![
+            Effect::StopCapture,
+            Effect::StartCapture {
+                meeting_id: "m1".into(),
+                resume: true
+            }
+        ]
+    );
+    // Already announced: no second "Recording" notice.
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::NotifyRecording { .. }))
+    );
+    assert_eq!(
+        step(s.clone(), 25_000, Command::Tick).0.app.elapsed_ms,
+        25_000
+    );
+    // Paused, the next Resume picks the new mic up; notes-only has no mic to switch.
+    let paused = step(s, 30_000, Command::PauseRecording).0;
+    assert!(work(step(paused, 31_000, Command::SwitchMicrophone).1).is_empty());
+    let notes = start(fresh(), true);
+    assert!(work(step(notes, 1_000, Command::SwitchMicrophone).1).is_empty());
+}
+
+#[test]
 fn stop_while_paused_starts_the_resume_window_without_stopping_capture_twice() {
     let s = step(start(fresh(), false), 30_000, Command::PauseRecording).0;
     let (s, effects) = step(s, 40_000, Command::StopRecording);

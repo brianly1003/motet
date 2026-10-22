@@ -62,6 +62,10 @@ pub fn run() {
             crate::companion::snap_companion,
             crate::companion::sharing_mode,
             crate::live::get_levels,
+            crate::microphone::microphones,
+            crate::microphone::set_microphone,
+            crate::microphone::set_mic_volume,
+            crate::microphone::open_sound_settings,
             crate::live::live_transcript,
             resume_remaining_ms,
             notification_permission,
@@ -129,6 +133,7 @@ pub fn run() {
             }
             app.manage(crate::my_notes::Store::new(root.clone()));
             app.manage(crate::live::State::default());
+            app.manage(crate::microphone::Clipping::default());
             let busy = Arc::new(AtomicBool::new(false));
             let allow_exit = Arc::new(AtomicBool::new(false));
             let (sender, receiver) = mpsc::channel();

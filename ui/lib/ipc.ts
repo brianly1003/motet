@@ -69,7 +69,15 @@ import type { MyNotes } from "./bindings/MyNotes";
 export const getMyNotes = (meetingId: string) => invoke<MyNotes>("get_my_notes", { meetingId });
 export const saveMyNotes = (meetingId: string, text: string, baseVersion: number) => invoke<MyNotes>("save_my_notes", { meetingId, text, baseVersion });
 export const addJot = (text: string) => invoke<MyNotes>("add_jot", { text });
-export const companionMenu = (open: boolean) => invoke<void>("companion_menu", { open });
+// `extra`: px the page needs under its controls (a menu, the Ask card's mic line); Rust sizes the window.
+export const companionMenu = (open: boolean, extra?: number) => invoke<void>("companion_menu", { open, extra: extra ?? null });
+
+// The microphone picker (DESIGN 4.15): what Motet records from, and its one problem.
+import type { MicReport } from "./bindings/MicReport";
+export const microphones = () => invoke<MicReport>("microphones");
+export const setMicrophone = (id: string | null) => invoke<MicReport>("set_microphone", { id });
+export const setMicVolume = (id: string, volume: number) => invoke<MicReport>("set_mic_volume", { id, volume });
+export const openSoundSettings = () => invoke<void>("open_sound_settings");
 export const getLevels = () => invoke<[number, number]>("get_levels");
 
 export const liveTranscript = () => invoke<[string, string, string]>("live_transcript");

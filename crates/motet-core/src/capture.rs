@@ -1,6 +1,7 @@
 //! Capture stage: system audio + mic from one ScreenCaptureKit stream, one WAV per track.
 
 use crate::events::Stop;
+use crate::mics::Meters;
 use screencapturekit::prelude::*;
 use std::error::Error;
 use std::fs::File;
@@ -16,6 +17,8 @@ struct Track {
     wav: Wav,
     errors: mpsc::Sender<Result<(), String>>,
     level: Option<Arc<AtomicU32>>,
+    /// Mic only: clipped samples since the desktop last looked (`mics::too_loud`).
+    clips: Option<Arc<AtomicU32>>,
 }
 
 impl SCStreamOutputTrait for Track {
@@ -59,6 +62,14 @@ impl Track {
                 rms(samples.iter().step_by(stride).copied()).to_bits(),
                 Ordering::Relaxed,
             );
+        }
+        if let Some(clips) = &self.clips {
+            let n = samples
+                .iter()
+                .step_by(stride)
+                .filter(|s| s.abs() >= crate::mics::CLIP)
+                .count();
+            clips.fetch_add(n as u32, Ordering::Relaxed);
         }
         let mut wav = self.wav.lock().map_err(|_| "audio writer lock poisoned")?;
         if wav.is_none() {
@@ -153,14 +164,16 @@ fn wait_for_stop(
 
 /// Records both tracks until `stop` is set or writing fails; returns tracks that got audio.
 pub fn record(base: &str, stop: Stop) -> Result<Vec<String>, Box<dyn Error>> {
-    record_with_levels(base, stop, None)
+    record_with_levels(base, stop, None, None)
 }
 
-/// Optional real signal levels for the desktop; indices are microphone, system audio.
+/// The desktop's recording: optional meters, and `mic` (a `mics::Mic` id) to record instead of
+/// the system default input.
 pub fn record_with_levels(
     base: &str,
     stop: Stop,
-    levels: Option<[Arc<AtomicU32>; 2]>,
+    meters: Option<Meters>,
+    mic: Option<&str>,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let display = SCShareableContent::get()?
         .displays()
@@ -179,6 +192,10 @@ pub fn record_with_levels(
         .with_captures_audio(true)
         .with_channel_count(1)
         .with_captures_microphone(true)?;
+    let config = match mic {
+        Some(id) => config.with_microphone_capture_device_id(id)?,
+        None => config,
+    };
 
     let mut stream = SCStream::new(&filter, &config)?;
     let mut tracks = vec![];
@@ -194,9 +211,13 @@ pub fn record_with_levels(
                 path: path.clone(),
                 wav: wav.clone(),
                 errors: errors.clone(),
-                level: levels
+                level: meters
                     .as_ref()
-                    .map(|levels| levels[usize::from(suffix == "system")].clone()),
+                    .map(|m| m.levels[usize::from(suffix == "system")].clone()),
+                clips: meters
+                    .as_ref()
+                    .filter(|_| suffix == "mic")
+                    .map(|m| m.mic_clips.clone()),
             },
             kind,
         )?;
@@ -221,6 +242,10 @@ pub fn record_with_levels(
     let stop_result = stream
         .stop_capture()
         .map_err(|e| format!("cannot stop capture: {e}"));
+    // Readers load the last level; a stopped capture has none.
+    for level in meters.iter().flat_map(|m| &m.levels) {
+        level.store(0, Ordering::Relaxed);
+    }
     result = result.and(stop_result);
     for pending in stopped.try_iter() {
         result = result.and(pending);

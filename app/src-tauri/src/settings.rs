@@ -49,6 +49,8 @@ pub struct Settings {
     pub part_chars: u32,
     pub keep_audio: String,
     pub recording_reminder: bool,
+    /// The microphone Motet records (a `motet_core::mics::Mic` id); None follows the system.
+    pub mic_device: Option<String>,
     pub sounds: bool,
     pub companion: Companion,
     pub spellings: Vec<Spelling>,
@@ -75,6 +77,7 @@ impl Default for Settings {
                 .unwrap_or(24000),
             keep_audio: "30_days".into(),
             recording_reminder: true,
+            mic_device: None,
             sounds: true,
             companion: Companion::default(),
             spellings: motet_core::config::terms()
@@ -147,6 +150,13 @@ impl Settings {
             || !(8000..=48000).contains(&self.part_chars)
         {
             return Err("Use 10-300 idle seconds, 0-120 discard seconds and 8000-48000 characters per part.".into());
+        }
+        if self
+            .mic_device
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 255 || id.contains('\0'))
+        {
+            return Err("That microphone id isn't valid.".into());
         }
         if !["detect", "en", "vi", "zh", "ja"].contains(&self.call_language.as_str())
             || !["same_as_call", "en", "vi", "zh", "ja"].contains(&self.notes_language.as_str())
@@ -298,11 +308,14 @@ pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<
             }
             store.change(|s| {
                 // Calls choices may have changed in the controller since this window loaded.
+                // So may the mic, from the Pill or the recording page (`microphone.rs`).
                 let ask = s.ask_on_call;
                 let modes = s.app_modes.clone();
+                let mic = s.mic_device.clone();
                 *s = settings.clone();
                 s.ask_on_call = ask;
                 s.app_modes = modes;
+                s.mic_device = mic;
             })
         })();
         if let Err(reason) = &mut result {
@@ -399,6 +412,7 @@ pub fn call_apps(store: tauri::State<'_, Store>) -> Result<Vec<AppRule>, String>
 pub fn open(app: &tauri::AppHandle, tab: &str) -> Result<(), String> {
     if ![
         "general",
+        "audio",
         "calls",
         "models",
         "spellings",

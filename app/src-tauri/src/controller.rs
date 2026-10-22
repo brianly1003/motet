@@ -16,6 +16,8 @@ pub enum Action {
     Stop,
     StopMeeting(String),
     Pause,
+    /// Another mic was chosen: a new part when recording, nothing otherwise.
+    SwitchMic,
     Keep,
     Discard,
     UndoDiscard,
@@ -341,6 +343,12 @@ impl<H: Host> Engine<H> {
             }
             Action::Stop => Command::StopRecordingInMain,
             Action::Keep => Command::KeepRecording,
+            Action::SwitchMic => {
+                if self.session.app.state != SessionState::Recording {
+                    return Ok(());
+                }
+                Command::SwitchMicrophone
+            }
             Action::Discard => Command::DiscardRecording,
             Action::UndoDiscard => Command::UndoDiscard,
             Action::Pause => {

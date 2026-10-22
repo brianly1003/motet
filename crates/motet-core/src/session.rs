@@ -590,6 +590,18 @@ pub fn next(mut session: Session, input: Input) -> (Session, Vec<Effect>) {
             session.idle_since = None;
             session.pause_remind_at = Some(now.saturating_add(PAUSE_REMIND_MS));
         }
+        // A new part on the new mic, like Resume without the pause; already announced.
+        Command::SwitchMicrophone
+            if session.app.state == SessionState::Recording && session.audio() =>
+        {
+            if let Some(meeting_id) = session.app.meeting_id.clone() {
+                effects.push(Effect::StopCapture);
+                effects.push(Effect::StartCapture {
+                    meeting_id,
+                    resume: true,
+                });
+            }
+        }
         Command::MicActivity { app_id, active }
             if session.app.state == SessionState::Recording
                 && session.audio()

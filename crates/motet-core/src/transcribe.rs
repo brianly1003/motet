@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::{config, decode, diarize};
+use crate::{config, decode, diarize, slice};
 
 /// Who a track belongs to, from its file name.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -139,6 +139,9 @@ pub fn transcript_parts(
                 .into_iter()
                 .zip(loops)
                 .filter_map(|(row, looped)| (!looped).then_some(row))
+                .map(|(start, end, text)| {
+                    (heard_from(Path::new(&wav16), start, end, &text), end, text)
+                })
                 .collect();
             let speakers = if speaker == Speaker::Me {
                 vec![speaker; rows.len()]
@@ -158,6 +161,32 @@ pub fn transcript_parts(
         }
     }
     Ok(merge(segments))
+}
+
+/// When the track also holds a quiet voice (a video playing near the mic), VAD counts it as
+/// speech and whisper starts the next row where that voice began, not where the words did: "Hi
+/// Rachel" said at 1:19 was stamped 0:55 (2026-10-22). Neither VAD settings nor a second pass
+/// fixed it. A row far longer than its words starts instead at its first 100 ms within 12 dB of
+/// its loudest; a row of normal length keeps whisper's start.
+/// loudness only; a background voice as loud as the speaker still leaves the early start.
+fn heard_from(wav16: &Path, start: u64, end: u64, text: &str) -> u64 {
+    let words = text
+        .split_whitespace()
+        .count()
+        .max(text.chars().count() / 6) as u64;
+    if end.saturating_sub(start) <= 2_000 + 700 * words {
+        return start;
+    }
+    slice::levels(wav16, start, end).map_or(start, |levels| {
+        start + onset(&levels) as u64 * slice::FRAME_MS
+    })
+}
+
+/// The first frame within 12 dB (a quarter of the level) of the loudest, less one for the attack.
+fn onset(levels: &[f32]) -> usize {
+    let peak = levels.iter().copied().fold(0.0, f32::max);
+    let first = levels.iter().position(|&l| l >= peak / 4.0).unwrap_or(0);
+    first.saturating_sub(1)
 }
 
 /// One speaker per whisper row: the diarizer's voices when it hears two or more, else the
@@ -247,6 +276,41 @@ fn parse_csv(csv: &str) -> Vec<(u64, u64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_row_starts_where_the_speaker_got_loud() {
+        assert_eq!(onset(&[0.02, 0.03, 0.02, 0.3, 0.4, 0.1]), 2);
+        assert_eq!(onset(&[0.4, 0.02]), 0);
+        assert_eq!(onset(&[]), 0);
+        let root = std::env::temp_dir().join(format!("motet-onset-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let wav = root.join("mic.16k.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(&wav, spec).unwrap();
+        // A quiet voice for 25 s (a video near the mic), then the speaker for 3 s.
+        for i in 0..28 * 16_000 {
+            let level = if i < 25 * 16_000 { 0.02 } else { 0.3 };
+            writer
+                .write_sample(if i % 2 == 0 { level } else { -level })
+                .unwrap();
+        }
+        writer.finalize().unwrap();
+        assert_eq!(
+            heard_from(&wav, 1_000, 28_000, "Hi Rachel, good morning."),
+            24_900
+        );
+        // A row as long as its words keeps whisper's start, quiet lead or not.
+        assert_eq!(
+            heard_from(&wav, 24_000, 28_000, "Hi Rachel, good morning."),
+            24_000
+        );
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn merge_filters_mic_echo_of_diarized_system_but_not_unknown_imports() {

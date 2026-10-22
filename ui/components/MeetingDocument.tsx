@@ -19,7 +19,7 @@ const TITLE_MAX=80;
 
 export type LiveSession = {state:AppState|null; stage:Stage|null; gaps:Gap[]; pending:boolean; act:(command:()=>Promise<void>)=>Promise<void>};
 
-export default function MeetingDocument({meeting, find, onChange, onChanged, onError, onRename, onDelete, renameRequest=0, session, rewriting, onToast}: {find?:{tab:string;query:string}; session?:LiveSession; rewriting?:{stage:Stage|null; transcribe:boolean}; onToast?:(text:string)=>void; meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
+export default function MeetingDocument({meeting, find, onChange, onChanged, onError, onRename, onDelete, renameRequest=0, session, rewriting, onToast}: {find?:{tab:string;query:string}; session?:LiveSession; rewriting?:{stage:Stage|null; transcribe:boolean}; onToast?:(text:string,undo?:()=>Promise<void>)=>void; meeting:Meeting; onChange:(meeting:Meeting)=>void; onChanged:(removed:boolean)=>Promise<void>; onError:(error:string)=>void; onRename:(title:string)=>Promise<void>; onDelete:()=>void; renameRequest?:number}) {
   const [tab,setTab]=useState(find?.tab??'Notes');
   const body=useRef<HTMLDivElement>(null);
   // While this meeting records it is a working page; after Stop, the notes are being written.
@@ -175,7 +175,7 @@ export default function MeetingDocument({meeting, find, onChange, onChanged, onE
         <div className="tl-legend"><span className="lm">You</span><span className="lt">Them</span><span>{duration?timeLabel(duration):'No saved audio'}</span></div>
       </div>}
     </header>
-    {live&&session?.state?<RecordingPage session={{state:session.state,gaps:session.gaps,pending:session.pending,act:session.act}}/>:writing?<ProcessingPage stage={session?.stage??null} durationMs={meeting.summary.duration_ms??session?.state?.elapsed_ms??0}/>:rewriting?.transcribe?<RetranscribingPage stage={rewriting.stage}/>:rewriting?<RewritingPage stage={rewriting.stage} lines={meeting.transcript.split('\n').filter(line=>line.trim()).length}/>:<>
+    {live&&session?.state?<RecordingPage session={{state:session.state,gaps:session.gaps,pending:session.pending,act:session.act}} onToast={onToast}/>:writing?<ProcessingPage stage={session?.stage??null} durationMs={meeting.summary.duration_ms??session?.state?.elapsed_ms??0}/>:rewriting?.transcribe?<RetranscribingPage stage={rewriting.stage}/>:rewriting?<RewritingPage stage={rewriting.stage} lines={meeting.transcript.split('\n').filter(line=>line.trim()).length}/>:<>
     <div className="doctools"><div className="tabs" role="tablist" aria-label={s.meetingViews}>{['Notes','Transcript','Audio'].map((name,index)=><button key={name} id={`tab-${name}`} type="button" role="tab" aria-selected={tab===name} aria-controls="meeting-panel" tabIndex={tab===name?0:-1} onClick={()=>setTab(name)} onKeyDown={event=>{
       if(event.key===' ' && tab==='Transcript' && name==='Transcript' && !event.altKey && !event.ctrlKey && !event.metaKey){event.preventDefault();event.stopPropagation();togglePlay();return;}
       const names=['Notes','Transcript','Audio'];let next=index;

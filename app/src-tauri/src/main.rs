@@ -10,6 +10,7 @@ mod library_commands;
 mod live;
 mod meeting_actions;
 mod meeting_media;
+mod microphone;
 mod my_notes;
 mod note_items;
 mod notifications;

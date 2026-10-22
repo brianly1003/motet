@@ -354,7 +354,14 @@ fn dimensions(size: CompanionSize, compact: bool) -> (f64, f64) {
     }
 }
 #[tauri::command]
-pub fn companion_menu(window: tauri::WebviewWindow, open: bool) -> Result<(), String> {
+pub fn companion_menu(
+    window: tauri::WebviewWindow,
+    open: bool,
+    extra: Option<f64>,
+) -> Result<(), String> {
+    // `extra`: the height the page needs below its controls right now (the mic menu, or the Ask
+    // card's mic line plus its open menu); without it a menu gets the old fixed room.
+    let extra = extra.map(|e| e.clamp(0.0, 600.0));
     if window.label() != "companion" {
         return Err("Only recording controls can resize this window".into());
     }
@@ -362,11 +369,7 @@ pub fn companion_menu(window: tauri::WebviewWindow, open: bool) -> Result<(), St
     // The Ask card keeps its place (top middle) and grows downward only while its menu is open.
     if state.companion.size == CompanionSize::Ask {
         let (width, height) = dimensions(CompanionSize::Ask, false);
-        let height = if open {
-            height + ASK_MENU_HEIGHT + 8.0
-        } else {
-            height
-        };
+        let height = height + extra.unwrap_or(if open { ASK_MENU_HEIGHT + 8.0 } else { 0.0 });
         return window
             .set_size(LogicalSize::new(width, height))
             .map_err(|e| e.to_string());
@@ -375,7 +378,11 @@ pub fn companion_menu(window: tauri::WebviewWindow, open: bool) -> Result<(), St
     resize(
         &window,
         if open { width.max(460.0) } else { width },
-        if open { height.max(300.0) } else { height },
+        match (open, extra) {
+            (true, Some(extra)) => height + extra,
+            (true, None) => height.max(300.0),
+            (false, _) => height,
+        },
     )
     .map_err(|e| e.to_string())
 }

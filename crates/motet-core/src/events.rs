@@ -278,6 +278,8 @@ pub enum Command {
     UndoDiscard,
     PauseRecording,
     ResumeRecording,
+    /// The user picked another microphone: the current part ends and the next one records from it.
+    SwitchMicrophone,
     CallEnded {
         call_id: String,
     },

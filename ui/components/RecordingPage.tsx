@@ -6,6 +6,7 @@ import { strings as s } from "@/lib/strings";
 import { gapLabel, transcriptLines } from "@/lib/transcript";
 import { MyNotes } from "./MyNotes";
 import { JumpToNow, useFollow } from "./JumpToNow";
+import { MicChip, MicMenu, MicNote, useMicReport } from "./Microphone";
 import type { AppState } from "@/lib/bindings/AppState";
 import type { Stage } from "@/lib/bindings/Stage";
 import type { Gap } from "@/lib/useSession";
@@ -16,9 +17,20 @@ const PauseIcon = () => <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden
 
 // The meeting page while it records (DESIGN 4.8): a place to work, not a status screen. My notes is
 // the companion's my-notes.md; the live transcript is the same preview the companion polls.
-export function RecordingPage({ session: { state, gaps, pending, act } }: { session: Session }) {
+export function RecordingPage({ session: { state, gaps, pending, act }, onToast }: { session: Session; onToast?: (text: string, undo?: () => Promise<void>) => void }) {
   const id = state.meeting_id!;
   const paused = state.state.type === "Paused", stopped = state.state.type === "Stopped";
+  // The mic (DESIGN 4.15): the chip opens Record from; a problem shows under the bar until ✕.
+  const mic = useMicReport(!stopped);
+  const [micMenu, setMicMenu] = useState<{ left: number; top: number } | null>(null);
+  const [micHidden, setMicHidden] = useState(false);
+  const toast = (text: string, undo?: () => Promise<void>) => { onToast?.(text, undo); void mic.refresh(); };
+  const openMicMenu = (anchor: HTMLElement) => { const box = anchor.getBoundingClientRect(); setMicMenu({ left: Math.max(8, Math.min(box.left, innerWidth - 312)), top: box.bottom + 6 }); };
+  useEffect(() => {
+    if (!micMenu) return;
+    const close = (event: PointerEvent) => { if (!(event.target as Element | null)?.closest?.(".micmenu, .micchip")) setMicMenu(null); };
+    document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close);
+  }, [micMenu]);
   const [tab, setTab] = useState<"notes" | "live">("notes");
   const [live, setLive] = useState("");
   const [liveError, setLiveError] = useState("");
@@ -53,6 +65,7 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
       <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
       <span className="tip">{stopped ? <>The notes start in {remaining ?? "…"} s</> : paused ? "Not recording. Resume when you're ready." : marked !== null ? `${s.marked} ${elapsedLabel(marked)}.` : `Both sides · ${count} line${count === 1 ? "" : "s"}`}</span>
       <span className="sp"/>
+      {!stopped && <MicChip report={mic.report} open={!!micMenu} onToggle={button => { if (micMenu) setMicMenu(null); else openMicMenu(button); }}/>}
       {stopped || paused
         ? <><button className="doc-action primary" disabled={pending || (stopped && remaining === 0)} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>
           {stopped && <button className="doc-action ghost" disabled={pending || remaining === 0} title={s.pillDiscardTitle} onClick={() => act(ipc.discardRecording)}>{s.pillDiscard}</button>}
@@ -61,6 +74,8 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
           <button className="doc-action ghost" disabled={pending} title={s.pauseTitle} onClick={() => act(async () => { await flush.current(); await ipc.pauseRecording(); })}><PauseIcon/> {s.pause}</button>
           <button className="doc-action danger" disabled={pending} onClick={() => act(async () => { await flush.current(); await ipc.stopRecording(); })}>{s.pillStop}</button></>}
     </div>
+    {!stopped && !micHidden && <MicNote report={mic.report} done={toast} onHide={() => setMicHidden(true)} className="micnote recnote"/>}
+    {micMenu && mic.report && <MicMenu report={mic.report} recording done={toast} onClose={() => setMicMenu(null)} style={{ position: "fixed", left: micMenu.left, top: micMenu.top, right: "auto" }}/>}
     <div className="tabs" role="tablist" aria-label={s.meetingViews}>
       {(["notes", "live"] as const).map(key => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { void flush.current(); setTab(key); }}>{key === "notes" ? "My notes" : "Live transcript"}</button>)}
     </div>

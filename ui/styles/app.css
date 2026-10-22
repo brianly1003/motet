@@ -596,3 +596,43 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 ::highlight(motet-find-current) { background-color: var(--attention); color: var(--surface-1); }
 
 .findbar svg { stroke-width: 1.5; }
+
+/* Microphone (owner 2026-10-23, DESIGN 4.15; mockup .micchip / .micnote / .micmenu): the picker
+   sits beside your own side of the call; a mic problem shows once, in amber, with one fix. */
+.recbar .tip { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.micchip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 7px; border: 1px solid var(--line-2); border-radius: 7px; background: var(--surface-1); font: 500 12px var(--font-ui); color: var(--ink-2); max-width: 230px; min-width: 0; flex: none; }
+.micchip:hover { background: var(--surface-2); }
+.micchip > svg { width: 14px; height: 14px; flex: none; }
+.micchip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.micchip .chv { width: 12px; height: 12px; color: var(--ink-3); }
+.micchip.warn { border-color: color-mix(in srgb, var(--attention) 45%, var(--line-2)); background: var(--accent-soft); color: var(--accent-ink); }
+.miclvl { display: grid; grid-template-columns: repeat(5, 3px); gap: 1.5px; align-items: end; height: 10px; flex: none; }
+.miclvl i { background: var(--line-2); border-radius: 1px; height: 100%; }
+.miclvl i.on { background: var(--voice-me); } .miclvl i.hot { background: var(--rec); }
+.micnote { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; font-size: 12px; line-height: 1.35; color: var(--accent-ink); background: var(--accent-soft); border-top: 1px solid color-mix(in srgb, var(--attention) 25%, var(--line)); }
+.micnote > svg { width: 14px; height: 14px; flex: none; }
+.micnote .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.micnote .btn { flex: none; color: var(--ink-1); }
+.micnote .x { flex: none; width: 24px; height: 24px; padding: 0; border: 0; background: transparent; border-radius: 6px; color: var(--accent-ink); display: grid; place-items: center; }
+.micnote .x:hover { background: color-mix(in srgb, var(--attention) 14%, transparent); }
+.micnote .x svg { width: 12px; height: 12px; }
+.recnote { margin: -4px 28px 10px; border: 1px solid color-mix(in srgb, var(--attention) 30%, var(--line)); border-radius: 10px; }
+.micmenu { position: absolute; width: 304px; z-index: 60; }
+.micmenu .mhead { padding: 6px 10px 4px; font: 600 11.5px var(--font-ui); color: var(--ink-3); }
+.micmenu button.mic { height: auto; min-height: 44px; padding: 6px 10px; align-items: center; }
+.micmenu .mic .t { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.micmenu .mic .t b { font-weight: 400; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.micmenu .mic .t span { font-size: 12px; color: var(--ink-3); }
+.micmenu .mic .t span.warn { color: var(--accent-ink); }
+.micmenu .mic .ck { width: 16px; color: var(--voice-me); flex: none; }
+.micmenu .mic .ck svg { color: var(--voice-me); }
+.micmenu .vol { display: grid; grid-template-columns: 16px 1fr 34px; gap: 8px; align-items: center; padding: 6px 10px 8px; font-size: 12px; color: var(--ink-2); }
+.micmenu .vol svg { width: 16px; height: 16px; color: var(--ink-2); }
+.micmenu .vol input, .volrow input { accent-color: var(--voice-me); width: 100%; }
+.micmenu .vol output, .volrow output { font: 500 12px var(--font-data); font-feature-settings: "tnum"; text-align: right; }
+.volrow { display: grid; grid-template-columns: 220px 40px; gap: 10px; align-items: center; }
+.setlevel { display: grid; grid-template-columns: 38px 220px; align-items: center; gap: 6px; margin-top: 8px; font: 600 11px var(--font-ui); color: var(--ink-3); }
+.setlevel .bars { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; height: 8px; }
+.setlevel .bars i { background: var(--line); border-radius: 1px; }
+.setlevel .bars i.on { background: var(--attention); } .setlevel .bars i.hot { background: var(--rec); }
+.setnote { margin: 8px 0 0; }

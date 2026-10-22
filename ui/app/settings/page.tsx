@@ -5,9 +5,10 @@ import * as ipc from '@/lib/ipc';
 import type {Settings} from '@/lib/bindings/Settings';
 import {fileSize} from '@/lib/document';
 import NotificationPermission from '@/components/NotificationPermission';
+import {MicLevel,MicNote,micSub,pickMic,useMicReport} from '@/components/Microphone';
 
 const CALL_ORDER=['zoom','teams','teams_classic','meet','whatsapp','telegram','browser','slack','webex','facetime'];
-const TABS=['General','Calls','Models','Spellings','Privacy','About'];
+const TABS=['General','Audio','Calls','Models','Spellings','Privacy','About'];
 const SHORTCUTS:Record<string,string>={S:'Start or stop',M:'Mark this moment',J:'Jot a note',N:'Open my notes',Space:'Tuck to the edge',H:'Sharing mode',P:'Peek while sharing'};
 function Row({label,help,children}:{label:string;help?:string;children:ReactNode}){return <div className="formrow"><span className="lbl">{label}</span><div>{children}{help&&<div className="help">{help}</div>}</div></div>;}
 function Switch({label,on,change}:{label:string;on:boolean;change:(value:boolean)=>void}){return <label className="switch"><input type="checkbox" aria-label={label} checked={on} onChange={e=>change(e.target.checked)}/><span/></label>;}
@@ -29,6 +30,11 @@ export default function SettingsPage(){
   const [heard,setHeard]=useState('');
   const [speed,setSpeed]=useState<number|null>(null);
   const saving=useRef(false);
+  const mic=useMicReport(tab==='Audio');
+  const [volume,setVolume]=useState<number|null>(null);
+  const volumeTimer=useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(()=>{setVolume(mic.report?.active?.volume??null);},[mic.report?.active?.id,mic.report?.active?.volume]);
+  const micSaved=(text:string)=>{setError('');setSaved(text);clearTimeout(timer.current);timer.current=setTimeout(()=>setSaved(''),2400);void mic.refresh();};
   const timer=useRef<ReturnType<typeof setTimeout>>(undefined);
   async function refresh(){const [s,a]=await Promise.all([ipc.getSettings(),ipc.callApps()]);setSettings(s);setApps(a);}
   useEffect(()=>{
@@ -76,6 +82,29 @@ export default function SettingsPage(){
         <Row label="Shortcuts" help="Edit a shortcut and leave the field to register it. A conflicting shortcut keeps the previous one."><dl className="kv settings-shortcuts">{Object.entries(SHORTCUTS).map(([key,label])=><div key={key}><dt>{label}</dt><dd><input aria-label={`${label} shortcut`} value={settings.shortcuts[key]} onChange={e=>setSettings({...settings,shortcuts:{...settings.shortcuts,[key]:e.target.value}})} onBlur={()=>void save({shortcuts:settings.shortcuts})} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></dd></div>)}<dt>Command palette (in the app)</dt><dd>⌘K / Ctrl+K</dd></dl></Row>
         <Row label="First run" help="First-run setup and model downloads are planned in M5 and are not available in this build."><button className="btn sm" disabled>Run setup again</button></Row>
       </>}
+      {tab==='Audio'&&(()=>{
+        // The microphone (DESIGN 4.15): the level moves only while Motet records; it never opens the mic just to show it.
+        const r=mic.report,m=r?.active,system=r?.mics.find(x=>x.is_default),mac=info?.platform!=='windows';
+        const sound=<button className="btn sm" onClick={()=>void ipc.openSoundSettings().catch(e=>setError(String(e)))}>Open Sound settings…</button>;
+        if(!mac)return <Row label="Microphone" help="Motet records the default microphone. Choose it in Windows sound settings.">{sound}</Row>;
+        if(!r)return <p role="status">Loading microphones…</p>;
+        return <>
+          <Row label="Microphone" help={m?`Motet records ${m.name} (${micSub(m)}). Your call app keeps its own choice; pick the same mic there if you want both to match. The level moves while Motet records.`:'No microphone is connected.'}>
+            <div className="field"><select id="mic-select" aria-label="Microphone" style={{width:320}} value={r.chosen??''} onChange={e=>void pickMic(r,e.target.value||null,micSaved,false).catch(err=>setError(String(err)))}>
+              <option value="">System default ({system?.name??'none'})</option>
+              {r.chosen&&!r.mics.some(x=>x.id===r.chosen)&&<option value={r.chosen}>Not connected</option>}
+              {r.mics.map(x=><option key={x.id} value={x.id}>{x.name} · {micSub(x)}</option>)}
+            </select></div>
+            <div className="setlevel"><span>Level</span><MicLevel bars={20} className="bars"/></div>
+            <MicNote report={r} done={micSaved} onError={setError} className="micnote recnote setnote"/>
+          </Row>
+          <Row label="Input volume" help={m?.volume!=null?'The same setting as System Settings › Sound. Keep loud speech out of the red.':undefined}>
+            {m&&volume!==null?<label className="volrow"><input type="range" min={0} max={100} value={Math.round(volume*100)} aria-label={`Input volume for ${m.name}`} onChange={e=>{const v=Number(e.target.value)/100;setVolume(v);clearTimeout(volumeTimer.current);volumeTimer.current=setTimeout(()=>void ipc.setMicVolume(m.id,v).then(()=>micSaved('Saved')).catch(err=>setError(String(err))),150);}}/><output>{Math.round(volume*100)}%</output></label>
+              :<span className="help" style={{margin:0}}>{m?`${m.name} sets its own level.`:''}</span>}
+          </Row>
+          <Row label="All apps" help="Changes the default microphone for every app, including your call app.">{sound}</Row>
+        </>;
+      })()}
       {tab==='Calls'&&<>
         <Row label="Ask when a call starts" help="Motet asks every time. Nothing is recorded until you choose Record. Turn this off to record only with Record now."><Switch label="Ask when a call starts" on={settings.ask_on_call} change={on=>void action(()=>ipc.setAskOnCall(on))}/></Row>
         <Row label="Call apps" help="Voice messages don't count: messaging apps must also play sound for 5 seconds."><div className="tbl"><table><thead><tr><th>App</th><th>Counts as a call when</th><th>When a call starts</th></tr></thead><tbody>{apps.filter(app=>info?.platform!=='windows'||app.app_id!=='facetime').sort((a,b)=>(CALL_ORDER.includes(a.app_id)?CALL_ORDER.indexOf(a.app_id):99)-(CALL_ORDER.includes(b.app_id)?CALL_ORDER.indexOf(b.app_id):99)).map(app=><tr key={app.app_id}><td>{app.app_id==='browser'?'Other browser calls':app.app_id==='slack'?'Slack huddles':app.name}</td><td>{app.app_id==='meet'?'a browser window titled "Meet"':app.single_signal?'it uses the mic':app.app_id==='browser'?'a browser uses the mic and plays sound':'it uses the mic and plays sound'}</td><td><select aria-label={`When ${app.name} starts a call`} value={app.mode} onChange={e=>void action(()=>ipc.setAppMode(app.app_id,e.target.value as 'ask'|'off'))}><option value="ask">Ask</option><option value="off">Off</option></select></td></tr>)}</tbody></table></div><div className="field settings-add"><button className="btn sm" onClick={()=>void action(async()=>setRecent(await ipc.recentMicApps()),'')}>Add app…</button><span className="help">Lists apps that used the microphone this week.</span></div>{recent&&<div className="note">{recent.length?recent.map(id=><div className="field" key={id}><span>{id}</span><button className="btn sm" onClick={()=>void action(async()=>{await ipc.addApp(id);setRecent(null);})}>Add {id}</button></div>):<span>No new microphone apps have been seen this week.</span>}<button className="btn sm ghost" onClick={()=>setRecent(null)}>Cancel</button></div>}</Row>

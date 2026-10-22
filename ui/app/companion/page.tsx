@@ -6,6 +6,7 @@ import { elapsedLabel } from "@/lib/session";
 import { strings as s } from "@/lib/strings";
 import MotetMark from "@/components/MotetMark";
 import { Duet } from "@/components/Duet";
+import { MicMenu, MicNote, useMicReport } from "@/components/Microphone";
 import { AskCard } from "@/components/AskCard";
 import { MyNotes } from "@/components/MyNotes";
 import { JumpToNow, useFollow } from "@/components/JumpToNow";
@@ -13,7 +14,7 @@ import { gapLabel, transcriptLines } from "@/lib/transcript";
 import "../../styles/companion.css";
 
 export default function Companion() {
-  const { state, notice, pending, act, gaps } = useSession();
+  const { state, notice, setNotice, pending, act, gaps } = useSession();
   const [captions, setCaptions] = useState(true);
   const [notesShortcut,setNotesShortcut]=useState('⌃⌥N');
   useEffect(()=>{
@@ -51,6 +52,23 @@ export default function Companion() {
   // A click outside (focus leaving) slides an unpinned Sidecar out, then tucks it (owner, 2026-10-20).
   const [leaving, setLeaving] = useState(false);
   const recordingOrPaused = state?.state.type === "Recording" || state?.state.type === "Paused";
+  // The mic (DESIGN 4.15): "You" in the Duet opens Record from; clipping (the one problem Motet
+  // names) takes the caption's line (Rust keeps the Pill's size) until ✕, the Dot gets an amber ring.
+  const mic = useMicReport(recordingOrPaused);
+  const [micMenu, setMicMenu] = useState<{ left: number; top: number } | null>(null);
+  const [micHidden, setMicHidden] = useState(false);
+  const micMenuBox = useRef<HTMLDivElement>(null);
+  useEffect(() => { setMicHidden(false); }, [meetingId]);
+  useEffect(() => {
+    if (!micMenu) return;
+    // The window grows just enough for the menu, and shrinks back when it closes.
+    const height = micMenuBox.current?.offsetHeight ?? 340;
+    void ipc.companionMenu(true, micMenu.top + height + 8 - 72).catch(() => {});
+    return () => { void ipc.companionMenu(false).catch(() => {}); };
+  }, [micMenu]);
+  const micDone = (text: string) => { setNotice(text); setTimeout(() => setNotice(""), 4000); void mic.refresh(); };
+  const micWarn = !!mic.report?.issue && !micHidden;
+  const openMicMenu = (anchor: HTMLElement) => { const box = anchor.getBoundingClientRect(); setMicMenu({ left: Math.max(6, Math.min(box.left - 12, innerWidth - 310)), top: box.bottom + 6 }); };
   useEffect(() => {
     if (state?.companion.size !== "Sidecar" || pinned || !recordingOrPaused) return;
     let active = true;
@@ -140,14 +158,14 @@ export default function Companion() {
         from.moved = true;
         void act(() => ipc.dragCompanion());
       }}
-      onClick={() => { const moved = dragFrom.current?.moved; dragFrom.current = null; if (!moved) void act(() => size("Sidecar")); }}><span className={`dot ${paused ? "stopped" : "pulse"}`} /><MotetMark className="mark"/></button>
+      onClick={() => { const moved = dragFrom.current?.moved; dragFrom.current = null; if (!moved) void act(() => size("Sidecar")); }}><span className={`dot ${paused ? "stopped" : "pulse"}${micWarn ? " micwarn" : ""}`} /><MotetMark className="mark"/></button>
       {/* Pause and Stop without opening anything (owner 2026-10-20); Stop then shows the Pill's 10 s Resume. */}
       <span className="tuckctl">
         {paused
           ? <button className="iconbtn" disabled={pending} onClick={() => act(ipc.resumeRecording)} aria-label={s.resume} title={s.resume}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><path d="M5 3.2v9.6a.6.6 0 0 0 .9.5l7.4-4.8a.6.6 0 0 0 0-1L5.9 2.7a.6.6 0 0 0-.9.5z"/></svg></button>
           : <button className="iconbtn" disabled={pending} onClick={() => act(async () => { await flushNotes.current(); await ipc.pauseRecording(); })} aria-label={s.pauseRecording} title={s.pauseTitle}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg></button>}
         <button className="iconbtn tstop" disabled={pending} onClick={() => act(stop)} aria-label={s.pillStop} title={s.pillStop}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="2"/></svg></button>
-      </span></> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className="dot pulse" /></button> :
+      </span></> : dot ? <button className="dotbtn" aria-label={s.showControls} title={`${s.recording} · ${elapsedLabel(state.elapsed_ms)}`} onClick={() => act(() => ipc.setCompanionSize("Pill"))}><span className={`dot pulse${micWarn ? " micwarn" : ""}`} /></button> :
       <div className="pillbar" data-tauri-drag-region>
         {state.quit_pending ? <>
           <span className="pillmsg">{notice || (state.state.type === "Finishing" ? s.quitPending : s.pillQuitQuestion)}</span>
@@ -185,16 +203,20 @@ export default function Companion() {
         </> : <>
           <span className="dot pulse" aria-hidden="true" />
           <time className="t">{elapsedLabel(state.elapsed_ms)}</time>
-          <Duet />
+          <Duet you={<button type="button" className={`lm micbtn${mic.report?.issue ? " warn" : ""}`} aria-haspopup="menu" aria-expanded={!!micMenu}
+            aria-label={`Your microphone: ${mic.report?.active?.name ?? "system default"}${mic.report?.issue ? ", needs attention" : ""}. Change`}
+            onClick={event => { if (micMenu || !mic.report) setMicMenu(null); else openMicMenu(event.currentTarget); }}>You</button>} />
           <button className="iconbtn markbtn" disabled={pending} onClick={mark} aria-label={s.markMoment} title={markedAt === null ? s.markMoment : `${s.marked} ${elapsedLabel(markedAt)}`} aria-pressed={markedAt !== null}>⚑</button>
           <button className="iconbtn" disabled={pending} onClick={() => act(async () => { await flushNotes.current(); await ipc.pauseRecording(); })} aria-label={s.pauseRecording} title={s.pauseTitle}><svg viewBox="0 0 16 16" fill="currentColor" stroke="none" aria-hidden="true"><rect x="4" y="3" width="2.6" height="10" rx="1"/><rect x="9.4" y="3" width="2.6" height="10" rx="1"/></svg></button>
           <button className="stop" disabled={pending} onClick={() => act(stop)}>{s.pillStop}</button>
           {sidecar ? <><button className="iconbtn" aria-label="Keep open" title="Keep open while I work elsewhere" aria-pressed={pinned} onClick={() => act(() => ipc.pinCompanion(!pinned))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M6 2h4l-.5 4 2.5 2.5H4L6.5 6zM8 8.5V14"/></svg></button><button className="iconbtn" aria-label="Tuck to the screen edge" onClick={() => act(() => size("Tucked"))}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M3 8h8M8 5l3 3-3 3M13.5 3v10"/></svg></button></> : <button className="iconbtn" aria-label="Open my notes" title={`Take a note (${notesShortcut})`} onClick={() => act(async () => { await size("Sidecar"); await ipc.takeNote(); })}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg></button>}
         </>}
       </div>}
-    {captions && !dot && !tucked && !sidecar && !prompting && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}
+    {!dot && !tucked && !sidecar && !prompting && recordingOrPaused && micWarn
+      ? <MicNote report={mic.report} done={micDone} onHide={() => setMicHidden(true)}/>
+      : captions && !dot && !tucked && !sidecar && !prompting && <button className="caption" aria-label="Latest line. Click to open the live transcript" onClick={() => act(() => size("Sidecar"))}><span className={`who ${latest?.speaker === "You" ? "me" : "them"}`}>{latest?.speaker || "…"}</span><span className="ctext">{notice || liveError || latest?.text || "Listening… lines appear a few seconds after people speak."}</span></button>}
     {jotOpen && <form className="jotbar" onSubmit={event => { event.preventDefault(); void act(async () => { await flushNotes.current(); await ipc.addJot(jot); setJot(""); setNotesKey(key => key + 1); setJotOpen(false); await ipc.companionMenu(false); }); }}><input type={state.sharing ? "password" : "text"} autoFocus value={jot} onChange={event => setJot(event.target.value)} placeholder="Jot a line into My notes…" aria-label="Jot a line into My notes"/><kbd>⌃⌥J</kbd><button type="submit" className="quiet">Add</button></form>}
-    {sidecar && meetingId && <div className="pilldrawer">{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? s.whyStarted.replace("{App}", state.started_by.app) : s.startedManually)}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><div className="splitpanes" ref={splitPanes} data-live={showLive} style={{ gridTemplateRows: showLive ? `minmax(70px, ${liveShare}fr) 9px minmax(120px, ${100 - liveShare}fr)` : "auto 0px minmax(0, 1fr)" }}><section className="live-pane" id="live-pane"><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive} onScroll={follow.onScroll}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>]).concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts"><span>·</span><span>·</span><span>:</span><span>·</span><span>·</span></span><span className="who them dots"><i>.</i><i>.</i><i>.</i></span><span className="tx">listening</span></div>] : []) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><JumpToNow show={follow.behind} onJump={follow.jump}/></section><div className="pane-resizer" role="separator" aria-label="Resize Live and My notes" aria-orientation="horizontal" aria-controls="live-pane notes-pane" aria-valuemin={20} aria-valuemax={80} aria-valuenow={Math.round(liveShare)} tabIndex={showLive ? 0 : -1} hidden={!showLive}
+    {sidecar && meetingId && <div className="pilldrawer">{micWarn && <MicNote report={mic.report} done={micDone} onHide={() => setMicHidden(true)}/>}{state.companion.peeking && <div className="sharebadge">Visible to your share</div>}<div className="why"><span>{notice || (state.started_by?.type === "App" ? s.whyStarted.replace("{App}", state.started_by.app) : s.startedManually)}</span><button className="quiet" onClick={() => act(() => navigator.clipboard.writeText("I'm recording this call with Motet to take notes. Audio and notes stay on my computer."))}>Copy a recording notice</button></div><div className="splitpanes" ref={splitPanes} data-live={showLive} style={{ gridTemplateRows: showLive ? `minmax(70px, ${liveShare}fr) 9px minmax(120px, ${100 - liveShare}fr)` : "auto 0px minmax(0, 1fr)" }}><section className="live-pane" id="live-pane"><button className="panehead" aria-expanded={showLive} onClick={() => setShowLive(!showLive)}><span>Live</span><span className="tip">click a line to quote it</span></button><div ref={liveLines} className="lines" hidden={!showLive} onScroll={follow.onScroll}>{liveError && <p className="tip" role="status">{liveError}</p>}{lines.length ? lines.flatMap((line, i) => [...gapRows(i), <button className="line" key={i} onClick={() => act(async () => { await flushNotes.current(); await ipc.addJot(`> ${line.text} [${line.time}]`); setNotesKey(key => key + 1); })}><span className="ts">{line.time}</span><span className={`who ${line.speaker === "You" ? "me" : "them"}`}>{line.speaker}</span><span className="tx">{line.text}</span></button>]).concat(gapRows(-1), state.state.type === "Recording" && !liveError ? [<div className="line pending" key="pending" aria-hidden="true"><span className="ts"><span>·</span><span>·</span><span>:</span><span>·</span><span>·</span></span><span className="who them dots"><i>.</i><i>.</i><i>.</i></span><span className="tx">listening</span></div>] : []) : !liveError && <span className="tip">Listening… lines appear a few seconds after people speak.</span>}</div><JumpToNow show={follow.behind} onJump={follow.jump}/></section><div className="pane-resizer" role="separator" aria-label="Resize Live and My notes" aria-orientation="horizontal" aria-controls="live-pane notes-pane" aria-valuemin={20} aria-valuemax={80} aria-valuenow={Math.round(liveShare)} tabIndex={showLive ? 0 : -1} hidden={!showLive}
       onPointerDown={e => { if (e.button !== 0) return; e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); resizeStart.current = { y: e.clientY, share: liveShare }; }}
       onPointerMove={e => { const start = resizeStart.current, box = splitPanes.current; if (start && box) setLiveShare(clampShare(start.share + (e.clientY - start.y) / (box.clientHeight - 9) * 100)); }}
       onPointerUp={e => { resizeStart.current = null; if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
@@ -203,5 +225,9 @@ export default function Companion() {
     /><section className="notes-pane" id="notes-pane"><MyNotes key={`${meetingId}-${notesKey}`} meetingId={meetingId} elapsed={state.elapsed_ms} registerFlush={flush => { flushNotes.current = flush; }}/></section></div></div>}
     {markedAt !== null && <span className="sr-only" role="status">{s.marked} {elapsedLabel(markedAt)}</span>}
     {notice && <span className="sr-only" role="alert">{notice}</span>}
-  </main></>;
+  </main>
+  {/* Outside the Pill: its rounded clip would cut the menu off. */}
+  {micMenu && mic.report && <div ref={micMenuBox} className="micmenu-host" style={{ position: "fixed", left: micMenu.left, top: micMenu.top, zIndex: 60 }}>
+    <MicMenu report={mic.report} recording={state.state.type === "Recording"} done={micDone} onClose={() => setMicMenu(null)} style={{ position: "static" }}/></div>}
+  </>;
 }

@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getLevels } from "@/lib/ipc";
 
-export function Duet() {
+/** `you` replaces the You label: the companion makes it the microphone button (DESIGN 4.15). */
+export function Duet({ you }: { you?: ReactNode } = {}) {
   const [levels, setLevels] = useState<[number, number]>([0, 0]);
   const [phase, setPhase] = useState(0);
   useEffect(() => {
@@ -21,5 +22,5 @@ export function Duet() {
     const amplitude = Math.min(1, Math.max(0, level) * 5);
     return `${i ? "L" : "M"}${x} ${(13 + amplitude * 11 * Math.sin(x / 9 + phase + offset) * Math.sin(Math.PI * x / 112)).toFixed(1)}`;
   }).join("");
-  return <div className="duet" role="img" aria-label={`You: ${levels[0] > .02 ? "speaking" : "quiet"}, Them: ${levels[1] > .02 ? "speaking" : "quiet"}`}><span className="lm">You</span><svg viewBox="0 0 112 26" aria-hidden="true"><path className="strand them" d={strand(levels[1], Math.PI)} /><path className="strand me" d={strand(levels[0], 0)} /></svg><span className="lt">Them</span></div>;
+  return <div className="duet" role={you ? "group" : "img"} aria-label={`You: ${levels[0] > .02 ? "speaking" : "quiet"}, Them: ${levels[1] > .02 ? "speaking" : "quiet"}`}>{you ?? <span className="lm">You</span>}<svg viewBox="0 0 112 26" aria-hidden="true"><path className="strand them" d={strand(levels[1], Math.PI)} /><path className="strand me" d={strand(levels[0], 0)} /></svg><span className="lt">Them</span></div>;
 }

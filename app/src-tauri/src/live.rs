@@ -3,25 +3,24 @@ use motet_core::{events::Stop, slice};
 use std::{
     fs,
     path::Path,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::{Mutex, atomic::Ordering},
     time::Duration,
 };
 use tauri::Manager;
 
 #[derive(Default)]
 pub struct State {
-    pub levels: [Arc<AtomicU32>; 2],
+    pub meters: motet_core::mics::Meters,
     transcript: Mutex<(String, String, String)>,
 }
 #[tauri::command]
 pub fn get_levels(state: tauri::State<'_, State>) -> [f32; 2] {
     state
+        .meters
         .levels
         .each_ref()
-        .map(|level| f32::from_bits(level.swap(0, Ordering::Relaxed)))
+        // A plain read: the companion's Duet and the recording page's mic chip both look.
+        .map(|level| f32::from_bits(level.load(Ordering::Relaxed)))
 }
 #[tauri::command]
 pub fn live_transcript(state: tauri::State<'_, State>) -> Result<(String, String, String), String> {

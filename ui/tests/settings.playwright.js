@@ -74,7 +74,8 @@ async (page)=>{
   await p.getByRole('alert').filter({hasText:'Disk is full'}).waitFor();
   if(!await p.getByRole('checkbox',{name:'Start and stop sounds'}).isChecked())throw Error('Failed save did not restore the saved value');
   await p.getByRole('tab',{name:'General',exact:true}).focus();await p.keyboard.press('ArrowRight');
-  if(await p.getByRole('tab',{name:'Calls',exact:true}).getAttribute('aria-selected')!=='true')throw Error('Arrow tab navigation failed');
+  // Audio follows General (owner 2026-10-23, DESIGN 4.15).
+  if(await p.getByRole('tab',{name:'Audio',exact:true}).getAttribute('aria-selected')!=='true')throw Error('Arrow tab navigation failed');
   await p.getByRole('tab',{name:'Models',exact:true}).click();
   await p.getByRole('combobox',{name:'Notes model',exact:true}).selectOption('qwen3:4b');
   await p.getByRole('status').filter({hasText:'Saved'}).waitFor();
@@ -95,7 +96,7 @@ async (page)=>{
   await p.getByRole('status').filter({hasText:'All meetings deleted'}).waitFor();
   await p.getByRole('tab',{name:'About',exact:true}).click();await p.getByText('Motet 0.1.0',{exact:true}).waitFor();
   await p.getByRole('button',{name:'Show logs folder',exact:true}).click();
-  for(const tab of ['General','Calls','Models','Spellings','Privacy','About']){
+  for(const tab of ['General','Audio','Calls','Models','Spellings','Privacy','About']){
    await p.getByRole('tab',{name:tab,exact:true}).click();await p.setViewportSize({width:760,height:520});
    const overflow=await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth||document.querySelector('.setpane').scrollWidth>document.querySelector('.setpane').clientWidth);
    if(overflow)throw Error(`${tab} overflows at minimum width`);
@@ -103,7 +104,7 @@ async (page)=>{
   }
   if(errors.length)throw Error(errors.join('\n'));
   if(diffs.length)throw Error(diffs.join('\n'));
-  results.push({theme,differences:diffs,interactions:'passed',minimum:'all six tabs passed'});
+  results.push({theme,differences:diffs,interactions:'passed',minimum:'all seven tabs passed'});
   await p.close();
  }
  await reference.close();return results;

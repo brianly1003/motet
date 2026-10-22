@@ -64,10 +64,14 @@ pub fn spawn(
                                 stop.clone(),
                             )?;
                             #[cfg(target_os = "macos")]
+                            // Windows records the default mic; its picker needs WASAPI ids.
+                            #[cfg(target_os = "macos")]
+                            let mic = crate::microphone::for_capture(&app);
                             let result = motet_core::capture::record_with_levels(
                                 base,
                                 stop.clone(),
-                                Some(app.state::<crate::live::State>().levels.clone()),
+                                Some(app.state::<crate::live::State>().meters.clone()),
+                                mic.as_deref(),
                             )
                             .map_err(|e| e.to_string());
                             #[cfg(target_os = "windows")]
