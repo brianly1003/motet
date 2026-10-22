@@ -9,4 +9,6 @@ ui/*.tsbuildinfo
 app/src-tauri/gen/
 
 .playwright-out/
-docs/examples
+
+# Local only.
+/docs/
