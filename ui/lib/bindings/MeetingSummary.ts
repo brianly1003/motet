@@ -10,4 +10,8 @@ locked: boolean,
  * Who named the meeting (SPEC 7.6): the notes model replaces a placeholder or its own title,
  * never one the user typed.
  */
-title_source: TitleSource, };
+title_source: TitleSource, 
+/**
+ * ISO code of the language whisper heard (SPEC 6.4); None before it was recorded.
+ */
+language: string | null, };

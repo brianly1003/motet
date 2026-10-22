@@ -270,6 +270,7 @@ fn create(root: &Path, id: &str) -> Result<PathBuf, String> {
                 spellings: vec![],
                 locked: false,
                 title_source: Default::default(),
+                language: None,
             },
         )?;
     }
@@ -296,7 +297,8 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
     let dir = library::folder(root, &record.id)?;
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         stage(Stage::Transcribing);
-        let transcript = transcribe::transcript_parts(&record.parts, true)?;
+        let heard = transcribe::transcript_parts(&record.parts, true)?;
+        let transcript = heard.text;
         fs::write(dir.join("transcript.txt"), &transcript)?;
         let text = match config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
             Some(model) => {
@@ -318,6 +320,7 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
         let title = summarize::notes(&dir.join("notes").to_string_lossy(), &text, &mine)?;
         let mut metadata = library::summary(root, &record.id)?;
         metadata.titled(title);
+        metadata.language = heard.language;
         metadata.notes_ms = Some(started.elapsed().as_millis() as u64);
         metadata.spellings = spellings;
         library::save(root, &metadata)?;

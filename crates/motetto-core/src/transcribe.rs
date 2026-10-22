@@ -73,7 +73,14 @@ fn run(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
 
 /// Transcribes each track on its own and merges the lines into one `[mm:ss] Me: …` transcript.
 pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
-    transcript_parts(&[(sources.to_vec(), 0)], false)
+    Ok(transcript_parts(&[(sources.to_vec(), 0)], false)?.text)
+}
+
+/// The merged transcript and the call's language (SPEC 6.4 `meeting.json` `language`).
+pub struct Transcript {
+    pub text: String,
+    /// ISO code whisper heard on the tracks carrying the most text; None when it heard no words.
+    pub language: Option<String>,
 }
 
 /// Desktop recording parts use elapsed recording time, excluding the Stop/Resume pause.
@@ -81,11 +88,12 @@ pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
 pub fn transcript_parts(
     parts: &[(Vec<String>, u64)],
     quiet: bool,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<Transcript, Box<dyn Error>> {
     // Transcribe each track on its own: mic = "Me", system audio = "Them". Merge by timestamp.
     // tracks are aligned by start time only (ms-level skew); fine for transcripts.
     let model = config::var("WHISPER_MODEL").ok_or("set WHISPER_MODEL to a ggml model path")?;
     let mut segments = vec![];
+    let mut heard: Vec<(String, usize)> = vec![];
     for (sources, offset_ms) in parts {
         for src in sources {
             let speaker = Speaker::from_path(src);
@@ -97,6 +105,17 @@ pub fn transcript_parts(
             decode::to_wav(Path::new(src), Path::new(&wav16))?;
             println!("Transcribing {src} with {model}...");
             let rows = whisper(&model, &wav16, &stem, quiet)?;
+            if let Some(language) = fs::read_to_string(format!("{stem}.json"))
+                .ok()
+                .and_then(|json| detected(&json))
+            {
+                let chars = rows.iter().map(|(_, _, text)| text.chars().count()).sum();
+                match heard.iter_mut().find(|(l, _)| *l == language) {
+                    Some((_, n)) => *n += chars,
+                    None => heard.push((language, chars)),
+                }
+            }
+            let _ = fs::remove_file(format!("{stem}.json"));
             let rows = split_joined(&model, &wav16, &stem, rows, quiet)?;
             // A short loop can still slip through the 64-token context; drop it here.
             let loops = crate::echo::loops(&rows);
@@ -125,7 +144,22 @@ pub fn transcript_parts(
             }
         }
     }
-    Ok(merge(segments))
+    let language = heard
+        .into_iter()
+        .filter(|(_, chars)| *chars > 0)
+        .max_by_key(|(_, chars)| *chars)
+        .map(|(language, _)| language);
+    Ok(Transcript {
+        text: merge(segments),
+        language,
+    })
+}
+
+/// The language whisper-cli `-oj` reports in `result.language`, or None for "auto" or none.
+fn detected(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let language = value["result"]["language"].as_str()?.trim();
+    (!language.is_empty() && language != "auto").then(|| language.to_string())
 }
 
 /// whisper-cli on one 16 kHz WAV: rows written to `<stem>.csv` and returned.
@@ -140,6 +174,7 @@ fn whisper(model: &str, wav16: &str, stem: &str, quiet: bool) -> Result<Vec<Row>
         config::call_language().as_deref().unwrap_or("auto"),
         "-np",
         "-ocsv",
+        "-oj", // only for result.language; the caller deletes it
         "-of",
         stem,
     ]);
@@ -267,6 +302,7 @@ fn pieces(
             .and_then(|()| whisper(model, &piece_wav, &piece_stem, quiet));
         let _ = fs::remove_file(&piece_wav);
         let _ = fs::remove_file(format!("{piece_stem}.csv"));
+        let _ = fs::remove_file(format!("{piece_stem}.json"));
         let rows = rows?;
         if rows.is_empty() {
             return Ok(None);
@@ -478,6 +514,17 @@ mod tests {
             ..system
         };
         assert!(merge(vec![mic, unknown]).contains("Me: One speaker"));
+    }
+
+    #[test]
+    fn detected_reads_the_language_whisper_heard() {
+        assert_eq!(
+            detected(r#"{"params":{"language":"auto"},"result":{"language":"vi"}}"#).as_deref(),
+            Some("vi")
+        );
+        assert_eq!(detected(r#"{"result":{"language":"auto"}}"#), None);
+        assert_eq!(detected(r#"{"result":{}}"#), None);
+        assert_eq!(detected("not json"), None);
     }
 
     #[test]

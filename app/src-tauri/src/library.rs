@@ -34,6 +34,9 @@ pub struct MeetingSummary {
     /// never one the user typed.
     #[serde(default)]
     pub title_source: TitleSource,
+    /// ISO code of the language whisper heard (SPEC 6.4); None before it was recorded.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -289,6 +292,7 @@ fn unreadable(id: &str) -> MeetingSummary {
         spellings: vec![],
         locked: false,
         title_source: Default::default(),
+        language: None,
     }
 }
 
@@ -408,6 +412,7 @@ pub fn import(
         spellings: vec![],
         locked: false,
         title_source: Default::default(),
+        language: None,
     };
     let dir = root.join(&summary.id);
     fs::create_dir(&dir).map_err(|e| e.to_string())?;
@@ -420,10 +425,12 @@ pub fn import(
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let copied = dir.join(format!("source.{extension}"));
         fs::copy(source, &copied)?;
-        let transcript = motetto_core::transcribe::transcript_parts(
+        let heard = motetto_core::transcribe::transcript_parts(
             &[(vec![copied.to_string_lossy().into_owned()], 0)],
             true,
         )?;
+        summary.language = heard.language;
+        let transcript = heard.text;
         fs::write(dir.join("transcript.txt"), &transcript)?;
         let notes_input = match motetto_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
             Some(model) => {
@@ -619,6 +626,7 @@ mod tests {
                     spellings: vec![],
                     locked: false,
                     title_source: Default::default(),
+                    language: None,
                 },
             )
             .unwrap();
@@ -662,6 +670,7 @@ mod tests {
                 spellings: vec![],
                 locked: false,
                 title_source: Default::default(),
+                language: None,
             };
             save(&root, &summary).unwrap();
         }

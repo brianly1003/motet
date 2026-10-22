@@ -72,8 +72,9 @@ pub(crate) fn retranscribe(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Resu
     }
     motetto_core::tools::reset();
     stage(Stage::Transcribing);
-    let transcript =
+    let heard =
         motetto_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
+    let transcript = heard.text;
     if transcript.trim().is_empty() {
         return Err("No speech was heard in the saved audio. The transcript is unchanged.".into());
     }
@@ -97,7 +98,9 @@ pub(crate) fn retranscribe(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Resu
     if let Some(fixed) = fixed {
         fs::write(folder.join("transcript.fixed.txt"), fixed).map_err(|e| e.to_string())?;
     }
-    Ok(())
+    let mut summary = library::summary(root, id)?;
+    summary.language = heard.language;
+    library::save(root, &summary)
 }
 
 /// `stage` reports the step being done, for the meeting's Writing the notes again page.
@@ -107,16 +110,18 @@ pub(crate) fn regenerate(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Result
         return Err(crate::bookmarks::LOCKED.into());
     }
     let mut meeting = library::read(root, id)?;
+    let mut language = meeting.summary.language.clone();
     // A recording that was never processed (Discard, then restored) is transcribed first, from the
     // parts it saved, as recording.rs would have done.
     if meeting.transcript.trim().is_empty() && folder.join("parts.json").exists() {
         let parts = saved_audio(&folder)?;
         motetto_core::tools::reset();
         stage(Stage::Transcribing);
-        let transcript =
+        let heard =
             motetto_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
-        fs::write(folder.join("transcript.txt"), &transcript).map_err(|e| e.to_string())?;
-        meeting.transcript = transcript;
+        fs::write(folder.join("transcript.txt"), &heard.text).map_err(|e| e.to_string())?;
+        meeting.transcript = heard.text;
+        language = heard.language;
     }
     // The user's corrections win over the optional model fix (SPEC 6.3).
     let transcript = if folder.join(crate::transcript_edits::EDITED).exists() {
@@ -168,6 +173,7 @@ pub(crate) fn regenerate(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Result
         summary.notes_ms = Some(started.elapsed().as_millis() as u64);
         summary.spellings = spellings;
         summary.titled(title);
+        summary.language = language;
         // Notes written: a recording that needed them (Discard, then Undo) is ready now.
         summary.status = "Ready".into();
         library::save(root, &summary)
