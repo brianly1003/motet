@@ -172,7 +172,7 @@ pub fn notes(
 /// "vi", "ja" or "zh" when the transcript is mostly written in that script; None for English or
 /// anything else, where the prompt's own language rule applies. Vietnamese words with a letter no
 /// other language uses run near 40 %, English ones 0; mixed-in English terms don't change that.
-fn written_in(transcript: &str) -> Option<&'static str> {
+pub(crate) fn written_in(transcript: &str) -> Option<&'static str> {
     let kana = |c: char| ('\u{3040}'..='\u{30ff}').contains(&c);
     let han = |c: char| ('\u{4e00}'..='\u{9fff}').contains(&c);
     let vi = |c: char| ('\u{1ea0}'..='\u{1ef9}').contains(&c) || "đĐăĂơƠưƯ".contains(c);

@@ -79,7 +79,8 @@ pub fn transcript(sources: &[String]) -> Result<String, Box<dyn Error>> {
 /// The merged transcript and the call's language (SPEC 6.4 `meeting.json` `language`).
 pub struct Transcript {
     pub text: String,
-    /// ISO code whisper heard on the tracks carrying the most text; None when it heard no words.
+    /// ISO codes of the languages spoken, most text first, comma-separated ("en,vi"); a language
+    /// needs 5 % of the text to count. None when no words were heard.
     pub language: Option<String>,
 }
 
@@ -105,18 +106,19 @@ pub fn transcript_parts(
             decode::to_wav(Path::new(src), Path::new(&wav16))?;
             println!("Transcribing {src} with {model}...");
             let rows = whisper(&model, &wav16, &stem, quiet)?;
-            if let Some(language) = fs::read_to_string(format!("{stem}.json"))
+            let track_language = fs::read_to_string(format!("{stem}.json"))
                 .ok()
-                .and_then(|json| detected(&json))
-            {
-                let chars = rows.iter().map(|(_, _, text)| text.chars().count()).sum();
-                match heard.iter_mut().find(|(l, _)| *l == language) {
-                    Some((_, n)) => *n += chars,
-                    None => heard.push((language, chars)),
-                }
-            }
+                .and_then(|json| detected(&json));
             let _ = fs::remove_file(format!("{stem}.json"));
             let rows = split_joined(&model, &wav16, &stem, rows, quiet)?;
+            let rows = relanguage(
+                &model,
+                &wav16,
+                &stem,
+                rows,
+                track_language.as_deref(),
+                quiet,
+            )?;
             // A short loop can still slip through the 64-token context; drop it here.
             let loops = crate::echo::loops(&rows);
             let rows: Vec<_> = rows
@@ -132,6 +134,14 @@ pub fn transcript_parts(
             } else {
                 voices(src, Path::new(&wav16), speaker, &rows)
             };
+            for (_, _, text) in &rows {
+                let language = row_language(text, track_language.as_deref());
+                let chars = text.chars().count();
+                match heard.iter_mut().find(|(l, _)| *l == language) {
+                    Some((_, n)) => *n += chars,
+                    None => heard.push((language, chars)),
+                }
+            }
             for ((start_ms, end_ms, text), label) in rows.into_iter().zip(speakers) {
                 segments.push(Segment {
                     start_ms: start_ms.saturating_add(*offset_ms),
@@ -144,14 +154,38 @@ pub fn transcript_parts(
             }
         }
     }
-    let language = heard
-        .into_iter()
-        .filter(|(_, chars)| *chars > 0)
-        .max_by_key(|(_, chars)| *chars)
-        .map(|(language, _)| language);
     Ok(Transcript {
         text: merge(segments),
-        language,
+        language: languages(heard),
+    })
+}
+
+/// Whisper names one language per track, from its first 30 s: a call that opened with a
+/// Vietnamese song and went on in English was saved as "vi" (2026-10-23). So each line is named
+/// from its own text: a Vietnamese-only letter, kana or Han says vi, ja or zh; any other line
+/// takes the track's language unless that is one of those three, when it is English.
+/// other Latin-script languages are told apart only by whisper's per-track guess.
+fn row_language(text: &str, track: Option<&str>) -> String {
+    match crate::summarize::written_in(text) {
+        Some(code) => code.to_string(),
+        None => match track {
+            Some(code) if !matches!(code, "vi" | "ja" | "zh") => code.to_string(),
+            _ => "en".to_string(),
+        },
+    }
+}
+
+/// The languages with at least 5 % of the text, most first, as "en,vi"; None without text.
+fn languages(mut heard: Vec<(String, usize)>) -> Option<String> {
+    let total: usize = heard.iter().map(|(_, chars)| chars).sum();
+    heard.retain(|(_, chars)| *chars > 0 && chars * 100 >= total * 5);
+    heard.sort_by_key(|(_, chars)| std::cmp::Reverse(*chars));
+    (!heard.is_empty()).then(|| {
+        heard
+            .into_iter()
+            .map(|(code, _)| code)
+            .collect::<Vec<_>>()
+            .join(",")
     })
 }
 
@@ -253,6 +287,84 @@ fn split_joined(
         }
     }
     Ok(out)
+}
+
+/// Whisper decodes a whole track in the one language it hears in the first 30 s, and decoding in
+/// the wrong language translates: a call that opened with a Vietnamese song had its English
+/// goodbyes written in Vietnamese ("Cảm ơn David" for "Thanks, David", 2026-10-23). When most of
+/// the text is in another language than the track's (only vi, ja and zh can be told from the
+/// text), each run of lines written in the track's language is transcribed again on its own with
+/// the language detected afresh. The new lines replace the run only if they are mostly in another
+/// language, so speech that really was in the track's language (the song) stays as it was.
+/// Optional like `split_joined`: a failed piece keeps its lines. Cancel still stops the job.
+/// one whisper run per run of lines; a call that switches language every line reruns
+/// many short pieces.
+fn relanguage(
+    model: &str,
+    wav16: &str,
+    stem: &str,
+    rows: Vec<Row>,
+    track: Option<&str>,
+    quiet: bool,
+) -> Result<Vec<Row>, Box<dyn Error>> {
+    let Some(track) = track else {
+        return Ok(rows);
+    };
+    let mut out = Vec::with_capacity(rows.len());
+    let mut next = 0;
+    for (first, last) in rerun_spans(&rows, track) {
+        out.extend_from_slice(&rows[next..first]);
+        next = last + 1;
+        let run = &rows[first..=last];
+        // Up to the next line (or 1 s past the last): the run's last row can end mid-word.
+        let end = rows
+            .get(last + 1)
+            .map_or(run[run.len() - 1].1 + 1_000, |next| next.0);
+        match pieces(model, wav16, stem, run[0].0, end, &[], quiet) {
+            Ok(Some(again)) if !mostly_in(&again, track) => out.extend(again),
+            Ok(_) => out.extend_from_slice(run),
+            Err(e) => {
+                crate::tools::check()?;
+                eprintln!("Kept lines in the track's language in {wav16}: {e}");
+                out.extend_from_slice(run);
+            }
+        }
+    }
+    out.extend_from_slice(&rows[next..]);
+    Ok(out)
+}
+
+/// The runs of lines (first and last index) to transcribe again: those written in the track's
+/// language, when that is vi, ja or zh and most of the text is in another language. Else none.
+fn rerun_spans(rows: &[Row], track: &str) -> Vec<(usize, usize)> {
+    if !matches!(track, "vi" | "ja" | "zh") || rows.is_empty() || mostly_in(rows, track) {
+        return vec![];
+    }
+    let mut spans: Vec<(usize, usize)> = vec![];
+    for (i, (_, _, text)) in rows.iter().enumerate() {
+        if row_language(text, Some(track)) != track {
+            continue;
+        }
+        match spans.last_mut() {
+            Some((_, last)) if *last + 1 == i => *last = i,
+            _ => spans.push((i, i)),
+        }
+    }
+    spans
+}
+
+/// True when more than half the text is written in `track`'s language.
+fn mostly_in(rows: &[Row], track: &str) -> bool {
+    let (ours, all) = rows.iter().fold((0, 0), |(ours, all), (_, _, text)| {
+        let n = text.chars().count();
+        let ours_now = if row_language(text, Some(track)) == track {
+            n
+        } else {
+            0
+        };
+        (ours + ours_now, all + n)
+    });
+    ours * 2 > all
 }
 
 /// The middle of every silence of `JOINED_GAP_MS` or more between the speech heard in
@@ -514,6 +626,46 @@ mod tests {
             ..system
         };
         assert!(merge(vec![mic, unknown]).contains("Me: One speaker"));
+    }
+
+    #[test]
+    fn each_line_names_its_own_language() {
+        // 2026-10-23: a Vietnamese song, then an English call, on a track whisper called "vi".
+        assert_eq!(
+            row_language("Em viết thiệp hồng tên anh thì đúng", Some("vi")),
+            "vi"
+        );
+        assert_eq!(row_language("Hi Rachel, good morning", Some("vi")), "en");
+        assert_eq!(row_language("明日までに資料を送ります", Some("en")), "ja");
+        assert_eq!(row_language("Bonjour à tous", Some("fr")), "fr");
+        assert_eq!(row_language("Okay", None), "en");
+        let heard = vec![("vi".into(), 300), ("en".into(), 2700), ("ja".into(), 40)];
+        assert_eq!(languages(heard).as_deref(), Some("en,vi"));
+        assert_eq!(languages(vec![("vi".into(), 900)]).as_deref(), Some("vi"));
+        assert_eq!(languages(vec![("en".into(), 0)]), None);
+        assert_eq!(languages(vec![]), None);
+    }
+
+    #[test]
+    fn lines_in_a_wrong_track_language_are_picked_for_another_pass() {
+        // 2026-10-23: whisper heard "vi" (a song opened the call); the call was in English and its
+        // goodbyes came out translated. Both Vietnamese runs are picked; the pass keeps the song.
+        let row = |text: &str| (0, 0, text.to_string());
+        let rows = vec![
+            row("Hello, can you hear me?"),
+            row("Muốn mình trong đêm ngồi đêm sao trời"),
+            row("Và một nỗi nhớ về trong gì vang"),
+            row("Hi Rachel, good morning. Can you hear me and see my screen clearly?"),
+            row("It's like if anything urgent pops up before tomorrow, have a"),
+            row("Hẹn gặp lại các bạn trong những video tiếp theo."),
+            row("Cảm ơn David, YouTube."),
+        ];
+        assert_eq!(rerun_spans(&rows, "vi"), vec![(1, 2), (5, 6)]);
+        // A Vietnamese call, an English track or no words: nothing to redo.
+        assert_eq!(rerun_spans(&rows[1..3], "vi"), vec![]);
+        assert_eq!(rerun_spans(&rows, "en"), vec![]);
+        assert_eq!(rerun_spans(&[], "vi"), vec![]);
+        assert!(mostly_in(&rows[5..], "vi") && !mostly_in(&rows, "vi"));
     }
 
     #[test]
