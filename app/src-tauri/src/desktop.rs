@@ -66,6 +66,7 @@ pub fn run() {
             crate::microphone::set_microphone,
             crate::microphone::set_mic_volume,
             crate::microphone::open_sound_settings,
+            crate::permissions::open_permission_settings,
             crate::live::live_transcript,
             resume_remaining_ms,
             notification_permission,
@@ -541,7 +542,6 @@ impl Host for Desktop {
     fn cant_record(&self, body: &str) {
         // Mid-call, nobody pressed anything: never pull a window forward, even if this fails.
         crate::notifications::quiet(&self.app, "Motetto can't record", body);
-        let _ = self.app.emit("motetto://notice", body);
     }
     fn exit(&self) {
         if self.jobs.send(Job::Exit).is_err() {

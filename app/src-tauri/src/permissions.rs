@@ -94,3 +94,55 @@ pub fn notifications(request: bool) -> Result<bool, String> {
 pub fn notifications(_request: bool) -> Result<bool, String> {
     Ok(false)
 }
+
+/// SPEC 4.3: the OS pane where the user turns `kind` back on.
+fn pane(kind: motetto_core::events::PermissionKind) -> &'static str {
+    use motetto_core::events::PermissionKind::*;
+    if cfg!(windows) {
+        match kind {
+            Microphone => "ms-settings:privacy-microphone",
+            Notifications => "ms-settings:notifications",
+            SystemAudio => "ms-settings:privacy", // Windows never blocks loopback capture.
+        }
+    } else {
+        match kind {
+            Microphone => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
+            SystemAudio => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            }
+            Notifications => "x-apple.systempreferences:com.apple.Notifications-Settings.extension",
+        }
+    }
+}
+
+#[tauri::command]
+pub fn open_permission_settings(kind: motetto_core::events::PermissionKind) -> Result<(), String> {
+    let opener = if cfg!(windows) { "explorer" } else { "open" };
+    std::process::Command::new(opener)
+        .arg(pane(kind))
+        .status()
+        .map(|_| ())
+        .map_err(|e| format!("Couldn't open settings: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use motetto_core::events::PermissionKind;
+    #[test]
+    fn each_permission_opens_its_own_pane() {
+        let panes = [
+            PermissionKind::Microphone,
+            PermissionKind::SystemAudio,
+            PermissionKind::Notifications,
+        ]
+        .map(super::pane);
+        assert!(panes[0] != panes[1] && panes[1] != panes[2] && panes[0] != panes[2]);
+        assert!(panes.iter().all(|p| p.starts_with(if cfg!(windows) {
+            "ms-settings:"
+        } else {
+            "x-apple.systempreferences:"
+        })));
+    }
+}

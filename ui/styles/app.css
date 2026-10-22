@@ -384,14 +384,14 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .mrow { position: relative; }
 .mrow .rowmore { position: absolute; top: 6px; right: 6px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); display: grid; place-items: center; opacity: 0; }
 .mrow .rowmore svg { display: block; width: 20px; height: 20px; fill: currentColor; stroke: none; }
-.mrow:hover .rowmore, .mrow:focus-within .rowmore, .mrow.open .rowmore { opacity: 1; }
+.mrow:hover .rowmore, .mrow:has(:focus-visible) .rowmore, .mrow.open .rowmore { opacity: 1; }
 .mrow .rowmore:hover, .mrow.open .rowmore { background: var(--line); color: var(--ink-1); }
 .mrow:hover .meeting-row strong, .mrow:focus-within .meeting-row strong, .mrow.open .meeting-row strong { padding-right: 26px; }
 .mrow.open .meeting-row { background: var(--surface-3); }
 .gmenu { z-index: 40; width: 256px; background: var(--menu); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .rowmenu { position: fixed; }
 .doc-dropdown.gmenu { top: 30px; }
-.gmenu button { border: 0; background: transparent; text-align: left; height: 32px; padding: 0 10px; border-radius: 8px; font: 400 14px/1 var(--font-ui); color: var(--ink-1); display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; }
+.gmenu button { border: 0; background: transparent; text-align: left; height: 32px; padding: 0 10px; border-radius: 8px; font: 400 14px/1 var(--font-ui); color: var(--ink-1); display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; outline: none; }
 .gmenu button svg { width: 16px; height: 16px; flex: none; color: var(--ink-2); stroke-width: 1.4; }
 .gmenu button:hover, .gmenu button:focus-visible { background: var(--menu-hover); outline: none; }
 .gmenu button[disabled] { opacity: .45; cursor: not-allowed; background: transparent; }

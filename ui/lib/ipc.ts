@@ -74,10 +74,12 @@ export const companionMenu = (open: boolean, extra?: number) => invoke<void>("co
 
 // The microphone picker (DESIGN 4.15): what Motetto records from, and its one problem.
 import type { MicReport } from "./bindings/MicReport";
+import type { PermissionKind } from "./bindings/PermissionKind";
 export const microphones = () => invoke<MicReport>("microphones");
 export const setMicrophone = (id: string | null) => invoke<MicReport>("set_microphone", { id });
 export const setMicVolume = (id: string, volume: number) => invoke<MicReport>("set_mic_volume", { id, volume });
 export const openSoundSettings = () => invoke<void>("open_sound_settings");
+export const openPermissionSettings = (kind: PermissionKind) => invoke<void>("open_permission_settings", { kind });
 export const getLevels = () => invoke<[number, number]>("get_levels");
 
 export const liveTranscript = () => invoke<[string, string, string]>("live_transcript");
