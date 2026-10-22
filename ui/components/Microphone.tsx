@@ -117,7 +117,7 @@ export function MicMenu({ report, recording, done, onError = done, onClose, styl
     {report.mics.map(m => option(m.id, m, m.name))}
     <div className="sep"/>
     {active && volume !== null
-      ? <label className="vol"><MicIcon/><input type="range" min={0} max={100} value={percent(volume)} aria-label={`Input volume for ${active.name}`} onChange={e => {
+      ? <label className="vol"><MicIcon/><input type="range" min={0} max={100} value={percent(volume)} style={{ "--v": volume } as CSSProperties} aria-label={`Input volume for ${active.name}`} onChange={e => {
           const next = Number(e.target.value) / 100; setVolume(next); clearTimeout(timer.current);
           timer.current = setTimeout(() => void ipc.setMicVolume(active.id, next).catch(error => onError(String(error))), 120);
         }}/><output>{percent(volume)}%</output></label>

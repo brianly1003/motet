@@ -1,6 +1,6 @@
 "use client";
 import { Alert } from "@/components/Alert";
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from 'react';
 import * as ipc from '@/lib/ipc';
 import type {Settings} from '@/lib/bindings/Settings';
 import {fileSize} from '@/lib/document';
@@ -99,7 +99,7 @@ export default function SettingsPage(){
             <MicNote report={r} done={micSaved} onError={setError} className="micnote recnote setnote"/>
           </Row>
           <Row label="Input volume" help={m?.volume!=null?'The same setting as System Settings › Sound. Keep loud speech out of the red.':undefined}>
-            {m&&volume!==null?<label className="volrow"><input type="range" min={0} max={100} value={Math.round(volume*100)} aria-label={`Input volume for ${m.name}`} onChange={e=>{const v=Number(e.target.value)/100;setVolume(v);clearTimeout(volumeTimer.current);volumeTimer.current=setTimeout(()=>void ipc.setMicVolume(m.id,v).then(()=>micSaved('Saved')).catch(err=>setError(String(err))),150);}}/><output>{Math.round(volume*100)}%</output></label>
+            {m&&volume!==null?<label className="volrow"><input type="range" min={0} max={100} value={Math.round(volume*100)} style={{"--v":volume} as CSSProperties} aria-label={`Input volume for ${m.name}`} onChange={e=>{const v=Number(e.target.value)/100;setVolume(v);clearTimeout(volumeTimer.current);volumeTimer.current=setTimeout(()=>void ipc.setMicVolume(m.id,v).then(()=>micSaved('Saved')).catch(err=>setError(String(err))),150);}}/><output>{Math.round(volume*100)}%</output></label>
               :<span className="help" style={{margin:0}}>{m?`${m.name} sets its own level.`:''}</span>}
           </Row>
           <Row label="All apps" help="Changes the default microphone for every app, including your call app.">{sound}</Row>
