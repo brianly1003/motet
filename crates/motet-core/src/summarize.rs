@@ -19,15 +19,19 @@ Write the notes in the language most of the transcript is in, in your own words:
 lines. Output Markdown only, exactly in this shape (the <...> parts are yours to fill):\n\
 TITLE: <what the call was about or decided, at most 8 words, no date>\n\
 ### Action items\n\
-- [ ] <Owner>: <task> [mm:ss]   (or \"- None\")\n\
+- [ ] <Owner>: <task> [mm:ss]   (one line per task, or \"- None\")\n\
 ### Overview\n\
 - <what the call was for and what came out of it: one to four bullets, fewer for a short call>\n\
 ### <Topic>\n\
 - <what was said or decided> [mm:ss]\n\
 Rules:\n\
-- Action items: only work someone said they will do, or agreed to do when asked; a proposed next \
-meeting is a task too. Advice, instructions, explanations and problems are not tasks. The owner does the work: \"Me: I'll send it\" makes You the owner, and a request \
-is owned by whoever accepts it (\"Can you check it?\" then \"I'll check\"). Leave out \"<Owner>: \" when the \
+- Action items: list every task anyone on the call took on, the user's and everyone else's, as many \
+as the call has; never stop at a set number. A task needs someone committing to it: they said \
+they will do it (\"I'll send it\", \"we'll check\") or agreed when asked; a proposed next meeting is a task too. \
+Not tasks: ideas and proposals nobody took on, decisions made in the call (they go under their topic), advice, \
+explanations, how things work today, problems, and things done during the call. The owner does the work: \"Me: I'll send it\" \
+makes You the owner, \"Them: I'll check the account\" makes Them the owner (or that person's name, if a line \
+gives it), and a request is owned by whoever accepts it (\"Can you check it?\" then \"I'll check\"). Leave out \"<Owner>: \" when the \
 transcript doesn't show who. [mm:ss] is the source line's time exactly as written; omit it if no line \
 supports the task. News and facts are not tasks. Add a due date only if one was said. With no tasks at \
 all, write \"- None\".\n\
@@ -253,9 +257,11 @@ fn tidy_headings(notes: &str) -> String {
 }
 
 /// Action items as the editor reads them (SPEC 7.11): "- [ ] Owner: task". Small models write the
-/// user as "Me", bold the owner, drop the box or add "- [ ] None" next to real tasks.
+/// user as "Me", bold the owner, drop the box or add "- [ ] None" next to real tasks, or fall into
+/// a loop on a long call and repeat one task dozens of times: a repeat is dropped.
 fn tidy_tasks(notes: &str) -> String {
     let (mut inside, mut tasks, mut nones) = (false, 0, Vec::new());
+    let mut seen = HashSet::new();
     let mut lines: Vec<String> = Vec::new();
     for line in notes.lines() {
         if line.starts_with('#') {
@@ -271,6 +277,14 @@ fn tidy_tasks(notes: &str) -> String {
         if item.trim_end_matches('.').eq_ignore_ascii_case("none") {
             nones.push(lines.len());
             lines.push("- None".into());
+            continue;
+        }
+        // The same task at another time is still a repeat: compare without the [mm:ss].
+        let key = item
+            .rsplit_once(" [")
+            .map_or(item, |(text, _)| text)
+            .to_lowercase();
+        if !seen.insert(key) {
             continue;
         }
         tasks += 1;
@@ -567,6 +581,15 @@ mod tests {
         assert_eq!(
             tidy_tasks("### Action items\n- [ ] None.\n### Overview"),
             "### Action items\n- None\n### Overview"
+        );
+        // A looping model repeats a task, sometimes at a new time; tasks only alike stay.
+        assert_eq!(
+            tidy_tasks(
+                "### Action items\n- [ ] Check the API [04:41]\n- [ ] Them: Build it [05:00]\n\
+                 - [ ] Check the API [05:04]\n- [ ] check the api\n- [ ] Check the API again"
+            ),
+            "### Action items\n- [ ] Check the API [04:41]\n- [ ] Them: Build it [05:00]\n\
+             - [ ] Check the API again"
         );
     }
 
