@@ -35,7 +35,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
 .meeting-row:hover { background: var(--surface-3); }
 .meeting-row.selected { background: var(--surface-1); box-shadow: 0 0 0 1px var(--line); }
 :root .sidebar :is(.homerow, .meeting-row, .trash):focus-visible { box-shadow: inset 0 0 0 1px var(--ink-3); }
-.meeting-row strong { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long title fades out instead of ending in "…" (owner 2026-10-23); pointing at the row slides
+   the fade left so the words vanish behind the "⋮". --fade animates only because it is registered. */
+@property --fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+.meeting-row strong { font-weight: 500; font-size: 13px; overflow: hidden; white-space: nowrap; --fade: 0px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px - var(--fade)), transparent calc(100% - var(--fade))); mask-image: linear-gradient(to right, #000 calc(100% - 24px - var(--fade)), transparent calc(100% - var(--fade))); transition: --fade 180ms ease; }
+@media (prefers-reduced-motion: reduce) { .meeting-row strong { transition: none; } }
 .meeting-row > span { display: flex; justify-content: space-between; align-items: center; gap: 6px; color: var(--ink-3); font-size: 11.5px; }
 /* Search results (mockup sideHtml: .mitem .snip, mark): the matching line, then where it was. */
 .meeting-row .snip { font-style: normal; font-size: 12px; line-height: 1.4; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 1px 0; }
@@ -386,7 +390,7 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .mrow .rowmore svg { display: block; width: 20px; height: 20px; fill: currentColor; stroke: none; }
 .mrow:hover .rowmore, .mrow:has(:focus-visible) .rowmore, .mrow.open .rowmore { opacity: 1; }
 .mrow .rowmore:hover, .mrow.open .rowmore { background: var(--line); color: var(--ink-1); }
-.mrow:hover .meeting-row strong, .mrow:focus-within .meeting-row strong, .mrow.open .meeting-row strong { padding-right: 26px; }
+.mrow:hover .meeting-row strong, .mrow:focus-within .meeting-row strong, .mrow.open .meeting-row strong { --fade: 20px; }
 .mrow.open .meeting-row { background: var(--surface-3); }
 .gmenu { z-index: 40; width: 256px; background: var(--menu); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .rowmenu { position: fixed; }
