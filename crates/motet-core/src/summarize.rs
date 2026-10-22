@@ -31,8 +31,8 @@ is owned by whoever accepts it (\"Can you check it?\" then \"I'll check\"). Leav
 transcript doesn't show who. [mm:ss] is the source line's time exactly as written; omit it if no line \
 supports the task. News and facts are not tasks. Add a due date only if one was said. With no tasks at \
 all, write \"- None\".\n\
-- One \"### <Topic>\" section per main topic, in the order discussed; end each bullet with the [mm:ss] \
-of the line it comes from. Put **bold** on decisions, numbers and key terms. Say each point once: the \
+- One \"### <Topic>\" section per main topic, in the order discussed; end each bullet with one [mm:ss]: \
+the time of the first line it comes from. Never list several times on one bullet. Put **bold** on decisions, numbers and key terms. Say each point once: the \
 Overview sums up, the topics hold the detail.\n\
 - Write only what the transcript says. A short or unclear transcript gets short notes: never fill \
 the layout with guesses, and every task and topic bullet must cite a line that says it.
@@ -136,7 +136,7 @@ pub fn notes(
         )?
     };
     let (title, summary) = split_title(&tidy_headings(&summary));
-    let mut summary = tidy_tasks(&grounded(&summary, transcript));
+    let mut summary = tidy_tasks(&one_time(&grounded(&summary, transcript)));
     if !labeled {
         // Nothing in the transcript says which voice is the user's, so "You" is a guess.
         summary = summary.replace("\n- [ ] You: ", "\n- [ ] ");
@@ -171,14 +171,11 @@ fn grounded(summary: &str, transcript: &str) -> String {
         .lines()
         .filter_map(|l| Some(l.strip_prefix('[')?.split_once(']')?.0))
         .collect();
-    // "[02:15]", "[00:53, 01:00]" or "[00:35-00:52]"; "[ ]" and "[link](url)" aren't times.
     let cites_real_lines = |line: &str| {
         line.split('[')
             .skip(1)
             .filter_map(|s| Some(s.split_once(']')?.0))
-            .filter(|t| {
-                t.contains(':') && t.chars().all(|c| c.is_ascii_digit() || ":,- ".contains(c))
-            })
+            .filter(|t| is_times(t))
             .flat_map(|t| t.split([',', '-']).map(str::trim))
             .all(|t| times.contains(t))
     };
@@ -197,6 +194,40 @@ fn grounded(summary: &str, transcript: &str) -> String {
         }
     }
     out.join("\n")
+}
+
+/// "[02:15]", "[00:53, 01:00]" or "[00:35-00:52]"; "[ ]" and "[link](url)" aren't times.
+fn is_times(t: &str) -> bool {
+    t.contains(':') && t.chars().all(|c| c.is_ascii_digit() || ":,- ".contains(c))
+}
+
+/// "Point [01:44], [01:50, 01:52]." -> "Point [01:44].": the model cites every line a point
+/// comes from, and each time becomes its own chip on screen. Keeps the first time of each line.
+fn one_time(notes: &str) -> String {
+    let one_line = |line: &str| {
+        let (mut out, mut rest, mut kept) = (String::new(), line, false);
+        while let Some((before, after)) = rest.split_once('[') {
+            match after.split_once(']').filter(|(t, _)| is_times(t)) {
+                Some((times, tail)) => {
+                    if kept {
+                        out.push_str(before.trim_end_matches([',', ';', ' ']));
+                    } else {
+                        let first = times.split([',', '-']).next().unwrap_or(times).trim();
+                        out.push_str(&format!("{before}[{first}]"));
+                        kept = true;
+                    }
+                    rest = tail;
+                }
+                None => {
+                    out.push_str(before);
+                    out.push('[');
+                    rest = after;
+                }
+            }
+        }
+        out + rest
+    };
+    notes.lines().map(one_line).collect::<Vec<_>>().join("\n")
 }
 
 /// "## ### Action items" -> "### Action items": small models sometimes stack heading marks, and
@@ -585,6 +616,18 @@ mod tests {
                 transcript
             ),
             "### Action items\n- None\n### Overview\n- x"
+        );
+    }
+
+    #[test]
+    fn one_time_keeps_the_first_citation() {
+        assert_eq!(
+            one_time(
+                "- Wished \"Happy New Year\" [01:44], [01:50], [01:52].\n- Both [00:53, 01:00]\n\
+                 - Range [00:01-01:00]; [02:00]\n- [ ] You: Send [link](u) [00:01]\n- Plain"
+            ),
+            "- Wished \"Happy New Year\" [01:44].\n- Both [00:53]\n\
+             - Range [00:01]\n- [ ] You: Send [link](u) [00:01]\n- Plain"
         );
     }
 
