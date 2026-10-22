@@ -4,7 +4,7 @@ async (page) => {
   const reference = await page.context().newPage();
   await reference.route('https://**/*', route => route.abort());
   await reference.setViewportSize({width: 1400, height: 1000});
-  await reference.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await reference.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await reference.getByRole('button', {name: 'macOS', exact: true}).click();
   await reference.getByRole('button', {name: 'During a call', exact: true}).click();
   for (const theme of ['light', 'dark']) {
@@ -26,7 +26,7 @@ async (page) => {
       window.testCalls = [];
       window.fixtureTranscript = "[05:00] Me: Sure, I'll share the table design before Thursday.";
       window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
-      const publish = () => callbacks[listeners['motet://event']]?.({payload: {type: 'StateChanged', ...state}});
+      const publish = () => callbacks[listeners['motetto://event']]?.({payload: {type: 'StateChanged', ...state}});
       window.fixtureState = value => { state = {...state, ...value}; publish(); };
       window.fixtureEmit = (event, payload) => { if (!listeners[event]) throw Error(`No listener for ${event}`); callbacks[listeners[event]]({event, id: 0, payload}); };
       window.__TAURI_INTERNALS__ = {
@@ -244,7 +244,7 @@ async (page) => {
     await p.getByRole('button', {name: 'Not for this call', exact: true}).click();
     if ((await call('answer_ask')).record !== false) throw Error('Pill close did not answer false');
     await p.evaluate(() => window.fixtureState({state: {type: 'Idle'}, ask_off_pending: {app_id: 'zoom', app: 'Zoom', previous: 'Ask', until_ms: 10000}}));
-    await p.getByText("Motet won't ask about Zoom calls. Turn it back on in Settings › Calls.", {exact: true}).waitFor();
+    await p.getByText("Motetto won't ask about Zoom calls. Turn it back on in Settings › Calls.", {exact: true}).waitFor();
     await p.getByRole('button', {name: 'Undo', exact: true}).click();
     if ((await call('undo_dont_ask'))?.appId !== 'zoom') throw Error('Undo did not send undo_dont_ask');
     // The Sidecar's why line names the choice, not the microphone.

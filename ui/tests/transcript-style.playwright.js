@@ -1,7 +1,7 @@
 async (page) => {
   const results=[];
   const ref=await page.context().newPage();ref.setDefaultTimeout(5000);await ref.route('https://**/*',r=>r.abort());
-  await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await ref.getByRole('button',{name:'macOS',exact:true}).click();
   await ref.getByRole('button',{name:'After the call',exact:true}).click();
   await ref.getByRole('tab',{name:'Transcript',exact:true}).click();
@@ -23,7 +23,7 @@ async (page) => {
         if(command==='list_meetings')return [summary];
         if(command==='deleted_meetings')return [];
         if(command==='get_meeting')return meeting;
-        if(command==='meeting_media')return {tracks,duration_ms:87000,folder:'~/Documents/Motet/123'};
+        if(command==='meeting_media')return {tracks,duration_ms:87000,folder:'~/Documents/Motetto/123'};
         if(command==='save_notes'){ if(summary.locked)throw Error('These notes are locked. Unlock them to edit.'); if(args.expected!==meeting.notes_md)throw Error('Stale notes'); meeting.notes_md=args.markdown; return args.markdown; }
         if(command==='set_locked'){ summary.locked=args.locked; return {...summary}; }
         // As transcript_edits.rs: only the text after "[mm:ss] Speaker: " changes; heard text kept for Revert.

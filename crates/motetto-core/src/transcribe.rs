@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(onset(&[0.02, 0.03, 0.02, 0.3, 0.4, 0.1]), 2);
         assert_eq!(onset(&[0.4, 0.02]), 0);
         assert_eq!(onset(&[]), 0);
-        let root = std::env::temp_dir().join(format!("motet-onset-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-onset-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let wav = root.join("mic.16k.wav");
         let spec = hound::WavSpec {

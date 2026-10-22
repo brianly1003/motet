@@ -87,14 +87,14 @@ fn multipart_posts_audio_and_does_not_skip_slice_offset() {
     );
     let result = Client::new(port)
         .unwrap()
-        .transcribe(&[0.0; 160], 30000, Some("en"), Some("Motet"))
+        .transcribe(&[0.0; 160], 30000, Some("en"), Some("Motetto"))
         .unwrap();
     assert_eq!(result[0].start_ms, 30000);
     let request = server.join().unwrap();
     assert!(request.starts_with("POST /inference HTTP/1.1"));
     for text in [
         "name=\"offset_t\"\r\n\r\n0",
-        "name=\"prompt\"\r\n\r\nMotet",
+        "name=\"prompt\"\r\n\r\nMotetto",
         "RIFF",
         "verbose_json",
     ] {
@@ -126,12 +126,12 @@ fn rejects_redirects_server_errors_and_invalid_audio() {
 #[test]
 #[ignore = "requires local whisper-server and synthetic fixture; run scripts/m2-e2e.sh"]
 fn real_sidecar_transcribes_synthetic_speech() {
-    let port: u16 = std::env::var("MOTET_TEST_WHISPER_PORT")
+    let port: u16 = std::env::var("MOTETTO_TEST_WHISPER_PORT")
         .unwrap()
         .parse()
         .unwrap();
     let file =
-        std::path::PathBuf::from(std::env::var("MOTET_TEST_MEDIA").unwrap()).join("wav.16k.wav");
+        std::path::PathBuf::from(std::env::var("MOTETTO_TEST_MEDIA").unwrap()).join("wav.16k.wav");
     let samples = hound::WavReader::open(file)
         .unwrap()
         .samples::<f32>()

@@ -488,7 +488,7 @@ pub(crate) fn ask(llm: &str, prompt: &str) -> Result<String, Box<dyn Error>> {
     }
     if !installed(&String::from_utf8_lossy(&list.stdout), llm) {
         return Err(format!(
-            "model {llm} isn't installed; run `ollama pull {llm}` first (Motet never downloads models)"
+            "model {llm} isn't installed; run `ollama pull {llm}` first (Motetto never downloads models)"
         )
         .into());
     }
@@ -711,7 +711,7 @@ mod tests {
 
     #[test]
     fn blank_transcript_skips_the_model() {
-        let base = std::env::temp_dir().join(format!("motet-blank-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("motetto-blank-{}", std::process::id()));
         let base = base.to_string_lossy();
         // No OLLAMA_MODEL needed: the model must not be asked at all.
         assert_eq!(notes(&base, " \n", "[] call Linh").unwrap(), None);

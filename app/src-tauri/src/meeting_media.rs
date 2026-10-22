@@ -173,7 +173,7 @@ mod tests {
     use super::*;
     #[test]
     fn waveform_duration_offsets_and_scope() {
-        let root = std::env::temp_dir().join(format!("motet-media-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-media-{}", std::process::id()));
         fs::create_dir_all(root.join("1")).unwrap();
         let path = root.join("1/part-0000.mic.wav");
         let mut wav = hound::WavWriter::create(
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn waveform_sees_speech_between_bin_starts() {
         // 20 s, 100 ms per bin: a 30 ms burst 60 ms into every bin, silence elsewhere.
-        let root = std::env::temp_dir().join(format!("motet-media-burst-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-media-burst-{}", std::process::id()));
         fs::create_dir_all(root.join("1")).unwrap();
         let path = root.join("1/part-0000.system.wav");
         let spec = hound::WavSpec {

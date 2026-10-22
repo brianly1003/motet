@@ -19,9 +19,9 @@ async (page) => {
       if (c === 'list_meetings') return [summary]; if (c === 'deleted_meetings') return []; if (c === 'get_meeting') return meeting;
       if (c === 'importing') return job;
       if (c === 'meeting_action' && a.action === 'regenerate') {
-        job = { id: '1', import: false }; window.emit('motet://library-changed', null);
+        job = { id: '1', import: false }; window.emit('motetto://library-changed', null);
         await new Promise(resolve => { window.finish = resolve; });
-        meeting.notes_md = '### Action items\n- None\n### Overview\n- New notes.\n'; job = null; window.emit('motet://library-changed', null);
+        meeting.notes_md = '### Action items\n- None\n### Overview\n- New notes.\n'; job = null; window.emit('motetto://library-changed', null);
         return null;
       }
       if (c === 'meeting_media') return { tracks: [], duration_ms: 60000, folder: 'x' }; return false; } };
@@ -39,11 +39,11 @@ async (page) => {
   const steps = async () => p.locator('.writing .step').evaluateAll(rows => rows.map(r => `${r.className.replace('step', '').trim() || 'todo'}:${r.children[1].textContent}${r.children[2].textContent ? ' ' + r.children[2].textContent : ''}`));
   const first = (await steps()).join(' | ');
   if (first !== 'done:Transcript ready 2 lines | now:Summarizing | todo:Saving') fails.push('before any stage: ' + first);
-  await p.evaluate(() => window.emit('motet://event', { type: 'Stage', meeting_id: '1', stage: { type: 'Saving' }, percent: 0, eta_s: null }));
+  await p.evaluate(() => window.emit('motetto://event', { type: 'Stage', meeting_id: '1', stage: { type: 'Saving' }, percent: 0, eta_s: null }));
   await p.waitForTimeout(100);
   const saving = (await steps()).join(' | ');
   if (saving !== 'done:Transcript ready 2 lines | done:Summarizing | now:Saving') fails.push('after Saving: ' + saving);
-  await p.evaluate(() => window.emit('motet://event', { type: 'Stage', meeting_id: 'other', stage: { type: 'Summarizing', part: 1, of: 1 }, percent: 0, eta_s: null }));
+  await p.evaluate(() => window.emit('motetto://event', { type: 'Stage', meeting_id: 'other', stage: { type: 'Summarizing', part: 1, of: 1 }, percent: 0, eta_s: null }));
   await p.waitForTimeout(100);
   if ((await steps()).join(' | ') !== saving) fails.push("another meeting's stage moved these steps");
   await p.evaluate(() => window.finish());

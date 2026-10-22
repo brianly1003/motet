@@ -8,7 +8,7 @@ async (page) => {
     await ref.route('https://**/*', r => r.abort());
     await ref.emulateMedia({colorScheme: theme});
     await ref.setViewportSize({width: 1400, height: 1000});
-    await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+    await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
     await ref.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
     await ref.locator('#play').click(); // the scripted call asks at 0.7 s
     await ref.locator('#ask:not(.off)').waitFor();

@@ -65,10 +65,10 @@ export default function DocumentFind({tab,body,start}:{tab:string;body:RefObject
   },[open,query,tab,body]);
   useLayoutEffect(()=>{
     if(open){
-      CSS.highlights.set('motet-find',new Highlight(...ranges));
-      CSS.highlights.set('motet-find-current',new Highlight(...(index<0?[]:[ranges[index]])));
+      CSS.highlights.set('motetto-find',new Highlight(...ranges));
+      CSS.highlights.set('motetto-find-current',new Highlight(...(index<0?[]:[ranges[index]])));
     }
-    return()=>{CSS.highlights.delete('motet-find');CSS.highlights.delete('motet-find-current');};
+    return()=>{CSS.highlights.delete('motetto-find');CSS.highlights.delete('motetto-find-current');};
   },[open,ranges,index]);
   function step(direction:number){
     if(!ranges.length||!body.current)return;

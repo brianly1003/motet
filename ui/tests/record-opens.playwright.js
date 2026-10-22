@@ -13,11 +13,11 @@ async (page) => {
     // The tray's Record now: the state first, then the folder, then library-changed and open-meeting (recording.rs).
     window.trayRecord = () => {
       state = { ...state, state: { type: 'Recording' }, meeting_id: 'new', started_by: { type: 'Manual' } };
-      emit('motet://event', { type: 'StateChanged', ...state });
-      setTimeout(() => { ms.unshift(mk('new', 'Recorded meeting', 'Recording', Date.now())); emit('motet://library-changed', null); emit('motet://open-meeting', 'new'); }, window.folderDelay ?? 300);
+      emit('motetto://event', { type: 'StateChanged', ...state });
+      setTimeout(() => { ms.unshift(mk('new', 'Recorded meeting', 'Recording', Date.now())); emit('motetto://library-changed', null); emit('motetto://open-meeting', 'new'); }, window.folderDelay ?? 300);
     };
     // Back to idle with the new meeting gone, so the next delay starts from the same place.
-    window.resetFixture = () => { if (ms[0].summary.id === 'new') ms.shift(); state = { ...state, state: { type: 'Idle' }, meeting_id: null }; emit('motet://event', { type: 'StateChanged', ...state }); emit('motet://library-changed', null); };
+    window.resetFixture = () => { if (ms[0].summary.id === 'new') ms.shift(); state = { ...state, state: { type: 'Idle' }, meeting_id: null }; emit('motetto://event', { type: 'StateChanged', ...state }); emit('motetto://library-changed', null); };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
     window.__TAURI_INTERNALS__ = { convertFileSrc: x => x, transformCallback: cb => { callbacks[++next] = cb; return next; }, unregisterCallback: () => {}, invoke: async (c, a) => {
       // Real IPC takes time; the open-items scan reads every meeting's notes.

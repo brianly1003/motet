@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/motet-core", "crates/motet-cli", "app/src-tauri"]
-default-members = ["crates/motet-cli", "crates/motet-core"]
+members = ["crates/motetto-core", "crates/motetto-cli", "app/src-tauri"]
+default-members = ["crates/motetto-cli", "crates/motetto-core"]
 resolver = "3"

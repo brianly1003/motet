@@ -1,12 +1,12 @@
-//! motet: record system audio + mic (ScreenCaptureKit or WASAPI), transcribe locally
+//! motetto: record system audio + mic (ScreenCaptureKit or WASAPI), transcribe locally
 //! (whisper.cpp), summarize locally (Ollama). Works for any meeting app.
 //!
-//!   motet record                       record until Enter, then transcribe + summarize
-//!   motet run --file call.m4a          transcribe + summarize an existing recording
-//!   motet run --file x.mic.wav --file x.system.wav   redo a recording, with Me/Them labels
-//!   (`motet` alone still records, and `motet <files>` still works like `run`.)
+//!   motetto record                       record until Enter, then transcribe + summarize
+//!   motetto run --file call.m4a          transcribe + summarize an existing recording
+//!   motetto run --file x.mic.wav --file x.system.wav   redo a recording, with Me/Them labels
+//!   (`motetto` alone still records, and `motetto <files>` still works like `run`.)
 //!
-//! Env (or `./.env`, `~/.config/motet/.env`): WHISPER_MODEL (path to ggml model), OLLAMA_MODEL,
+//! Env (or `./.env`, `~/.config/motetto/.env`): WHISPER_MODEL (path to ggml model), OLLAMA_MODEL,
 //!      WHISPER_VAD_MODEL (optional, silero ggml; strongly recommended for Me/Them order),
 //!      FIX_MODEL (optional Ollama model that corrects the transcript before the summary),
 //!      SUMMARY_CHUNK_CHARS (optional, default 24000: longer transcripts are summarized in parts),
@@ -22,7 +22,7 @@ mod record {
     }
 }
 
-use motet_core::{config, correct, summarize, transcribe};
+use motetto_core::{config, correct, summarize, transcribe};
 
 use std::error::Error;
 use std::fs;
@@ -32,7 +32,7 @@ use clap::{Parser, Subcommand};
 
 /// Local meeting notes: record a call, transcribe it, summarize it. Nothing leaves the computer.
 #[derive(Parser)]
-#[command(name = "motet", version, args_conflicts_with_subcommands = true)]
+#[command(name = "motetto", version, args_conflicts_with_subcommands = true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

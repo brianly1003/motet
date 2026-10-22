@@ -1,4 +1,4 @@
-//! Config: Motet's own settings from `./.env` and `~/.config/motet/.env`, then the shell.
+//! Config: Motetto's own settings from `./.env` and `~/.config/motetto/.env`, then the shell.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -65,7 +65,7 @@ fn desktop_var_with(
 }
 
 /// The only keys a `.env` file may set. Anything else (PATH, DYLD_*, OLLAMA_HOST…) is ignored,
-/// so a `.env` in a folder you happen to run motet from can't redirect tools or send data off
+/// so a `.env` in a folder you happen to run motetto from can't redirect tools or send data off
 /// the Mac. The process environment is never changed; child tools see the shell's environment.
 const KEYS: [&str; 9] = [
     "WHISPER_MODEL",
@@ -80,10 +80,10 @@ const KEYS: [&str; 9] = [
 ];
 
 /// Keys that reach a model prompt, so a `./.env` in a folder you didn't write can't set them;
-/// they come only from `~/.config/motet/.env` or the shell.
+/// they come only from `~/.config/motetto/.env` or the shell.
 const GLOBAL_ONLY: [&str; 1] = ["TERMS"];
 
-/// Whether a `.env` line may set `key`: Motet's keys only, and not prompt keys from `./.env`.
+/// Whether a `.env` line may set `key`: Motetto's keys only, and not prompt keys from `./.env`.
 fn allowed(key: &str, local: bool) -> bool {
     KEYS.contains(&key) && !(local && GLOBAL_ONLY.contains(&key))
 }
@@ -121,7 +121,7 @@ fn clean_terms(raw: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(", "))
 }
 
-/// A setting: `./.env` wins over `~/.config/motet/.env`, and both win over the shell, so a
+/// A setting: `./.env` wins over `~/.config/motetto/.env`, and both win over the shell, so a
 /// stale export in a long-running terminal can't pick the wrong model.
 pub fn var(key: &str) -> Option<String> {
     if let Some(value) = desktop_var(key) {
@@ -130,7 +130,7 @@ pub fn var(key: &str) -> Option<String> {
     static FILES: OnceLock<HashMap<String, String>> = OnceLock::new();
     FILES
         .get_or_init(|| {
-            let global = std::env::home_dir().map(|h| h.join(".config/motet/.env"));
+            let global = std::env::home_dir().map(|h| h.join(".config/motetto/.env"));
             let mut vars = HashMap::new();
             // Later files overwrite earlier ones, so ./.env (current folder only) comes last.
             for path in global.into_iter().chain([PathBuf::from(".env")]) {

@@ -104,7 +104,7 @@ pub fn set_action_item_done(
     let result =
         crate::library_commands::edit(&app, &id, |root| update(root, &id, line, done, &expected));
     if result.is_ok() {
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
     }
     result
 }
@@ -119,7 +119,7 @@ pub fn save_notes(
     let result =
         crate::library_commands::edit(&app, &id, |root| save(root, &id, &markdown, &expected));
     if result.is_ok() {
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
     }
     result
 }
@@ -128,7 +128,7 @@ mod tests {
     use super::*;
     #[test]
     fn preserves_document_and_rejects_stale_edits() {
-        let root = std::env::temp_dir().join(format!("motet-tasks-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-tasks-{}", std::process::id()));
         fs::create_dir_all(root.join("1")).unwrap();
         let text = "### Action items\n- [ ] You: Share it [01:20]\n\n### Overview\nKeep this.\n";
         fs::write(root.join("1/notes.md"), text).unwrap();
@@ -142,7 +142,7 @@ mod tests {
     }
     #[test]
     fn saves_edits_but_not_stale_ones_or_the_transcript_copy() {
-        let root = std::env::temp_dir().join(format!("motet-save-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-save-{}", std::process::id()));
         fs::create_dir_all(root.join("1")).unwrap();
         let text = "### Overview\n- Keep **FCM**.\n\n<details><summary>Transcript</summary>\n\n[00:01] Me: hi\n</details>\n";
         fs::write(root.join("1/notes.md"), text).unwrap();

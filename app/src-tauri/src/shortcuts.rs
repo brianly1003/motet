@@ -3,7 +3,7 @@ use crate::{
     controller::{Action, Controller},
     desktop::dispatch,
 };
-use motet_core::events::{CompanionSize, SessionState};
+use motetto_core::events::{CompanionSize, SessionState};
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -27,7 +27,7 @@ fn register(
                 let key = key.clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     if let Err(error) = handle(&app, &key) {
-                        let _ = app.emit("motet://notice", error);
+                        let _ = app.emit("motetto://notice", error);
                     }
                 });
             })
@@ -99,5 +99,5 @@ pub fn open_notes(app: &tauri::AppHandle, jot: bool) {
     if let Some(window) = app.get_webview_window("companion") {
         let _ = window.set_focus();
     }
-    let _ = app.emit("motet://open-notes", if jot { "jot" } else { "notes" });
+    let _ = app.emit("motetto://open-notes", if jot { "jot" } else { "notes" });
 }

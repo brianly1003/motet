@@ -2247,12 +2247,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "motet-app"
+name = "motetto-app"
 version = "0.1.0"
 dependencies = [
  "block2",
  "hound",
- "motet-core",
+ "motetto-core",
  "objc2",
  "objc2-foundation",
  "serde",
@@ -2266,16 +2266,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "motet-cli"
+name = "motetto-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
  "hound",
- "motet-core",
+ "motetto-core",
 ]
 
 [[package]]
-name = "motet-core"
+name = "motetto-core"
 version = "0.1.0"
 dependencies = [
  "core-foundation",

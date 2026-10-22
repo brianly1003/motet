@@ -7,7 +7,7 @@ async (page) => {
     let state = { state: { type: 'Recording' }, meeting_id: 'm1', app: 'Microsoft Teams', elapsed_ms: 56000, started_by: { type: 'App', app: 'Microsoft Teams' }, ask_on_call: true, problem: null, more_problems: 0, quit_pending: false, dnd_active: false, onboarding_done: true, sharing: null, ask_off_pending: null, stops_at_ms: null,
       companion: { visible: true, size: 'Sidecar', pinned: true, peeking: false, display_id: '' } };
     window.calls = [];
-    window.fixtureState = value => { state = { ...state, ...value }; callbacks[listeners['motet://event']]?.({ payload: { type: 'StateChanged', ...state } }); };
+    window.fixtureState = value => { state = { ...state, ...value }; callbacks[listeners['motetto://event']]?.({ payload: { type: 'StateChanged', ...state } }); };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
     window.__TAURI_INTERNALS__ = {
       metadata: { currentWindow: { label: 'companion' }, currentWebview: { windowLabel: 'companion', label: 'companion' } },
@@ -67,7 +67,7 @@ async (page) => {
   const mock = await page.context().newPage();
   await mock.route('https://**/*', r=>r.abort());
   await mock.setViewportSize({width:1400,height:1000});
-  await mock.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await mock.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await mock.getByRole('button',{name:'macOS',exact:true}).click();
   await mock.getByRole('button',{name:'During a call',exact:true}).click();
   await mock.locator('#caption').click();

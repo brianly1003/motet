@@ -95,7 +95,7 @@ export function RecordingPage({ session: { state, gaps, pending, act }, onToast 
         <JumpToNow show={follow.behind} onJump={follow.jump}/>
       </>}
     </div>
-    <p className="tip recfoot">{stopped ? "Resume keeps it one meeting." : paused ? "Paused time isn't recorded or transcribed. Motet reminds you if a pause runs past 15 minutes." : "After you stop, the transcript and notes are written on this computer. You can close this window; recording continues."}</p>
+    <p className="tip recfoot">{stopped ? "Resume keeps it one meeting." : paused ? "Paused time isn't recorded or transcribed. Motetto reminds you if a pause runs past 15 minutes." : "After you stop, the transcript and notes are written on this computer. You can close this window; recording continues."}</p>
   </>;
 }
 

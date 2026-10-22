@@ -8,7 +8,7 @@ use std::process::Command;
 #[test]
 fn local_host_and_empty_vad_survive_conflicting_shell_settings() {
     let dir = std::env::temp_dir().join(format!(
-        "motet-process-{}-{}",
+        "motetto-process-{}-{}",
         std::process::id(),
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
     ));
@@ -50,7 +50,7 @@ fn local_host_and_empty_vad_survive_conflicting_shell_settings() {
             format!("WHISPER_MODEL=fake.bin\n{vad}OLLAMA_MODEL=test\nFIX_MODEL=test\nSUMMARY_CHUNK_CHARS=24000\n"),
         ).unwrap();
         fs::write(dir.join("ollama-calls"), "").unwrap();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_motet"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_motetto"));
         command
             .args(["run", "--file", "call.wav"])
             .current_dir(&dir)

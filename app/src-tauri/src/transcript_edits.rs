@@ -96,7 +96,7 @@ pub fn save_transcript_line(
 ) -> Result<String, String> {
     let result = crate::library_commands::edit(&app, &id, |root| save(root, &id, index, &text));
     if result.is_ok() {
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
     }
     result
 }
@@ -106,7 +106,7 @@ mod tests {
     use super::*;
     #[test]
     fn edits_only_the_text_and_never_the_heard_file() {
-        let root = std::env::temp_dir().join(format!("motet-transcript-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-transcript-{}", std::process::id()));
         fs::create_dir_all(root.join("1")).unwrap();
         let heard = "[00:16] Me: After studying push beams, I see.\n\n[01:00] Them: Ok: fine\n";
         fs::write(root.join("1/transcript.txt"), heard).unwrap();

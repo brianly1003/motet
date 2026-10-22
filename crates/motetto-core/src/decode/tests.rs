@@ -3,7 +3,7 @@ use super::*;
 fn directory() -> std::path::PathBuf {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let path = std::env::temp_dir().join(format!(
-        "motet-decode-{}-{}",
+        "motetto-decode-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
@@ -116,7 +116,7 @@ fn mixes_channels_and_rejects_invalid_or_same_file() {
 #[test]
 #[ignore = "requires generated media fixtures; run scripts/m2-e2e.sh"]
 fn imported_formats_decode_without_ffmpeg() {
-    let dir = std::path::PathBuf::from(std::env::var("MOTET_TEST_MEDIA").unwrap());
+    let dir = std::path::PathBuf::from(std::env::var("MOTETTO_TEST_MEDIA").unwrap());
     for ext in ["wav", "aiff", "mp3", "m4a", "mp4", "flac"] {
         to_wav(
             &dir.join(format!("speech.{ext}")),

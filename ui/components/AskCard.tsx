@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
-import MotetMark from "@/components/MotetMark";
+import MotettoMark from "@/components/MotettoMark";
 
 /** The Ask card (DESIGN 4.2): a detected call asks; nothing records until Record. Rust fades it to the Pill after 20 s. */
 export function AskCard({ app, callId }: { app: string; callId: string }) {
@@ -33,7 +33,7 @@ export function AskCard({ app, callId }: { app: string; callId: string }) {
     onMouseEnter={() => hold(true)} onMouseLeave={() => hold(false)}
     onKeyDown={event => { if (event.key === "Escape" && menu) { event.stopPropagation(); setMenu(false); } }}>
     <button type="button" className="x" aria-label={s.askClose} title={s.askNotThisCall} onClick={() => run(() => ipc.answerAsk(callId, false))}>✕</button>
-    <div className="ic"><MotetMark className="mark"/></div>
+    <div className="ic"><MotettoMark className="mark"/></div>
     <div><b>{s.askTitle.replace("{App}", app)}</b><p>{notice || s.askBody}</p></div>
     <div className="split" ref={split}>
       <button type="button" className="primary" onClick={() => run(() => ipc.answerAsk(callId, true))}>{s.askRecord}</button>

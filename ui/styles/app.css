@@ -1,4 +1,4 @@
-/* Main-window dimensions and component styles follow docs/app/motet-app-mockup.html. */
+/* Main-window dimensions and component styles follow docs/app/motetto-app-mockup.html. */
 :root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-doc: "Literata", "Iowan Old Style", Georgia, serif;
@@ -363,7 +363,7 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 
 .meeting-list .list-heading { margin-left: -6px; margin-right: -6px; }
 
-/* Rename, row menus, delete and Recently deleted, from docs/app/motet-app-mockup.html (DESIGN 4.7, 4.8). */
+/* Rename, row menus, delete and Recently deleted, from docs/app/motetto-app-mockup.html (DESIGN 4.7, 4.8). */
 :root { --rec-soft: #fbe1dd; --menu: var(--surface-1); --menu-hover: var(--surface-2); }
 @media (prefers-color-scheme: dark) { :root { --rec-soft: #3d1714; --menu: var(--surface-3); --menu-hover: var(--line-2); } }
 .tedit { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -592,8 +592,8 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
   .findbar output { padding: 0 2px; }
   .findbar button { width: 22px; height: 24px; flex: none; }
 }
-::highlight(motet-find) { background-color: color-mix(in srgb, var(--attention) 25%, transparent); color: var(--ink-1); }
-::highlight(motet-find-current) { background-color: var(--attention); color: var(--surface-1); }
+::highlight(motetto-find) { background-color: color-mix(in srgb, var(--attention) 25%, transparent); color: var(--ink-1); }
+::highlight(motetto-find-current) { background-color: var(--attention); color: var(--surface-1); }
 
 .findbar svg { stroke-width: 1.5; }
 

@@ -8,12 +8,12 @@ pub fn login(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
             .path()
             .home_dir()
             .map_err(|e| e.to_string())?
-            .join("Library/LaunchAgents/local.motet.desktop.plist");
+            .join("Library/LaunchAgents/local.motetto.desktop.plist");
         if enabled {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
             if !exe.to_string_lossy().contains(".app/Contents/MacOS/") {
                 return Err(
-                    "Open at login requires the installed Motet.app. Build and open the app first."
+                    "Open at login requires the installed Motetto.app. Build and open the app first."
                         .into(),
                 );
             }
@@ -26,7 +26,7 @@ pub fn login(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
             std::fs::create_dir_all(file.parent().ok_or("Missing login folder")?)
                 .map_err(|e| e.to_string())?;
             let text = format!(
-                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>local.motet.desktop</string><key>ProgramArguments</key><array><string>{escaped}</string><string>--background</string></array><key>RunAtLoad</key><true/></dict></plist>"
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>local.motetto.desktop</string><key>ProgramArguments</key><array><string>{escaped}</string><string>--background</string></array><key>RunAtLoad</key><true/></dict></plist>"
             );
             let tmp = file.with_extension("plist.tmp");
             std::fs::write(&tmp, text).map_err(|e| e.to_string())?;

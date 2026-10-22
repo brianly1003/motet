@@ -1,5 +1,5 @@
 //! Desktop session actor: one ordered command stream, independent of capture and model work.
-use motet_core::{
+use motetto_core::{
     events::*,
     session::{self, Effect, Input, Session},
     watch::WatchEvent,
@@ -117,7 +117,7 @@ impl Controller {
         let state = Arc::new(Mutex::new(AppState::default()));
         let shared = state.clone();
         std::thread::Builder::new()
-            .name("motet-session".into())
+            .name("motetto-session".into())
             .spawn(move || {
                 let mut engine = Engine::new(host, busy, shared);
                 engine.clock = Some(origin);
@@ -262,7 +262,7 @@ impl<H: Host> Engine<H> {
     }
     fn action(&mut self, action: Action, now: u64) -> Result<(), String> {
         if self.exiting {
-            return Err("Motet is shutting down".into());
+            return Err("Motetto is shutting down".into());
         }
         // Record now while asking is the answer to the question (guardrail 2): record that call.
         let action = match (action, &self.session.app.state) {
@@ -360,7 +360,7 @@ impl<H: Host> Engine<H> {
             Action::RequestQuit => {
                 if self.busy.load(Ordering::SeqCst) && !self.owns_busy {
                     return Err(
-                        "An import is running. Motet must stay open until it finishes.".into(),
+                        "An import is running. Motetto must stay open until it finishes.".into(),
                     );
                 }
                 Command::RequestQuit
@@ -433,7 +433,7 @@ impl<H: Host> Engine<H> {
                     match self.host.readiness(false) {
                         Ok(readiness) => self.apply(Command::ReadinessChanged(readiness), now),
                         Err(e) => {
-                            eprintln!("Motet: not asking about the {app} call: {e}");
+                            eprintln!("Motetto: not asking about the {app} call: {e}");
                             return;
                         }
                     }
@@ -535,7 +535,7 @@ impl<H: Host> Engine<H> {
                 }
                 Effect::NotifyProblem { .. } => {
                     self.host
-                        .notice("Recording could not start. Check the problem shown in Motet.");
+                        .notice("Recording could not start. Check the problem shown in Motetto.");
                     Ok(())
                 }
                 Effect::CantRecord { problem } => {
@@ -627,7 +627,7 @@ fn cant_record(problem: &Problem) -> String {
         }
         Problem::ModelMissing { .. } => "The speech model is missing.".into(),
         Problem::DiskFull | Problem::DiskLow { .. } => "The disk is full.".into(),
-        _ => "Check the problem shown in Motet.".into(),
+        _ => "Check the problem shown in Motetto.".into(),
     }
 }
 fn timestamp() -> String {

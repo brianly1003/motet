@@ -40,11 +40,11 @@ export default function SettingsPage(){
   useEffect(()=>{
     const requested=new URLSearchParams(location.search).get('tab');
     if(requested){const match=TABS.find(t=>t.toLowerCase()===requested);if(match)setTab(match);}
-    if(!ipc.desktopAvailable()){setError('Open Settings in the Motet desktop app.');return;}
+    if(!ipc.desktopAvailable()){setError('Open Settings in the Motetto desktop app.');return;}
     let active=true;const off:Array<()=>void>=[];
     void refresh().catch(e=>setError(String(e)));
     void ipc.about().then(setInfo).catch(e=>setError(String(e)));
-    Promise.all([ipc.subscribe('motet://settings-changed',()=>{if(!saving.current)void refresh().catch(e=>setError(String(e)));}),ipc.onSettingsTab(value=>{const match=TABS.find(t=>t.toLowerCase()===value);if(match)setTab(match);})]).then(callbacks=>{if(active)off.push(...callbacks);else callbacks.forEach(fn=>fn());}).catch(e=>setError(String(e)));
+    Promise.all([ipc.subscribe('motetto://settings-changed',()=>{if(!saving.current)void refresh().catch(e=>setError(String(e)));}),ipc.onSettingsTab(value=>{const match=TABS.find(t=>t.toLowerCase()===value);if(match)setTab(match);})]).then(callbacks=>{if(active)off.push(...callbacks);else callbacks.forEach(fn=>fn());}).catch(e=>setError(String(e)));
     return()=>{active=false;off.forEach(fn=>fn());clearTimeout(timer.current);};
   },[]);
   useEffect(()=>{
@@ -74,8 +74,8 @@ export default function SettingsPage(){
       {error&&<Alert variant="danger" className="settings-error" title="Settings need attention" role="alert">{error}</Alert>}
       {!settings?<p role="status">{error?'Settings are unavailable.':'Loading settings…'}</p>:<fieldset disabled={pending} className="settings-fields">
       {tab==='General'&&<>
-        <Row label="Notes folder" help="Each meeting is a folder with notes.md, transcript.txt and the two audio tracks."><div className="field"><input type="text" readOnly value={settings.notes_folder} aria-label="Notes folder" style={{width:300}}/><button className="btn sm" onClick={()=>void action(()=>ipc.moveNotesFolder(),'Folder moved','Copying and verifying meetings…')}>Choose…</button></div><div className="help">Choose an empty folder. Motet verifies the copy and reopens there. Original files are kept for recovery.</div></Row>
-        <Row label="Open at login" help="Motet waits quietly in the menu bar. Takes effect at the next login."><Switch label="Open at login" on={settings.open_at_login} change={value=>void save({open_at_login:value})}/></Row>
+        <Row label="Notes folder" help="Each meeting is a folder with notes.md, transcript.txt and the two audio tracks."><div className="field"><input type="text" readOnly value={settings.notes_folder} aria-label="Notes folder" style={{width:300}}/><button className="btn sm" onClick={()=>void action(()=>ipc.moveNotesFolder(),'Folder moved','Copying and verifying meetings…')}>Choose…</button></div><div className="help">Choose an empty folder. Motetto verifies the copy and reopens there. Original files are kept for recovery.</div></Row>
+        <Row label="Open at login" help="Motetto waits quietly in the menu bar. Takes effect at the next login."><Switch label="Open at login" on={settings.open_at_login} change={value=>void save({open_at_login:value})}/></Row>
         <Row label="Notes language"><div className="field"><select aria-label="Notes language" value={settings.notes_language} onChange={e=>void save({notes_language:e.target.value})}><option value="same_as_call">Same as the call</option>{LANGUAGES.map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div></Row>
         <Row label="During a call" help="The companion is always visible while recording; it can shrink to a dot or the screen edge, never disappear."><div className="field"><select aria-label="Companion size when a recording starts" value={settings.companion.default_size} onChange={e=>void save({companion:{...settings.companion,default_size:e.target.value}})}><option value="pill">Pill</option><option value="dot">Dot</option></select><Switch label="Show the latest line in the Pill" on={settings.companion.captions} change={captions=>void save({companion:{...settings.companion,captions}})}/><span>Show the latest line</span></div></Row>
         <Row label="Sounds" help="A short chime when a recording starts and stops."><Switch label="Start and stop sounds" on={settings.sounds} change={sounds=>void save({sounds})}/></Row>
@@ -83,13 +83,13 @@ export default function SettingsPage(){
         <Row label="First run" help="First-run setup and model downloads are planned in M5 and are not available in this build."><button className="btn sm" disabled>Run setup again</button></Row>
       </>}
       {tab==='Audio'&&(()=>{
-        // The microphone (DESIGN 4.15): the level moves only while Motet records; it never opens the mic just to show it.
+        // The microphone (DESIGN 4.15): the level moves only while Motetto records; it never opens the mic just to show it.
         const r=mic.report,m=r?.active,system=r?.mics.find(x=>x.is_default),mac=info?.platform!=='windows';
         const sound=<button className="btn sm" onClick={()=>void ipc.openSoundSettings().catch(e=>setError(String(e)))}>Open Sound settings…</button>;
-        if(!mac)return <Row label="Microphone" help="Motet records the default microphone. Choose it in Windows sound settings.">{sound}</Row>;
+        if(!mac)return <Row label="Microphone" help="Motetto records the default microphone. Choose it in Windows sound settings.">{sound}</Row>;
         if(!r)return <p role="status">Loading microphones…</p>;
         return <>
-          <Row label="Microphone" help={m?`Motet records ${m.name} (${micSub(m)}). Your call app keeps its own choice; pick the same mic there if you want both to match. The level moves while Motet records.`:'No microphone is connected.'}>
+          <Row label="Microphone" help={m?`Motetto records ${m.name} (${micSub(m)}). Your call app keeps its own choice; pick the same mic there if you want both to match. The level moves while Motetto records.`:'No microphone is connected.'}>
             <div className="field"><select id="mic-select" aria-label="Microphone" style={{width:320}} value={r.chosen??''} onChange={e=>void pickMic(r,e.target.value||null,micSaved,false).catch(err=>setError(String(err)))}>
               <option value="">System default ({system?.name??'none'})</option>
               {r.chosen&&!r.mics.some(x=>x.id===r.chosen)&&<option value={r.chosen}>Not connected</option>}
@@ -106,7 +106,7 @@ export default function SettingsPage(){
         </>;
       })()}
       {tab==='Calls'&&<>
-        <Row label="Ask when a call starts" help="Motet asks every time. Nothing is recorded until you choose Record. Turn this off to record only with Record now."><Switch label="Ask when a call starts" on={settings.ask_on_call} change={on=>void action(()=>ipc.setAskOnCall(on))}/></Row>
+        <Row label="Ask when a call starts" help="Motetto asks every time. Nothing is recorded until you choose Record. Turn this off to record only with Record now."><Switch label="Ask when a call starts" on={settings.ask_on_call} change={on=>void action(()=>ipc.setAskOnCall(on))}/></Row>
         <Row label="Call apps" help="Voice messages don't count: messaging apps must also play sound for 5 seconds."><div className="tbl"><table><thead><tr><th>App</th><th>Counts as a call when</th><th>When a call starts</th></tr></thead><tbody>{apps.filter(app=>info?.platform!=='windows'||app.app_id!=='facetime').sort((a,b)=>(CALL_ORDER.includes(a.app_id)?CALL_ORDER.indexOf(a.app_id):99)-(CALL_ORDER.includes(b.app_id)?CALL_ORDER.indexOf(b.app_id):99)).map(app=><tr key={app.app_id}><td>{app.app_id==='browser'?'Other browser calls':app.app_id==='slack'?'Slack huddles':app.name}</td><td>{app.app_id==='meet'?'a browser window titled "Meet"':app.single_signal?'it uses the mic':app.app_id==='browser'?'a browser uses the mic and plays sound':'it uses the mic and plays sound'}</td><td><select aria-label={`When ${app.name} starts a call`} value={app.mode} onChange={e=>void action(()=>ipc.setAppMode(app.app_id,e.target.value as 'ask'|'off'))}><option value="ask">Ask</option><option value="off">Off</option></select></td></tr>)}</tbody></table></div><div className="field settings-add"><button className="btn sm" onClick={()=>void action(async()=>setRecent(await ipc.recentMicApps()),'')}>Add app…</button><span className="help">Lists apps that used the microphone this week.</span></div>{recent&&<div className="note">{recent.length?recent.map(id=><div className="field" key={id}><span>{id}</span><button className="btn sm" onClick={()=>void action(async()=>{await ipc.addApp(id);setRecent(null);})}>Add {id}</button></div>):<span>No new microphone apps have been seen this week.</span>}<button className="btn sm ghost" onClick={()=>setRecent(null)}>Cancel</button></div>}</Row>
         <Row label="Stop when the mic is quiet for"><div className="field">{number('Idle seconds','idle_stop_s',10,300)}<span>seconds</span></div></Row>
         <Row label="Discard recordings shorter than" help="0 keeps every recording."><div className="field">{number('Discard seconds','discard_short_s',0,120)}<span>seconds</span></div></Row>
@@ -119,21 +119,21 @@ export default function SettingsPage(){
         <div className="note">{speed===null?'No speed test run in this window.':`Last speed test: ${speed.toFixed(2)}× real time. ${speed<=.5?'This speech model keeps up live.':'This speech model may fall behind with two tracks.'}`} <button className="btn sm" onClick={()=>void action(async()=>setSpeed(await ipc.runSpeedTest()),'Speed test complete','Running the speed test…')}>Run the speed test again</button><div className="help">Uses a generated local English sample, without recording. Model downloads and tier setup are not available in this build.</div></div>
       </>}
       {tab==='Spellings'&&<>
-        <p className="settings-intro">Names and terms the models can&apos;t know. Add spellings here for future meetings. Motet uses up to 40 names as data for local speech and notes models.</p>
+        <p className="settings-intro">Names and terms the models can&apos;t know. Add spellings here for future meetings. Motetto uses up to 40 names as data for local speech and notes models.</p>
         <div className="tbl"><table><thead><tr><th>Spelling</th><th>Often heard as</th><th>From</th><th>Used in</th><th/></tr></thead><tbody>{settings.spellings.map((entry,index)=><tr key={index}><td><b>{entry.spelling}</b></td><td>{entry.heard||'—'}</td><td><span className="chip plain">Added by you</span></td><td className="mono">Not tracked</td><td><button className="btn sm ghost" aria-label={`Remove ${entry.spelling}`} onClick={()=>void save({spellings:settings.spellings.filter((_,i)=>i!==index)})}>Remove</button></td></tr>)}{!settings.spellings.length&&<tr><td colSpan={5}>No spellings yet.</td></tr>}</tbody></table></div>
         {spelling===null?<div className="field"><button className="btn sm" onClick={()=>{setSpelling('');setHeard('');}}>Add spelling</button></div>:<div className="field"><input autoFocus aria-label="Spelling" maxLength={40} value={spelling} onChange={e=>setSpelling(e.target.value)}/><input aria-label="Often heard as" maxLength={80} placeholder="Often heard as" value={heard} onChange={e=>setHeard(e.target.value)}/><button className="btn sm" disabled={!spelling.trim()} onClick={()=>void action(async()=>{await ipc.saveSettings({...settings,spellings:[...settings.spellings,{spelling:spelling.trim(),heard:heard.trim()}]});setSpelling(null);})}>Add</button><button className="btn sm ghost" onClick={()=>setSpelling(null)}>Cancel</button></div>}
       </>}
       {tab==='Privacy'&&<>
         <div className="note"><b>Everything stays on this {info?.platform==='windows'?'PC':'Mac'}.</b> No account, no analytics, no crash reports. The network is used only to download models when you ask.</div>
-        <Row label="Keep audio" help="Notes and transcripts are kept until you delete them. Retention runs after notes finish and when Motet opens."><div className="field"><select aria-label="Keep audio" value={settings.keep_audio} onChange={e=>void save({keep_audio:e.target.value})}><option value="30_days">30 days after the notes</option><option value="forever">Until I delete the meeting</option><option value="after_notes">Delete right after the notes</option></select></div></Row>
-        <Row label="Recording reminder" help={'Shows "Tell the people on the call" when Motet asks to record.'}><Switch label="Recording reminder" on={settings.recording_reminder} change={recording_reminder=>void save({recording_reminder})}/></Row>
+        <Row label="Keep audio" help="Notes and transcripts are kept until you delete them. Retention runs after notes finish and when Motetto opens."><div className="field"><select aria-label="Keep audio" value={settings.keep_audio} onChange={e=>void save({keep_audio:e.target.value})}><option value="30_days">30 days after the notes</option><option value="forever">Until I delete the meeting</option><option value="after_notes">Delete right after the notes</option></select></div></Row>
+        <Row label="Recording reminder" help={'Shows "Tell the people on the call" when Motetto asks to record.'}><Switch label="Recording reminder" on={settings.recording_reminder} change={recording_reminder=>void save({recording_reminder})}/></Row>
         <Row label="Storage"><dl className="kv settings-storage"><dt>Meetings</dt><dd>{storage?.meetings??'…'}</dd><dt>Audio</dt><dd>{storage?fileSize(storage.audio_bytes):'…'}</dd><dt>Notes and transcripts</dt><dd>{storage?fileSize(storage.notes_bytes):'…'}</dd><dt>Free on disk</dt><dd>{storage?fileSize(storage.free_bytes):'…'}</dd></dl></Row>
         <Row label="Delete everything"><div className="field">{wipe?<><span>Delete {storage?.meetings??'all'} meetings and {storage?fileSize(storage.audio_bytes):'all'} of audio? This can&apos;t be undone. Recently deleted meetings are included.</span><button className="btn sm rec" onClick={()=>void action(async()=>{await ipc.deleteAllMeetings();setStorage(await ipc.storageSummary());setWipe(false);},'All meetings deleted')}>Delete all</button><button className="btn sm ghost" onClick={()=>setWipe(false)}>Cancel</button></>:<button className="btn sm" disabled={!storage?.meetings} onClick={()=>setWipe(true)}>Delete all meetings…</button>}</div></Row>
         <NotificationPermission/>
       </>}
       {tab==='About'&&<>
-        <Row label="Version"><span className="mono">Motet {info?.version??'…'}</span></Row>
-        <Row label="Updates" help="A public releases page has not been configured for this local build. Motet never checks on its own."><button className="btn sm" disabled>Check for updates</button></Row>
+        <Row label="Version"><span className="mono">Motetto {info?.version??'…'}</span></Row>
+        <Row label="Updates" help="A public releases page has not been configured for this local build. Motetto never checks on its own."><button className="btn sm" disabled>Check for updates</button></Row>
         <Row label="Built with" help="Model installers and bundled full licence texts are planned for distribution in M9."><span>{info?.licences??'…'}</span></Row>
         <Row label="Logs" help="Logs never contain transcript text."><button className="btn sm" onClick={()=>void action(ipc.openLogsFolder,'Logs folder opened')}>Show logs folder</button></Row>
       </>}

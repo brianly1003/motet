@@ -48,7 +48,7 @@ pub struct AppState {
     pub ask_off_pending: Option<AskOffPending>,
     /// While the call's app has let go of the mic: the recording time (`elapsed_ms`) at which it
     /// stops by itself, so the Pill can count down. None while someone is talking or after Keep
-    /// recording (owner, 2026-10-20: "the call ended but Motet still records").
+    /// recording (owner, 2026-10-20: "the call ended but Motetto still records").
     #[ts(type = "number | null")]
     pub stops_at_ms: Option<u64>,
     /// After Discard in the Stopped Pill: the meeting went to Recently deleted; the Pill offers

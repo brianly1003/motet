@@ -1,5 +1,5 @@
 //! Saved desktop preferences, separate from the CLI environment configuration.
-use motet_core::{
+use motetto_core::{
     events::Mode,
     watch::{self, AppRule},
 };
@@ -49,7 +49,7 @@ pub struct Settings {
     pub part_chars: u32,
     pub keep_audio: String,
     pub recording_reminder: bool,
-    /// The microphone Motet records (a `motet_core::mics::Mic` id); None follows the system.
+    /// The microphone Motetto records (a `motetto_core::mics::Mic` id); None follows the system.
     pub mic_device: Option<String>,
     pub sounds: bool,
     pub companion: Companion,
@@ -68,10 +68,10 @@ impl Default for Settings {
             apps: Vec::new(),
             idle_stop_s: 30,
             discard_short_s: 20,
-            speech_model: motet_core::config::var("WHISPER_MODEL").unwrap_or_default(),
-            notes_model: motet_core::config::var("OLLAMA_MODEL").unwrap_or_default(),
+            speech_model: motetto_core::config::var("WHISPER_MODEL").unwrap_or_default(),
+            notes_model: motetto_core::config::var("OLLAMA_MODEL").unwrap_or_default(),
             call_language: "detect".into(),
-            part_chars: motet_core::config::var("SUMMARY_CHUNK_CHARS")
+            part_chars: motetto_core::config::var("SUMMARY_CHUNK_CHARS")
                 .and_then(|n| n.parse().ok())
                 .filter(|n| (8000..=48000).contains(n))
                 .unwrap_or(24000),
@@ -80,7 +80,7 @@ impl Default for Settings {
             mic_device: None,
             sounds: true,
             companion: Companion::default(),
-            spellings: motet_core::config::terms()
+            spellings: motetto_core::config::terms()
                 .map(|terms| {
                     terms
                         .split(", ")
@@ -244,7 +244,7 @@ pub fn remember_apps(app: &tauri::AppHandle, snapshot: &watch::Snapshot) {
         for process in &snapshot.processes {
             if process.input
                 && process.pid != std::process::id()
-                && process.bundle_id != "local.motet.desktop"
+                && process.bundle_id != "local.motetto.desktop"
                 && process.bundle_id.len() <= 255
                 && (recent.contains_key(&process.bundle_id) || recent.len() < 500)
             {
@@ -339,7 +339,7 @@ pub async fn save_settings(app: tauri::AppHandle, settings: Settings) -> Result<
         if result.is_ok() {
             crate::tray::invalidate(&app);
             crate::desktop::refresh_tray(&app);
-            let _ = app.emit("motet://settings-changed", ());
+            let _ = app.emit("motetto://settings-changed", ());
         }
         result
     })
@@ -401,7 +401,7 @@ pub fn add_app(app: tauri::AppHandle, app_id: String) -> Result<Settings, String
             mode: Mode::Ask,
         })
     })?;
-    let _ = app.emit("motet://settings-changed", ());
+    let _ = app.emit("motetto://settings-changed", ());
     Ok(saved)
 }
 #[tauri::command]
@@ -428,7 +428,7 @@ pub fn open(app: &tauri::AppHandle, tab: &str) -> Result<(), String> {
         window.unminimize().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         window
-            .emit("motet://settings-tab", tab)
+            .emit("motetto://settings-tab", tab)
             .map_err(|e| e.to_string())?;
     } else {
         tauri::WebviewWindowBuilder::new(
@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn old_settings_preserve_audio_and_failed_saves_preserve_memory() {
         let root =
-            std::env::temp_dir().join(format!("motet-settings-write-{}", std::process::id()));
+            std::env::temp_dir().join(format!("motetto-settings-write-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("settings.json"), r#"{"ask_on_call":false}"#).unwrap();

@@ -10,7 +10,7 @@ pub struct Models {
     warning: Option<String>,
 }
 pub fn notes_models() -> Result<Vec<String>, String> {
-    let output = motet_core::tools::command("ollama")
+    let output = motetto_core::tools::command("ollama")
         .env("OLLAMA_HOST", "http://127.0.0.1:11434")
         .arg("list")
         .output()
@@ -115,7 +115,7 @@ pub async fn run_speed_test(app: tauri::AppHandle) -> Result<f64, String> {
         library
             .busy
             .store(false, std::sync::atomic::Ordering::SeqCst);
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
         result
     })
     .await
@@ -125,7 +125,7 @@ fn speed_test() -> Result<f64, String> {
     #[cfg(target_os = "macos")]
     {
         let dir = std::env::temp_dir().join(format!(
-            "motet-speed-{}-{}",
+            "motetto-speed-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -140,7 +140,7 @@ fn speed_test() -> Result<f64, String> {
                 return Err("Couldn't generate the local test sample.".into());
             }
             let wav = dir.join("sample.wav");
-            motet_core::decode_audio(&sample, &wav).map_err(|e| e.to_string())?;
+            motetto_core::decode_audio(&sample, &wav).map_err(|e| e.to_string())?;
             let mut reader = hound::WavReader::open(wav).map_err(|e| e.to_string())?;
             let audio = reader
                 .samples::<f32>()

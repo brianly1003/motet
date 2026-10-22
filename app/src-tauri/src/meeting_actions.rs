@@ -1,6 +1,6 @@
 //! Local document actions. Deleted meetings remain recoverable; regeneration preserves notes.
 use crate::{library, library_commands::Library};
-use motet_core::events::{AppState, Event, SessionState};
+use motetto_core::events::{AppState, Event, SessionState};
 use std::{fs, path::Path, sync::atomic::Ordering};
 use tauri::{Emitter, Manager};
 
@@ -79,7 +79,7 @@ pub fn rename_meeting(
     title: String,
 ) -> Result<library::MeetingSummary, String> {
     let summary = crate::bookmarks::rename(&app.state::<Library>().root, &id, &title)?;
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     Ok(summary)
 }
 
@@ -90,7 +90,7 @@ pub fn set_locked(
     locked: bool,
 ) -> Result<library::MeetingSummary, String> {
     let summary = crate::bookmarks::set_locked(&app.state::<Library>().root, &id, locked)?;
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     Ok(summary)
 }
 
@@ -153,7 +153,7 @@ pub async fn meeting_action(
         .await
         .map_err(|e| e.to_string())
         .and_then(|r| r);
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
         return result;
     }
     if state.busy.swap(true, Ordering::SeqCst) {
@@ -168,7 +168,7 @@ pub async fn meeting_action(
         import: false,
         transcribe: action == "retranscribe",
     }));
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     let worker = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let job = if action == "retranscribe" {
@@ -178,7 +178,7 @@ pub async fn meeting_action(
         };
         job(&root, &id, &|stage| {
             let _ = worker.emit(
-                "motet://event",
+                "motetto://event",
                 Event::Stage {
                     meeting_id: id.clone(),
                     stage,
@@ -194,7 +194,7 @@ pub async fn meeting_action(
     state.set_job(None);
     state.importing.store(false, Ordering::SeqCst);
     state.busy.store(false, Ordering::SeqCst);
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     if state.quit_pending.load(Ordering::SeqCst) {
         state.allow_exit.store(true, Ordering::SeqCst);
         app.exit(0);
@@ -223,7 +223,7 @@ mod tests {
     }
     #[test]
     fn permanent_delete_only_removes_deleted_meetings() {
-        let root = std::env::temp_dir().join(format!("motet-purge-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-purge-{}", std::process::id()));
         fs::create_dir_all(root.join("123")).unwrap();
         fs::write(root.join("123/notes.md"), "Keep active meeting").unwrap();
         fs::create_dir_all(root.join(".deleted/456/audio")).unwrap();
@@ -246,7 +246,7 @@ mod tests {
     }
     #[test]
     fn delete_restore_preserves_files_and_refuses_collisions_and_traversal() {
-        let root = std::env::temp_dir().join(format!("motet-actions-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-actions-{}", std::process::id()));
         fs::create_dir_all(root.join("123")).unwrap();
         fs::write(root.join("123/notes.md"), "Keep this").unwrap();
         move_meeting(&root, "123", false).unwrap();

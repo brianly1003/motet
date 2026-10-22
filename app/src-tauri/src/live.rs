@@ -1,5 +1,5 @@
 //! Live preview reads flushed audio on a background thread; capture never waits for the model.
-use motet_core::{events::Stop, slice};
+use motetto_core::{events::Stop, slice};
 use std::{
     fs,
     path::Path,
@@ -10,7 +10,7 @@ use tauri::Manager;
 
 #[derive(Default)]
 pub struct State {
-    pub meters: motet_core::mics::Meters,
+    pub meters: motetto_core::mics::Meters,
     transcript: Mutex<(String, String, String)>,
 }
 #[tauri::command]
@@ -52,7 +52,7 @@ pub fn start(
         text.1.clone()
     };
     std::thread::Builder::new()
-        .name("motet-live-transcript".into())
+        .name("motetto-live-transcript".into())
         .spawn(move || {
             static PREVIEW: Mutex<()> = Mutex::new(());
             let guard = loop {
@@ -72,7 +72,7 @@ pub fn start(
                     return;
                 }
             };
-            let vad = motet_core::config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty());
+            let vad = motetto_core::config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty());
             let mut cursor = 0;
             let mut recent = Vec::new();
             while !stop.load(Ordering::SeqCst) {
@@ -116,7 +116,7 @@ pub fn start(
                             (*start, *end, text.as_str(), *side == "mic")
                         })
                         .collect();
-                    let duplicates = motet_core::echo::duplicates(&rows);
+                    let duplicates = motetto_core::echo::duplicates(&rows);
                     let text = recent
                         .iter()
                         .zip(duplicates)
@@ -188,14 +188,14 @@ fn transcribe_slice(
         let file = directory.join(format!("preview.{side}.wav"));
         slice::write(Path::new(&format!("{base}.{side}.wav")), &file, cursor, end)?;
         let decoded = directory.join(format!("preview.{side}.16k.wav"));
-        motet_core::decode_audio(&file, &decoded)?;
+        motetto_core::decode_audio(&file, &decoded)?;
         let samples = hound::WavReader::open(decoded)?
             .samples::<f32>()
             .collect::<Result<Vec<_>, _>>()?;
         // a peak check; a live mic's room noise passes it (measured 2026-10-19), but
         // skipping by RMS level saved no request on a real call. Needs a VAD to do better.
         if samples.iter().any(|sample| sample.abs() > 0.005) {
-            let prompt = motet_core::config::terms();
+            let prompt = motetto_core::config::terms();
             for segment in server.transcribe(&samples, offset + cursor, prompt.as_deref(), stop)? {
                 segments.push((segment.start_ms, segment.end_ms, side, segment.text));
             }
@@ -277,7 +277,7 @@ mod tests {
     }
     #[test]
     fn preview_ends_in_a_shared_pause_and_catches_up_without_skipping_audio() {
-        let root = std::env::temp_dir().join(format!("motet-live-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-live-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let base = root.join("call").to_string_lossy().into_owned();
         // 100 ms per character. Me pauses alone at 4.0-4.5 s; both pause at 6.0-6.5 s, so that
@@ -306,13 +306,13 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// Replays `MOTET_MEASURE_BASE`.{mic,system}.wav on a clock that runs at audio speed and
+    /// Replays `MOTETTO_MEASURE_BASE`.{mic,system}.wav on a clock that runs at audio speed and
     /// waits for each real request, then prints the slices, caption delay and one line per
     /// caption: `<start ms> +<delay ms> <track>:<text>`. See docs/app/live-captions-runbook.md.
     #[test]
-    #[ignore = "needs whisper-server, WHISPER_MODEL and MOTET_MEASURE_BASE"]
+    #[ignore = "needs whisper-server, WHISPER_MODEL and MOTETTO_MEASURE_BASE"]
     fn measure_caption_delay() {
-        let base = std::env::var("MOTET_MEASURE_BASE").unwrap();
+        let base = std::env::var("MOTETTO_MEASURE_BASE").unwrap();
         let total = ["mic", "system"]
             .map(|side| {
                 let reader = hound::WavReader::open(format!("{base}.{side}.wav")).unwrap();
@@ -322,12 +322,14 @@ mod tests {
             .min()
             .unwrap();
         let stop = Stop::default();
-        let directory = std::env::temp_dir().join(format!("motet-measure-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("motetto-measure-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let mut server = crate::speech::Server::start(&stop).unwrap();
-        // MOTET_MEASURE_VAD=0 measures the energy rule alone.
-        let vad = motet_core::config::var("WHISPER_VAD_MODEL")
-            .filter(|v| !v.is_empty() && std::env::var("MOTET_MEASURE_VAD").as_deref() != Ok("0"));
+        // MOTETTO_MEASURE_VAD=0 measures the energy rule alone.
+        let vad = motetto_core::config::var("WHISPER_VAD_MODEL").filter(|v| {
+            !v.is_empty() && std::env::var("MOTETTO_MEASURE_VAD").as_deref() != Ok("0")
+        });
         let (mut clock, mut cursor, mut slices, mut busy) = (0_u64, 0_u64, 0, 0_u64);
         let mut delays = Vec::new();
         let mut lines = String::new();

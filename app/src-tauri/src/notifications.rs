@@ -1,6 +1,6 @@
 //! Local OS notices with persistent in-app fallbacks and meeting-scoped actions.
 use crate::{controller::Action as SessionAction, desktop};
-use motet_core::events::{AppState, Event, Problem, SessionState};
+use motetto_core::events::{AppState, Event, Problem, SessionState};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
@@ -36,7 +36,7 @@ pub fn setup(app: &tauri::AppHandle) -> Result<(), String> {
                     .and_then(|n| n.extra().get("meeting_id"))
                     .and_then(|v| v.as_str())
                 {
-                    let _ = handle.emit("motet://open-meeting", id);
+                    let _ = handle.emit("motetto://open-meeting", id);
                 }
             }
         })
@@ -53,7 +53,7 @@ pub fn send(app: &tauri::AppHandle, title: &str, body: &str) {
 pub fn quiet(app: &tauri::AppHandle, title: &str, body: &str) -> bool {
     let result = app.notification().builder().title(title).body(body).show();
     if let Err(error) = &result {
-        eprintln!("Motet notification: {error}");
+        eprintln!("Motetto notification: {error}");
     }
     result.is_ok()
 }
@@ -67,11 +67,11 @@ pub fn event(app: &tauri::AppHandle, event: &Event) {
                 .notification()
                 .builder()
                 .title(title)
-                .body("Your meeting notes are ready. Open Motet to read them.")
+                .body("Your meeting notes are ready. Open Motetto to read them.")
                 .extra("meeting_id", meeting_id)
                 .show()
             {
-                eprintln!("Motet notification: {error}");
+                eprintln!("Motetto notification: {error}");
                 desktop::show(app);
             }
         }
@@ -97,8 +97,8 @@ fn problem(app: &tauri::AppHandle, state: &AppState) {
         if next != *previous && next.is_some() && !blocker {
             send(
                 app,
-                "Motet needs attention",
-                "Open Motet to review the problem and your saved recording.",
+                "Motetto needs attention",
+                "Open Motetto to review the problem and your saved recording.",
             );
             desktop::show(app);
         }

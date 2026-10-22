@@ -24,7 +24,7 @@ md.renderer.rules.text = (tokens, index, _options, env) => {
 };
 // Editable notes: each block carries the notes.md line range it came from ("start,end", end
 // exclusive) so an edit replaces exactly those lines.
-md.core.ruler.push("motet_lines", state => {
+md.core.ruler.push("motetto_lines", state => {
   const offset = state.env?.lineOffset;
   if (offset === undefined) return;
   for (const token of state.tokens) {

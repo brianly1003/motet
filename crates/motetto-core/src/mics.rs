@@ -1,7 +1,7 @@
-//! Microphones for the desktop picker: which inputs exist, which one Motet records, and whether it
-//! clips (owner 2026-10-23, DESIGN 4.15). Motet shows each mic's facts (kind, rate) and lets the
+//! Microphones for the desktop picker: which inputs exist, which one Motetto records, and whether it
+//! clips (owner 2026-10-23, DESIGN 4.15). Motetto shows each mic's facts (kind, rate) and lets the
 //! user choose; it never judges a mic's quality, since it can't rank mics reliably. Clipping is
-//! measured, so it is the one problem Motet names.
+//! measured, so it is the one problem Motetto names.
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, atomic::AtomicU32};
@@ -43,7 +43,7 @@ pub enum MicIssue {
     TooLoud,
 }
 
-/// What the picker shows: the mics to offer, the one Motet records and its problem. Motet never
+/// What the picker shows: the mics to offer, the one Motetto records and its problem. Motetto never
 /// picks a replacement: the user chooses from the list (owner 2026-10-23).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct MicReport {
@@ -95,7 +95,7 @@ pub fn quieter(volume: f32) -> f32 {
     (volume * 0.67).max(0.25)
 }
 
-/// Every input device; empty where Motet can't list them (Windows records the default mic).
+/// Every input device; empty where Motetto can't list them (Windows records the default mic).
 pub fn list() -> Result<Vec<Mic>, String> {
     #[cfg(target_os = "macos")]
     return crate::platform::macos_mics::list();

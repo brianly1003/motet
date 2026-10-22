@@ -1,7 +1,7 @@
 async (page)=>{
  const results=[];
  const ref=await page.context().newPage();await ref.route('https://**/*',r=>r.abort());
- await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+ await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
  await ref.getByRole('button',{name:'macOS',exact:true}).click();await ref.getByRole('button',{name:'After the call',exact:true}).click();
  for(const theme of ['light','dark']){
  const p=await page.context().newPage();p.setDefaultTimeout(7000);await p.emulateMedia({colorScheme:theme});

@@ -5,7 +5,7 @@ async (page) => {
   const p=await page.context().newPage();p.setDefaultTimeout(7000);
   const errors=[];p.on('pageerror',e=>errors.push(e.message));
   const ref=await page.context().newPage();ref.setDefaultTimeout(7000);await ref.route('https://**/*',r=>r.abort());
-  await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await ref.getByRole('button',{name:'macOS',exact:true}).click();await ref.getByRole('button',{name:'After the call',exact:true}).click();
   await ref.evaluate(t=>document.documentElement.dataset.theme=t,theme);
 
@@ -46,19 +46,19 @@ async (page) => {
     if(await p.locator('.docbody').evaluate(e=>e.getBoundingClientRect().top)!==topBefore)throw Error('Opening find consumed vertical space');
     const input=p.getByRole('textbox',{name:'Find in '+tab.toLowerCase(),exact:true});
     await input.fill('FCM');
-    await p.waitForFunction(()=>CSS.highlights.get('motet-find')?.size>1);
-    const count=await p.evaluate(()=>CSS.highlights.get('motet-find').size);
+    await p.waitForFunction(()=>CSS.highlights.get('motetto-find')?.size>1);
+    const count=await p.evaluate(()=>CSS.highlights.get('motetto-find').size);
     if(await p.locator('.findbar output').innerText()!==`${count} matches`)throw Error('Wrong initial count');
     await input.press('Enter');
     if(await p.locator('.findbar output').innerText()!==`1 of ${count}`)throw Error('Enter did not jump to first');
     await input.press('Shift+Enter');
     if(await p.locator('.findbar output').innerText()!==`${count} of ${count}`)throw Error('Previous did not wrap');
-    const rect=await p.evaluate(()=>{const r=[...CSS.highlights.get('motet-find-current')][0].getBoundingClientRect(),b=document.querySelector('.docbody').getBoundingClientRect();return {top:r.top,bottom:r.bottom,min:b.top,max:b.bottom};});
+    const rect=await p.evaluate(()=>{const r=[...CSS.highlights.get('motetto-find-current')][0].getBoundingClientRect(),b=document.querySelector('.docbody').getBoundingClientRect();return {top:r.top,bottom:r.bottom,min:b.top,max:b.bottom};});
     if(rect.top<rect.min||rect.bottom>rect.max)throw Error('Active result not scrolled into view: '+JSON.stringify(rect));
     await p.getByRole('button',{name:'Next match',exact:true}).click();
     if(await p.locator('.findbar output').innerText()!==`1 of ${count}`)throw Error('Next button did not wrap');
     await input.fill('fcm');await input.press('Enter');
-    if(await p.evaluate(()=>CSS.highlights.get('motet-find').size)!==count)throw Error('Case-insensitive search changed count');
+    if(await p.evaluate(()=>CSS.highlights.get('motetto-find').size)!==count)throw Error('Case-insensitive search changed count');
     await p.keyboard.press('Control+f');
     if(!await input.evaluate(e=>e===document.activeElement&&e.selectionEnd===e.value.length&&e.selectionStart===0))throw Error('Ctrl+F did not select query');
     await p.locator('.doctools').screenshot({path:`.playwright-out/find-app-${tab}-${theme}-${width}.png`});
@@ -82,7 +82,7 @@ async (page) => {
     if(!await p.getByRole('button',{name:'Next match',exact:true}).isDisabled())throw Error('No matches still navigable');
     await input.fill('');if(await p.locator('.findbar output').innerText()!=='')throw Error('Empty query should clear');
     await input.fill('FCM');await input.press('Enter');await input.press('Escape');
-    if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Escape left find visible');
+    if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motetto-find')))throw Error('Escape left find visible');
     await p.keyboard.press('Meta+f');
     if(await input.inputValue()!=='')throw Error('Escape retained the search query');
     await input.fill('FCM');await p.getByRole('button',{name:'Close find',exact:true}).click();
@@ -94,17 +94,17 @@ async (page) => {
   }
   await p.keyboard.press('Meta+f');await p.getByRole('textbox',{name:'Find in transcript',exact:true}).fill('FCM');
   await p.getByRole('tab',{name:'Audio',exact:true}).click();
-  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Tab switch left stale highlights');
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motetto-find')))throw Error('Tab switch left stale highlights');
   await p.getByRole('tab',{name:'Notes',exact:true}).click();await p.keyboard.press('Meta+f');
   await p.getByRole('button',{name:'Close find',exact:true}).click();
   if(await p.locator('.findbar').count())throw Error('Close button failed');
   await p.keyboard.press('Meta+f');await p.locator('.findbar input').fill('FCM');
   await p.getByRole('button',{name:/Other meeting/}).first().click();
   await p.getByRole('heading',{name:'Other meeting',exact:true}).waitFor();
-  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Meeting switch left stale search');
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motetto-find')))throw Error('Meeting switch left stale search');
   await p.keyboard.press('Meta+f');if(await p.locator('.findbar input').inputValue()!=='')throw Error('Meeting switch retained query');
   await p.locator('.findbar input').fill('FCM');await p.locator('.homerow').click();
-  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motet-find')))throw Error('Action items left stale search');
+  if(await p.locator('.findbar').count()||await p.evaluate(()=>CSS.highlights.has('motetto-find')))throw Error('Action items left stale search');
   await p.getByRole('button',{name:/Other meeting/}).first().click();await p.keyboard.press('Meta+f');
   if(await p.locator('.findbar input').inputValue()!=='')throw Error('Action items retained query');
   await p.keyboard.press('Escape');
@@ -113,7 +113,7 @@ async (page) => {
   const query=p.getByRole('textbox',{name:'Find in transcript',exact:true});await query.fill('FCM');
   await p.locator('.tline .words').first().fill('A changed phrase');
   await query.focus();
-  await p.waitForFunction(()=>CSS.highlights.get('motet-find')?.size===23);
+  await p.waitForFunction(()=>CSS.highlights.get('motetto-find')?.size===23);
   await query.fill('changed phrase');await query.press('Enter');
   if(await p.locator('.findbar output').innerText()!=='1 of 1')throw Error('Search did not refresh after editing');
   if(await p.evaluate(()=>window.saved.length)!==1)throw Error('Editing did not save exactly once');

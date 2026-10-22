@@ -3,7 +3,7 @@ async (page) => {
   const results=[];
   const reference=await page.context().newPage();
   await reference.route('https://**/*',r=>r.abort());
-  await reference.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await reference.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await reference.getByRole('button',{name:'After the call',exact:true}).click();
   if(await reference.locator('#pill').isVisible())throw Error('Inactive library shows a recording companion');
   await reference.getByText('Action items',{exact:true}).first().click();

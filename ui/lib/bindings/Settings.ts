@@ -6,6 +6,6 @@ import type { Spelling } from "./Spelling";
 
 export type Settings = { version: number, notes_folder: string, open_at_login: boolean, notes_language: string, ask_on_call: boolean, app_modes: { [key in string]: Mode }, apps: Array<AppRule>, idle_stop_s: number, discard_short_s: number, speech_model: string, notes_model: string, call_language: string, part_chars: number, keep_audio: string, recording_reminder: boolean, 
 /**
- * The microphone Motet records (a `motet_core::mics::Mic` id); None follows the system.
+ * The microphone Motetto records (a `motetto_core::mics::Mic` id); None follows the system.
  */
 mic_device: string | null, sounds: boolean, companion: Companion, spellings: Array<Spelling>, shortcuts: { [key in string]: string }, };

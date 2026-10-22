@@ -1,5 +1,5 @@
 //! One persistent recording window; Rust owns visibility and size.
-use motet_core::events::{AppState, CompanionSize};
+use motetto_core::events::{AppState, CompanionSize};
 use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
@@ -17,7 +17,7 @@ pub struct State {
 pub fn create(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.manage(State::default());
     let window = WebviewWindowBuilder::new(app, "companion", WebviewUrl::App("companion/".into()))
-        .title("Motet recording controls")
+        .title("Motetto recording controls")
         .inner_size(460.0, 72.0)
         .decorations(false)
         .transparent(true)
@@ -28,7 +28,7 @@ pub fn create(app: &tauri::AppHandle) -> tauri::Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .visible_on_all_workspaces(true)
-        .content_protected(!motet_core::config::allow_screenshots())
+        .content_protected(!motetto_core::config::allow_screenshots())
         .focused(false)
         .visible(false)
         .on_page_load(|webview, _| {
@@ -323,7 +323,7 @@ pub fn snap_companion(window: tauri::WebviewWindow) -> Result<(), String> {
 
 /// The plain Pill (with its caption row) unless recording; paused keeps an open Sidecar for notes.
 fn compact(state: &AppState) -> bool {
-    use motet_core::events::SessionState;
+    use motetto_core::events::SessionState;
     state.quit_pending
         || match state.state {
             SessionState::Recording => false,
@@ -409,7 +409,7 @@ pub async fn sharing_mode(app: tauri::AppHandle, active: bool) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::{area_distance, dimensions, edge_position, inside_position, top_middle};
-    use motet_core::events::CompanionSize;
+    use motetto_core::events::CompanionSize;
 
     #[test]
     fn fast_swipes_stay_inside_work_area_at_any_scale() {

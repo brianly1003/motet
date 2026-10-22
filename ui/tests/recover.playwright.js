@@ -7,7 +7,7 @@ async (page) => {
     await ref.route('https://**/*', r => r.abort());
     await ref.emulateMedia({colorScheme: theme});
     await ref.setViewportSize({width: 1400, height: 1000});
-    await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+    await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
     await ref.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
     await ref.getByRole('button', {name: 'macOS', exact: true}).click();
     await ref.getByRole('button', {name: 'Library', exact: true}).click();
@@ -61,7 +61,7 @@ async (page) => {
     const iconSame = await p.locator('.home .banner .alert-icon').innerHTML() === await ref.locator('.mainwin .home .banner .alert-icon').innerHTML();
     if (!iconSame) differences.push('warning icon paths differ');
     const text = await banner.innerText();
-    if (!/Recover an interrupted recording/.test(text) || !/Motet closed during a recording at 09:14\. The saved audio is still on this computer\./.test(text)) differences.push(`text: ${text}`);
+    if (!/Recover an interrupted recording/.test(text) || !/Motetto closed during a recording at 09:14\. The saved audio is still on this computer\./.test(text)) differences.push(`text: ${text}`);
     await p.screenshot({path: `.playwright-out/recover-${theme}.png`});
     // Recover opens the meeting and runs Write the notes again on its saved parts.
     await p.getByRole('button', {name: 'Recover', exact: true}).click();

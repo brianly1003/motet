@@ -17,9 +17,9 @@ const SlidersIcon = () => svg(<><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/><circle 
 const Chevron = () => <svg className="chv" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>;
 
 const KIND: Record<Mic["transport"], string> = { BuiltIn: "Built-in", Bluetooth: "Bluetooth", Usb: "USB", Virtual: "Virtual", Other: "External" };
-/** Facts only, "Bluetooth · 16 kHz": Motet can't rank mics, so it never calls one better (owner 2026-10-23). */
+/** Facts only, "Bluetooth · 16 kHz": Motetto can't rank mics, so it never calls one better (owner 2026-10-23). */
 export const micSub = (m: Mic) => m.rate_hz > 0 ? `${KIND[m.transport]} · ${+(m.rate_hz / 1000).toFixed(1)} kHz` : KIND[m.transport];
-/** Mirrors `motet_core::mics::quieter`: a third less, never under a quarter. */
+/** Mirrors `motetto_core::mics::quieter`: a third less, never under a quarter. */
 const quieter = (volume: number) => Math.max(volume * .67, .25);
 const percent = (volume: number) => Math.round(volume * 100);
 
@@ -33,7 +33,7 @@ export function useMicReport(enabled = true) {
     let active = true;
     void refresh();
     const timer = setInterval(refresh, 2000);
-    void ipc.subscribe("motet://mic-changed", () => void refresh()).then(fn => { if (active) off = fn; else fn(); });
+    void ipc.subscribe("motetto://mic-changed", () => void refresh()).then(fn => { if (active) off = fn; else fn(); });
     return () => { active = false; clearInterval(timer); off?.(); };
   }, [enabled, refresh]);
   return { report, setReport, refresh };
@@ -46,7 +46,7 @@ export async function pickMic(report: MicReport, id: string | null, done: Done, 
   const before = report.chosen;
   const next = await ipc.setMicrophone(id);
   const name = next.active?.name ?? "the system default";
-  done(recording ? `Recording from ${name} now. It's still one meeting.` : `Motet records from ${name}.`, async () => { await ipc.setMicrophone(before); });
+  done(recording ? `Recording from ${name} now. It's still one meeting.` : `Motetto records from ${name}.`, async () => { await ipc.setMicrophone(before); });
   return next;
 }
 
@@ -64,8 +64,8 @@ export function MicLevel({ bars = 5, className = "miclvl", hot = false }: { bars
   return <span className={className} aria-hidden="true">{Array.from({ length: bars }, (_, i) => <i key={i} className={i < lit ? (hot && i === bars - 1 ? "hot" : "on") : ""}/>)}</span>;
 }
 
-/** The amber row, only for what Motet measured: clipping (3 of 5 two-second checks). One action
- *  on the chosen mic, and ✕ until the next recording. Motet never warns about which mic you chose. */
+/** The amber row, only for what Motetto measured: clipping (3 of 5 two-second checks). One action
+ *  on the chosen mic, and ✕ until the next recording. Motetto never warns about which mic you chose. */
 export function MicNote({ report, done, onError = done, onHide, className = "micnote" }: { report: MicReport | null; done: Done; onError?: (error: string) => void; onHide?: () => void; className?: string }) {
   const [busy, setBusy] = useState(false);
   if (report?.issue !== "TooLoud" || !report.active) return null;
@@ -124,6 +124,6 @@ export function MicMenu({ report, recording, done, onError = done, onClose, styl
       : active && <div className="mhead" style={{ fontWeight: 400 }}>{active.name} sets its own level.</div>}
     <div className="sep"/>
     <button type="button" role="menuitem" onClick={() => { onClose(); void ipc.openSoundSettings().catch(e => onError(String(e))); }}><GearIcon/><span>Sound settings…</span></button>
-    {settingsLink && <button type="button" role="menuitem" onClick={() => { onClose(); void ipc.openSettings("audio").catch(e => onError(String(e))); }}><SlidersIcon/><span>Audio settings in Motet</span></button>}
+    {settingsLink && <button type="button" role="menuitem" onClick={() => { onClose(); void ipc.openSettings("audio").catch(e => onError(String(e))); }}><SlidersIcon/><span>Audio settings in Motetto</span></button>}
   </div>;
 }

@@ -3,7 +3,7 @@ import type { Mic } from "./Mic";
 import type { MicIssue } from "./MicIssue";
 
 /**
- * What the picker shows: the mics to offer, the one Motet records and its problem. Motet never
+ * What the picker shows: the mics to offer, the one Motetto records and its problem. Motetto never
  * picks a replacement: the user chooses from the list (owner 2026-10-23).
  */
 export type MicReport = { mics: Array<Mic>, 

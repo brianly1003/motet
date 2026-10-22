@@ -28,6 +28,6 @@ mod tray;
 mod window_native;
 
 fn main() {
-    motet_core::tools::configure_desktop();
+    motetto_core::tools::configure_desktop();
     desktop::run();
 }

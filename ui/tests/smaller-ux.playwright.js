@@ -12,7 +12,7 @@ async (page) => {
     await ref.route('https://**/*', r => r.abort());
     await ref.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
     await ref.setViewportSize({width: 1400, height: 1000});
-    await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+    await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
     await ref.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
     await ref.getByRole('button', {name: 'After the call', exact: true}).click();
 
@@ -65,7 +65,7 @@ async (page) => {
     same(await style(hit.locator('.snip'), ['fontSize', 'lineHeight', 'color', 'webkitLineClamp']), await style(refHit.locator('.snip'), ['fontSize', 'lineHeight', 'color', 'webkitLineClamp']), 'snip');
     same(await style(hit.locator('.snip mark'), ['backgroundColor', 'borderRadius', 'paddingLeft']), await style(refHit.locator('.snip mark'), ['backgroundColor', 'borderRadius', 'paddingLeft']), 'mark');
     same(await style(hit.locator('.where'), ['fontSize', 'fontWeight', 'color']), await style(refHit.locator('.where'), ['fontSize', 'fontWeight', 'color']), 'where');
-    await hit.screenshot({path: `/tmp/motet-ux-hit-app-${theme}.png`}).catch(() => {});
+    await hit.screenshot({path: `/tmp/motetto-ux-hit-app-${theme}.png`}).catch(() => {});
     await hit.click();
     await p.locator('.findbar input').waitFor();
     if (await p.getByRole('tab', {name: 'Transcript'}).getAttribute('aria-selected') !== 'true') throw Error('Hit did not open the transcript');
@@ -108,7 +108,7 @@ async (page) => {
     const over = await style(p.locator('.drop'), ['borderTopStyle', 'borderTopColor', 'backgroundColor', 'color']);
     if (over.borderTopStyle !== 'solid' || over.backgroundColor === idle.backgroundColor) throw Error('Drop zone not highlighted');
     if ((await p.locator('.shell').evaluate(el => getComputedStyle(el, '::after').content)) !== 'none') throw Error('Frame shown over Home');
-    await p.locator('.home').screenshot({path: `/tmp/motet-ux-drop-app-${theme}.png`}).catch(() => {});
+    await p.locator('.home').screenshot({path: `/tmp/motetto-ux-drop-app-${theme}.png`}).catch(() => {});
     await ref.getByRole('button', {name: 'Library', exact: true}).click().catch(() => {});
     await ref.locator('.drop').waitFor();
     await ref.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'call.m4a')); document.querySelector('.mainwin').dispatchEvent(new DragEvent('dragenter', {dataTransfer: dt, bubbles: true, cancelable: true})); });
@@ -167,7 +167,7 @@ async (page) => {
       if (await box.evaluate(el => el.scrollTop) !== 0) throw Error(`${where}: followed while scrolled up`);
       const chip = await p.getByRole('button', {name: 'Jump to now'}).boundingBox(), pane = await box.boundingBox();
       if (chip.y + chip.height > pane.y + pane.height || chip.y < pane.y) throw Error(`${where}: chip outside the pane`);
-      await p.screenshot({path: `/tmp/motet-ux-jump-${where}-${theme}.png`});
+      await p.screenshot({path: `/tmp/motetto-ux-jump-${where}-${theme}.png`});
       await p.getByRole('button', {name: 'Jump to now'}).click();
       await p.waitForFunction(() => !document.querySelector('.jumpnow'));
       if (await gap() > 2) throw Error(`${where}: Jump to now did not reach the end`);

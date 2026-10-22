@@ -71,7 +71,7 @@ pub(crate) fn list_meetings(
     state: tauri::State<'_, Library>,
 ) -> Result<Vec<library::MeetingSummary>, String> {
     #[cfg(debug_assertions)]
-    eprintln!("motet: main window connected");
+    eprintln!("motetto: main window connected");
     library::list(&state.root)
 }
 #[tauri::command]
@@ -128,7 +128,7 @@ pub(crate) async fn import_file(
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("A meeting is already being processed".into());
     }
-    motet_core::tools::reset();
+    motetto_core::tools::reset();
     state.importing.store(true, Ordering::SeqCst);
     state.set_job(Some(Job {
         id: None,
@@ -136,7 +136,7 @@ pub(crate) async fn import_file(
         transcribe: false,
     }));
     refresh_tray(&app);
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     let worker = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
         let source = match dropped {
@@ -161,7 +161,7 @@ pub(crate) async fn import_file(
                 import: true,
                 transcribe: false,
             }));
-            let _ = worker.emit("motet://library-changed", ());
+            let _ = worker.emit("motetto://library-changed", ());
         })
     })
     .await
@@ -174,7 +174,7 @@ pub(crate) async fn import_file(
             .and_then(|s| crate::settings_storage::retain(&state.root, &s.keep_audio))
     {
         let _ = app.emit(
-            "motet://notice",
+            "motetto://notice",
             format!("Notes are ready, but audio retention failed: {error}"),
         );
     }
@@ -182,17 +182,17 @@ pub(crate) async fn import_file(
     state.importing.store(false, Ordering::SeqCst);
     state.busy.store(false, Ordering::SeqCst);
     refresh_tray(&app);
-    let _ = app.emit("motet://library-changed", ());
+    let _ = app.emit("motetto://library-changed", ());
     match &result {
         Ok(Some(meeting)) => crate::notifications::send(
             &app,
             &meeting.title,
-            "Your meeting notes are ready. Open Motet to read them.",
+            "Your meeting notes are ready. Open Motetto to read them.",
         ),
         Err(_) => crate::notifications::send(
             &app,
             "Couldn’t write the notes",
-            "Open Motet to review the problem. Your source file is unchanged.",
+            "Open Motetto to review the problem. Your source file is unchanged.",
         ),
         _ => {}
     }
@@ -213,7 +213,7 @@ pub(crate) fn cancel_import(state: tauri::State<'_, Library>) {
         .as_ref()
         .is_some_and(|job| job.import)
     {
-        motet_core::tools::cancel();
+        motetto_core::tools::cancel();
     }
 }
 

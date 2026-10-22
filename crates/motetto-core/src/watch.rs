@@ -108,9 +108,9 @@ pub struct Watcher {
     apps: BTreeMap<String, AppState>,
 }
 
-/// Motet's own capture holds the mic while recording; it is never a call.
+/// Motetto's own capture holds the mic while recording; it is never a call.
 fn is_own(own_pid: u32, p: &AudioProcess) -> bool {
-    p.pid == own_pid || id_matches("local.motet.desktop", &p.bundle_id)
+    p.pid == own_pid || id_matches("local.motetto.desktop", &p.bundle_id)
 }
 
 impl Watcher {
@@ -418,13 +418,13 @@ mod tests {
     }
 
     #[test]
-    fn motet_own_process_is_never_a_call() {
+    fn motetto_own_process_is_never_a_call() {
         let r = rules();
         let mut w = Watcher::new(42, 30_000);
         let snap = Snapshot {
             processes: vec![AudioProcess {
                 pid: 42,
-                bundle_id: "local.motet.desktop".into(),
+                bundle_id: "local.motetto.desktop".into(),
                 input: true,
                 output: true,
             }],

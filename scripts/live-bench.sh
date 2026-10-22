@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Time one live-caption request at 2, 5 and 10 s slice lengths on a local whisper-server.
 # Usage: scripts/live-bench.sh AUDIO START_S [MODEL] [-- extra whisper-server args]
-# Example: scripts/live-bench.sh ~/Documents/Motet/imports/<id>/part-0000.mic.wav 98 \
+# Example: scripts/live-bench.sh ~/Documents/Motetto/imports/<id>/part-0000.mic.wav 98 \
 #            ~/.cache/whisper/ggml-large-v3-q5_0.bin -- -ac 512
 # Prints "<len>s <seconds> | <text>" twice per length (the first request warms up and is dropped).
 set -euo pipefail

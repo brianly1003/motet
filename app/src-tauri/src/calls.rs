@@ -1,7 +1,7 @@
 //! Call detection for the desktop: a polling watcher thread and the saved Ask/Off choices.
 //! Detection only asks; the controller never records until the user chooses Record.
 use crate::controller::Message;
-use motet_core::watch;
+use motetto_core::watch;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
@@ -17,7 +17,7 @@ pub use crate::settings::Settings;
 /// Polls the audio processes every 2 s and hands what changed to the session controller.
 pub fn spawn(app: tauri::AppHandle, sender: mpsc::Sender<Message>) -> Result<(), String> {
     std::thread::Builder::new()
-        .name("motet-calls".into())
+        .name("motetto-calls".into())
         .spawn(move || {
             let mut watcher = watch::Watcher::new(std::process::id(), END_AFTER_MS);
             let origin = Instant::now();
@@ -44,8 +44,8 @@ pub fn spawn(app: tauri::AppHandle, sender: mpsc::Sender<Message>) -> Result<(),
                     Err(e) if !reported => {
                         reported = true;
                         let _ = app.emit(
-                            "motet://notice",
-                            format!("Motet can't check for calls right now: {e}"),
+                            "motetto://notice",
+                            format!("Motetto can't check for calls right now: {e}"),
                         );
                     }
                     Err(_) => {}
@@ -60,11 +60,11 @@ pub fn spawn(app: tauri::AppHandle, sender: mpsc::Sender<Message>) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
-    use motet_core::events::Mode;
+    use motetto_core::events::Mode;
 
     #[test]
     fn settings_round_trip_and_missing_file_gives_defaults() {
-        let dir = std::env::temp_dir().join(format!("motet-settings-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("motetto-settings-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let settings = Settings::load(&dir);
         assert!(settings.ask_on_call);

@@ -1,7 +1,7 @@
 "use client";
 import { Alert } from "@/components/Alert";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import Duet from "@/components/MotetMark";
+import Duet from "@/components/MotettoMark";
 import RecentlyDeleted from "@/components/RecentlyDeleted";
 import MeetingDocument from "@/components/MeetingDocument";
 import { notesText, deletable } from "@/components/MeetingActions";
@@ -153,7 +153,7 @@ export default function Main(){
     if(!available){setLoading(false);return;}
     let active=true;const cleanups:Array<()=>void>=[];
     const subscribe=async(name:string,callback:()=>void)=>{const off=await ipc.subscribe(name,callback);if(active)cleanups.push(off);else off();};
-    Promise.all([ipc.onOpenMeeting(id=>{if(active){setQuery("");void select(id);}}).then(off=>{if(active)cleanups.push(off);else off();}),refresh(),subscribe("motet://library-changed",()=>{void refresh().then(()=>{if(pendingOpen.current)void tryOpen(pendingOpen.current);else if(openId.current)void reread(openId.current);});}),subscribe("motet://quit-pending",()=>setQuitPending(true))])
+    Promise.all([ipc.onOpenMeeting(id=>{if(active){setQuery("");void select(id);}}).then(off=>{if(active)cleanups.push(off);else off();}),refresh(),subscribe("motetto://library-changed",()=>{void refresh().then(()=>{if(pendingOpen.current)void tryOpen(pendingOpen.current);else if(openId.current)void reread(openId.current);});}),subscribe("motetto://quit-pending",()=>setQuitPending(true))])
       .catch(e=>{if(active)setError(String(e));}).finally(()=>{if(active)setLoading(false);});
     return()=>{active=false;selection.current++;cleanups.forEach(off=>off());};
   },[]);
@@ -181,7 +181,7 @@ export default function Main(){
   // Record and Import share one worker: a second job waits, with the reason on the button.
   const importBlocked=job?s.importBusy:live&&live.state.type!=="Idle"?s.importRecording:"";
   const menuMeeting=rowMenu?shown.find(meeting=>meeting.id===rowMenu.id):undefined;
-  return <>{mac&&<header className="window-titlebar" data-tauri-drag-region><span className="title-brand"><Duet className="mark"/><span>Motet</span></span></header>}<main className="shell" data-drag={dragging?importBlocked||s.dropRelease:undefined} data-blocked={dragging&&importBlocked?"":undefined}>
+  return <>{mac&&<header className="window-titlebar" data-tauri-drag-region><span className="title-brand"><Duet className="mark"/><span>Motetto</span></span></header>}<main className="shell" data-drag={dragging?importBlocked||s.dropRelease:undefined} data-blocked={dragging&&importBlocked?"":undefined}>
     <aside className="sidebar" aria-label={s.meetings} onClickCapture={event=>{
       (event.target as Element).closest<HTMLButtonElement>(".homerow, .meeting-row, .trash")?.focus({preventScroll:true});
     }} onKeyDown={event=>{

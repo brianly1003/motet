@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     fn levels_and_write_keep_rate_and_exact_intervals() {
-        let root = std::env::temp_dir().join(format!("motet-slice-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-slice-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let source = root.join("source.wav");
         let target = root.join("slice.wav");

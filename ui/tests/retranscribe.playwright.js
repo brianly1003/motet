@@ -20,10 +20,10 @@ async (page) => {
         if (c === 'importing') return job;
         if (c === 'meeting_action') {
           window.calls.push(a.action);
-          job = { id: '1', import: false, transcribe: a.action === 'retranscribe' }; window.emit('motet://library-changed', null);
+          job = { id: '1', import: false, transcribe: a.action === 'retranscribe' }; window.emit('motetto://library-changed', null);
           await new Promise(resolve => { window.finish = resolve; });
           meeting.transcript = '[00:04] Me: Hello, fresh\n[00:09] Them: Hi\n[00:12] Me: Bye'; meeting.transcript_heard = '';
-          job = null; window.emit('motet://library-changed', null);
+          job = null; window.emit('motetto://library-changed', null);
           return null;
         }
         if (c === 'meeting_media') return { tracks: audio ? [{ path: '/a.wav', name: 'mic.wav', speaker: 'You', offset_ms: 0, duration_ms: 60000, bytes: 1, waveform: [0.3] }] : [], duration_ms: 60000, folder: 'x' };
@@ -52,7 +52,7 @@ async (page) => {
   await p.locator('.writing').getByText('Transcribing again').waitFor();
   const steps = () => p.locator('.writing .step').evaluateAll(rows => rows.map(r => `${r.className.replace('step', '').trim() || 'todo'}:${r.children[1].textContent}`).join(' | '));
   if (await steps() !== 'now:Transcribing the saved audio | todo:Saving') fails.push('steps at start: ' + await steps());
-  await p.evaluate(() => window.emit('motet://event', { type: 'Stage', meeting_id: '1', stage: { type: 'Saving' }, percent: 0, eta_s: null }));
+  await p.evaluate(() => window.emit('motetto://event', { type: 'Stage', meeting_id: '1', stage: { type: 'Saving' }, percent: 0, eta_s: null }));
   await p.waitForTimeout(100);
   if (await steps() !== 'done:Transcribing the saved audio | now:Saving') fails.push('steps at Saving: ' + await steps());
   if (!/Transcribing/.test(await p.locator('.meeting-row').first().innerText())) fails.push('sidebar row does not say Transcribing');

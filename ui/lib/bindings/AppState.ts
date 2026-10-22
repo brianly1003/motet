@@ -15,7 +15,7 @@ ask_on_call: boolean, problem: ProblemInfo | null, more_problems: number, quit_p
 /**
  * While the call's app has let go of the mic: the recording time (`elapsed_ms`) at which it
  * stops by itself, so the Pill can count down. None while someone is talking or after Keep
- * recording (owner, 2026-10-20: "the call ended but Motet still records").
+ * recording (owner, 2026-10-20: "the call ended but Motetto still records").
  */
 stops_at_ms: number | null, 
 /**

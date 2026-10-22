@@ -1,5 +1,5 @@
 //! Native recording actions follow session state; elapsed-time ticks do not rebuild the menu.
-use motet_core::events::{AppState, SessionState};
+use motetto_core::events::{AppState, SessionState};
 use std::sync::Mutex;
 use tauri::{
     Manager,
@@ -46,11 +46,11 @@ fn off_apps(app: &tauri::AppHandle) -> Vec<(String, String)> {
         return vec![];
     };
     let settings = crate::calls::Settings::load(&dir);
-    let rules = motet_core::watch::rules();
+    let rules = motetto_core::watch::rules();
     settings
         .app_modes
         .iter()
-        .filter(|(_, mode)| **mode == motet_core::events::Mode::Off)
+        .filter(|(_, mode)| **mode == motetto_core::events::Mode::Off)
         .map(|(id, _)| {
             let name = rules
                 .iter()
@@ -86,7 +86,7 @@ fn header_text(state: &AppState) -> String {
         SessionState::Asking { app, .. } => format!("{app} call · not recording"),
         SessionState::Stopped { .. } => "Stopped · notes start soon".into(),
         SessionState::Finishing { .. } => "Writing notes".into(),
-        _ => "Motet · ready for calls".into(),
+        _ => "Motetto · ready for calls".into(),
     }
 }
 fn menu(
@@ -165,7 +165,7 @@ fn menu(
     let menu = builder
         .separator()
         .item(
-            &MenuItemBuilder::with_id("open", "Open Motet")
+            &MenuItemBuilder::with_id("open", "Open Motetto")
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
@@ -175,7 +175,7 @@ fn menu(
                 .build(app)?,
         )
         .item(
-            &MenuItemBuilder::with_id("quit", "Quit Motet")
+            &MenuItemBuilder::with_id("quit", "Quit Motetto")
                 .accelerator("CmdOrCtrl+Q")
                 .build(app)?,
         )
@@ -191,7 +191,7 @@ pub fn initial(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         Action::Record,
         ask_on_call,
         &off_apps(app),
-        "Motet · ready for calls",
+        "Motetto · ready for calls",
     )?;
     if let Ok(mut state) = app.state::<State>().0.lock() {
         state.header = Some(header);
@@ -213,7 +213,9 @@ pub fn update(app: &tauri::AppHandle, state: &AppState, importing: bool) -> Resu
             .is_none_or(|b| b.action != next || b.ask_on_call != state.ask_on_call);
     let label = header_text(state);
     if changed {
-        let tray = app.tray_by_id("motet").ok_or("Tray menu is unavailable")?;
+        let tray = app
+            .tray_by_id("motetto")
+            .ok_or("Tray menu is unavailable")?;
         let off = off_apps(app);
         let (menu, header) =
             menu(app, next, state.ask_on_call, &off, &label).map_err(|e| e.to_string())?;

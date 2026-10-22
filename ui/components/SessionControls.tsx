@@ -21,11 +21,11 @@ export default function SessionControls({ hideActive = false }: { hideActive?: b
       {(recording || paused) && <button className="quiet" disabled={pending} onClick={() => act(ipc.stopRecording)}>{s.stop}</button>}
       {stopped && <button className="quiet" disabled={pending} onClick={() => act(ipc.resumeRecording)}>{s.resume}</button>}
     </div>}
-    {state?.quit_pending && <Alert variant={finishing ? "info" : "warning"} title={finishing ? "Saving before quitting" : "Keep Motet open?"} role="alert" actions={<>
+    {state?.quit_pending && <Alert variant={finishing ? "info" : "warning"} title={finishing ? "Saving before quitting" : "Keep Motetto open?"} role="alert" actions={<>
       {!finishing && <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(true))}>{s.stopAndSave}</button>}
       <button className="quiet" disabled={pending} onClick={() => act(() => ipc.quitRecording(false))}>{recording ? s.keepRecording : s.stayOpen}</button>
     </>}>{finishing ? s.quitPending : s.quitQuestion}</Alert>}
     {state?.problem && <Alert variant={["DiskFull", "ToolFailed", "NotesFailed"].includes(state.problem.problem.type) ? "danger" : "warning"} title={s.error} role="alert" actions={<>{state.problem.problem.type==='ModelMissing'&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('models'))}>Open Models</button>}{['DiskLow','DiskFull'].includes(state.problem.problem.type)&&<button className="quiet" disabled={pending} onClick={()=>act(()=>ipc.openSettings('privacy'))}>Free up space</button>}<button className="quiet" disabled={pending} onClick={() => act(() => ipc.dismissProblem(state.problem!.id))}>{s.dismiss}</button></>}>{problemMessage(state.problem.problem)}</Alert>}
-    {notice && <Alert title="Motet" actions={<button className="quiet" onClick={() => setNotice("")}>{s.dismiss}</button>}>{notice}</Alert>}
+    {notice && <Alert title="Motetto" actions={<button className="quiet" onClick={() => setNotice("")}>{s.dismiss}</button>}>{notice}</Alert>}
   </>;
 }

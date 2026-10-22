@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn stale_worker_updates_keep_marks_and_old_meetings_load() {
         let root = std::env::temp_dir().join(format!(
-            "motet-marks-{}-{}",
+            "motetto-marks-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -174,7 +174,7 @@ mod tests {
         assert_eq!(clean_title(&"é".repeat(95)).unwrap().chars().count(), 80);
         assert!(clean_title(" \n\t ").is_err());
         let root = std::env::temp_dir().join(format!(
-            "motet-rename-{}-{}",
+            "motetto-rename-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));

@@ -11,7 +11,7 @@ export default function NotificationPermission() {
   useEffect(() => {
     if (!ipc.desktopAvailable()) return;
     let active = true;
-    // Check again on focus: people allow Motet in System Settings, then come back.
+    // Check again on focus: people allow Motetto in System Settings, then come back.
     const check = () => ipc.notificationPermission().then(value => { if (active) setAllowed(value); })
       .catch(error => { if (active) { setAllowed(false); setMessage(String(error)); } });
     check();

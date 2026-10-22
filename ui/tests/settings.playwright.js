@@ -3,7 +3,7 @@ async (page)=>{
  const reference=await page.context().newPage();
  await reference.route('https://**/*',route=>route.abort());
  await reference.setViewportSize({width:1200,height:900});
- await reference.goto('http://127.0.0.1:3141/motet-app-mockup.html?screen=settings');
+ await reference.goto('http://127.0.0.1:3141/motetto-app-mockup.html?screen=settings');
  await reference.getByRole('button',{name:'macOS',exact:true}).click();
  await reference.getByRole('button',{name:'Settings',exact:true}).click();
  const results=[];
@@ -12,7 +12,7 @@ async (page)=>{
   await p.setViewportSize({width:958,height:760});await p.emulateMedia({colorScheme:theme});
   await reference.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
   await p.addInitScript(()=>{
-   const settings={version:1,notes_folder:'/Users/test/Documents/Motet/imports',open_at_login:false,notes_language:'same_as_call',ask_on_call:true,app_modes:{},apps:[],idle_stop_s:30,discard_short_s:20,speech_model:'/local/ggml-large-v3-q5_0.bin',notes_model:'qwen3:8b',call_language:'detect',part_chars:24000,keep_audio:'forever',recording_reminder:true,sounds:true,companion:{default_size:'pill',captions:true},spellings:[],shortcuts:Object.fromEntries(['S','M','J','N','Space','H','P'].map(k=>[k,`Ctrl+Alt+${k}`]))};
+   const settings={version:1,notes_folder:'/Users/test/Documents/Motetto/imports',open_at_login:false,notes_language:'same_as_call',ask_on_call:true,app_modes:{},apps:[],idle_stop_s:30,discard_short_s:20,speech_model:'/local/ggml-large-v3-q5_0.bin',notes_model:'qwen3:8b',call_language:'detect',part_chars:24000,keep_audio:'forever',recording_reminder:true,sounds:true,companion:{default_size:'pill',captions:true},spellings:[],shortcuts:Object.fromEntries(['S','M','J','N','Space','H','P'].map(k=>[k,`Ctrl+Alt+${k}`]))};
    const apps=[['zoom','Zoom',true,'ask'],['teams','Microsoft Teams',true,'ask'],['meet','Google Meet',false,'ask'],['whatsapp','WhatsApp',false,'ask'],['telegram','Telegram',false,'ask'],['browser','Browser',false,'ask'],['slack','Slack huddles',false,'off'],['webex','Webex',true,'off'],['facetime','FaceTime',true,'off']].map(([app_id,name,single_signal,mode])=>({app_id,name,single_signal,mode,mac_ids:[],win_ids:[],title_patterns:[]}));
    let next=0;window.testCalls=[];window.failNextSave=false;window.deleted=false;
    window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
@@ -94,7 +94,7 @@ async (page)=>{
   await p.getByRole('button',{name:'Delete all meetings…',exact:true}).click();
   await p.getByRole('button',{name:'Delete all',exact:true}).click();
   await p.getByRole('status').filter({hasText:'All meetings deleted'}).waitFor();
-  await p.getByRole('tab',{name:'About',exact:true}).click();await p.getByText('Motet 0.1.0',{exact:true}).waitFor();
+  await p.getByRole('tab',{name:'About',exact:true}).click();await p.getByText('Motetto 0.1.0',{exact:true}).waitFor();
   await p.getByRole('button',{name:'Show logs folder',exact:true}).click();
   for(const tab of ['General','Audio','Calls','Models','Spellings','Privacy','About']){
    await p.getByRole('tab',{name:tab,exact:true}).click();await p.setViewportSize({width:760,height:520});

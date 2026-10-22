@@ -3,7 +3,7 @@ async (page) => {
   const results = [];
   const reference = await page.context().newPage();
   await reference.route('https://**/*', route => route.abort());
-  await reference.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await reference.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await reference.getByRole('button', {name: 'After the call', exact: true}).click();
   for (const theme of ['light', 'dark']) {
     const p = await page.context().newPage();

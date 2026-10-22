@@ -22,8 +22,8 @@ async (page) => {
       if (c === 'set_action_item_done') { const m = ms.find(m => m.summary.id === a.id); m.notes_md = m.notes_md.replace('- [ ]', '- [x]'); return m.notes_md; }
       if (c === 'importing') return job;
       // Rust makes the meeting folder, then says so; the import resolves only when it ends.
-      if (c === 'import_audio') { job = { id: null, import: true }; setTimeout(() => { ms.unshift(mk('2', 'Quarterly review', 'Finishing', '')); job = { id: '2', import: true }; emit('motet://library-changed'); }, 100); return new Promise(r => { finish = r; }); }
-      if (c === 'cancel_import') { setTimeout(() => { ms.shift(); job = null; finish(null); emit('motet://library-changed'); }, 300); return null; }
+      if (c === 'import_audio') { job = { id: null, import: true }; setTimeout(() => { ms.unshift(mk('2', 'Quarterly review', 'Finishing', '')); job = { id: '2', import: true }; emit('motetto://library-changed'); }, 100); return new Promise(r => { finish = r; }); }
+      if (c === 'cancel_import') { setTimeout(() => { ms.shift(); job = null; finish(null); emit('motetto://library-changed'); }, 300); return null; }
       return false; } };
   });
   await p.goto('http://127.0.0.1:3000/main/');

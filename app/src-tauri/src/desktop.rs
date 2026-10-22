@@ -4,7 +4,7 @@ use crate::{
     controller::{Action, Controller, Host, Job},
     library, permissions, recording,
 };
-use motet_core::events::{AppState, Event, Mode, Readiness, SessionState};
+use motetto_core::events::{AppState, Event, Mode, Readiness, SessionState};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -97,7 +97,7 @@ pub fn run() {
                 settings.notes_folder = app
                     .path()
                     .document_dir()?
-                    .join("Motet")
+                    .join("Motetto")
                     .join("imports")
                     .to_string_lossy()
                     .into_owned();
@@ -109,7 +109,7 @@ pub fn run() {
                 settings.keep_audio = "forever".into();
             }
             settings.save(&config)?;
-            motet_core::config::configure_desktop(config.join("settings.json"));
+            motetto_core::config::configure_desktop(config.join("settings.json"));
             app.manage(crate::settings::Store {
                 dir: config.clone(),
                 value: std::sync::Mutex::new(settings),
@@ -125,11 +125,11 @@ pub fn run() {
                 &root,
                 &app.state::<crate::settings::Store>().get()?.keep_audio,
             ) {
-                eprintln!("Motet couldn't apply audio retention: {error}");
+                eprintln!("Motetto couldn't apply audio retention: {error}");
             }
             // Nothing records or imports yet at launch, so any busy meeting was cut off by a quit or crash.
             if let Err(e) = library::recover_interrupted(&root) {
-                eprintln!("Motet: couldn't check for interrupted meetings: {e}");
+                eprintln!("Motetto: couldn't check for interrupted meetings: {e}");
             }
             app.manage(crate::my_notes::Store::new(root.clone()));
             app.manage(crate::live::State::default());
@@ -173,10 +173,10 @@ pub fn run() {
             crate::calls::spawn(app.handle().clone(), sender)?;
             app.manage(crate::tray::State::default());
             let menu = crate::tray::initial(app.handle())?;
-            tauri::tray::TrayIconBuilder::with_id("motet")
+            tauri::tray::TrayIconBuilder::with_id("motetto")
                 .icon(crate::tray::icon(false))
                 .icon_as_template(true)
-                .tooltip("Motet · On this computer")
+                .tooltip("Motetto · On this computer")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show(app),
@@ -188,7 +188,7 @@ pub fn run() {
                         let app = app.clone();
                         tauri::async_runtime::spawn_blocking(move || {
                             if let Err(error) = app.state::<Controller>().mark() {
-                                let _ = app.emit("motet://notice", error);
+                                let _ = app.emit("motetto://notice", error);
                             }
                         });
                     }
@@ -197,7 +197,7 @@ pub fn run() {
                     }
                     "settings" => {
                         if let Err(error) = crate::settings::open(app, "general") {
-                            let _ = app.emit("motet://notice", error);
+                            let _ = app.emit("motetto://notice", error);
                         }
                     }
                     "quit" => app.exit(0),
@@ -246,10 +246,10 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     match library_commands::import_file(app.clone(), Some(path)).await {
                         Ok(Some(meeting)) => {
-                            let _ = app.emit("motet://open-meeting", meeting.id);
+                            let _ = app.emit("motetto://open-meeting", meeting.id);
                         }
                         Err(e) => {
-                            let _ = app.emit("motet://import-failed", e);
+                            let _ = app.emit("motetto://import-failed", e);
                         }
                         Ok(None) => {}
                     }
@@ -277,7 +277,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("could not build Motet")
+        .expect("could not build Motetto")
         .run(|app, event| {
             // The visible companion stops macOS restoring the library on a Dock click; do it here.
             #[cfg(target_os = "macos")]
@@ -291,7 +291,7 @@ pub fn run() {
                     if state.importing.load(Ordering::SeqCst) {
                         state.quit_pending.store(true, Ordering::SeqCst);
                         show(app);
-                        let _ = app.emit("motet://quit-pending", ());
+                        let _ = app.emit("motetto://quit-pending", ());
                     } else {
                         dispatch(app.clone(), Action::RequestQuit);
                     }
@@ -305,7 +305,7 @@ pub fn run() {
 pub(crate) fn dispatch(app: tauri::AppHandle, action: Action) {
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(e) = app.state::<Controller>().action(action) {
-            let _ = app.emit("motet://notice", e);
+            let _ = app.emit("motetto://notice", e);
         }
     });
 }
@@ -367,7 +367,7 @@ async fn undo_discard(app: tauri::AppHandle, id: String) -> Result<(), String> {
     // The Pill has gone by now, so the library says what went wrong.
     if let Err(error) = &result {
         let _ = app.emit(
-            "motet://notice",
+            "motetto://notice",
             format!("Couldn't bring the recording back: {error}"),
         );
     }
@@ -446,7 +446,7 @@ impl Host for Desktop {
             .and_then(|n| n.parse::<u64>().ok())
             .and_then(|n| n.checked_mul(1024))
             .ok_or("Couldn't read free disk space")?;
-        let speech_model = motet_core::config::var("WHISPER_MODEL")
+        let speech_model = motetto_core::config::var("WHISPER_MODEL")
             .is_some_and(|p| std::fs::File::open(p).is_ok());
         Ok(Readiness {
             microphone,
@@ -466,7 +466,7 @@ impl Host for Desktop {
                 state,
                 self.app.state::<Library>().importing.load(Ordering::SeqCst),
             )?;
-            if let Some(tray) = self.app.tray_by_id("motet") {
+            if let Some(tray) = self.app.tray_by_id("motetto") {
                 let seconds = state.elapsed_ms / 1000;
                 // Paused shows the frozen time without the recording dot.
                 let title = match state.state {
@@ -477,10 +477,10 @@ impl Host for Desktop {
                 crate::window_native::tray_title(&tray, title).map_err(|e| e.to_string())?;
                 tray.set_tooltip(Some(match state.state {
                     SessionState::Recording => {
-                        "Motet - Recording microphone and system audio; Stop in this menu"
+                        "Motetto - Recording microphone and system audio; Stop in this menu"
                     }
-                    SessionState::Paused => "Motet - Paused, not recording; Resume in this menu",
-                    _ => "Motet - On this computer",
+                    SessionState::Paused => "Motetto - Paused, not recording; Resume in this menu",
+                    _ => "Motetto - On this computer",
                 }))
                 .map_err(|e| e.to_string())?;
             }
@@ -488,9 +488,9 @@ impl Host for Desktop {
             if let Some(window) = self.app.get_webview_window("main") {
                 window
                     .set_title(if state.state == SessionState::Recording {
-                        "Motet - Recording microphone and system audio"
+                        "Motetto - Recording microphone and system audio"
                     } else {
-                        "Motet"
+                        "Motetto"
                     })
                     .map_err(|e| e.to_string())?;
                 if state.quit_pending {
@@ -499,7 +499,7 @@ impl Host for Desktop {
             }
         }
         self.app
-            .emit("motet://event", event)
+            .emit("motetto://event", event)
             .map_err(|e| e.to_string())
     }
     /// No OS notice (SPEC 7.5): a visible companion or library window is the confirmation.
@@ -510,11 +510,11 @@ impl Host for Desktop {
         let window = self
             .app
             .get_webview_window("main")
-            .ok_or("Open Motet before starting a recording")?;
+            .ok_or("Open Motetto before starting a recording")?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         window
-            .set_title("Motet - Recording microphone and system audio")
+            .set_title("Motetto - Recording microphone and system audio")
             .map_err(|e| e.to_string())
     }
     fn show_main(&self) {
@@ -529,19 +529,19 @@ impl Host for Desktop {
         if message == crate::controller::STILL_PAUSED {
             // A reminder, not a problem: notify without pulling the library forward.
             crate::notifications::send(&self.app, "Recording paused", message);
-            let _ = self.app.emit("motet://notice", message);
+            let _ = self.app.emit("motetto://notice", message);
             return;
         }
         if message.starts_with("Recording under ") {
             crate::notifications::send(&self.app, "Recording discarded", message);
         }
         show(&self.app);
-        let _ = self.app.emit("motet://notice", message);
+        let _ = self.app.emit("motetto://notice", message);
     }
     fn cant_record(&self, body: &str) {
         // Mid-call, nobody pressed anything: never pull a window forward, even if this fails.
-        crate::notifications::quiet(&self.app, "Motet can't record", body);
-        let _ = self.app.emit("motet://notice", body);
+        crate::notifications::quiet(&self.app, "Motetto can't record", body);
+        let _ = self.app.emit("motetto://notice", body);
     }
     fn exit(&self) {
         if self.jobs.send(Job::Exit).is_err() {
@@ -566,7 +566,7 @@ impl Host for Desktop {
                     .map(|r| r.mode)
             });
         saved.unwrap_or_else(|| {
-            motet_core::watch::rules()
+            motetto_core::watch::rules()
                 .into_iter()
                 .find(|r| r.app_id == app_id)
                 .map_or(Mode::Off, |r| r.mode)
@@ -576,7 +576,7 @@ impl Host for Desktop {
         self.app.state::<crate::settings::Store>().change(|s| {
             s.app_modes.insert(app_id.to_string(), mode);
         })?;
-        let _ = self.app.emit("motet://settings-changed", ());
+        let _ = self.app.emit("motetto://settings-changed", ());
         // The tray lists Off apps; rebuild it off this thread (the controller may hold the state).
         crate::tray::invalidate(&self.app);
         let app = self.app.clone();
@@ -593,7 +593,7 @@ impl Host for Desktop {
         self.app
             .state::<crate::settings::Store>()
             .change(|s| s.ask_on_call = on)?;
-        let _ = self.app.emit("motet://settings-changed", ());
+        let _ = self.app.emit("motetto://settings-changed", ());
         Ok(())
     }
 }
@@ -607,14 +607,14 @@ pub(crate) fn refresh_tray(app: &tauri::AppHandle) {
         )
     });
     if let Err(error) = result {
-        let _ = app.emit("motet://notice", error);
+        let _ = app.emit("motetto://notice", error);
     }
 }
 
 #[tauri::command]
 async fn set_companion_size(
     app: tauri::AppHandle,
-    size: motet_core::events::CompanionSize,
+    size: motetto_core::events::CompanionSize,
 ) -> Result<(), String> {
     act(app, Action::Size(size)).await
 }
@@ -628,7 +628,7 @@ async fn take_note(window: tauri::WebviewWindow) -> Result<(), String> {
     let app = window.app_handle().clone();
     act(
         app.clone(),
-        Action::Size(motet_core::events::CompanionSize::Sidecar),
+        Action::Size(motetto_core::events::CompanionSize::Sidecar),
     )
     .await?;
     if let Some(main) = app.get_webview_window("main") {

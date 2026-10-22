@@ -1,5 +1,5 @@
 // 16 px line icons for the meeting menus and the row "•••" (20 px, three 2.5 px dots), as drawn
-// in docs/app/motet-app-mockup.html.
+// in docs/app/motetto-app-mockup.html.
 const paths = {
   open: <path d="M9.5 2.5h4v4M13.5 2.5 8 8M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3"/>,
   rename: <><path d="M10.8 2.7l2.5 2.5L6 12.5l-3.2.7.7-3.2z"/><path d="M9.3 4.2l2.5 2.5"/></>,

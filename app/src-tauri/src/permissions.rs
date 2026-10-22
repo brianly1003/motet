@@ -55,7 +55,7 @@ pub fn notifications(request: bool) -> Result<bool, String> {
         .to_string()
         .ends_with(".app")
     {
-        return Err("Notification permission requires the packaged Motet.app. Recording controls remain visible in development.".into());
+        return Err("Notification permission requires the packaged Motetto.app. Recording controls remain visible in development.".into());
     }
     let class =
         AnyClass::get(c"UNUserNotificationCenter").ok_or("Notifications are unavailable")?;
@@ -66,7 +66,7 @@ pub fn notifications(request: bool) -> Result<bool, String> {
         let center: *mut AnyObject = msg_send![class, currentNotificationCenter];
         if request {
             let callback = block2::RcBlock::new(move |granted: Bool, error: *mut AnyObject| {
-                let _ = tx.send(if error.is_null() { Ok(granted.as_bool()) } else { Err("macOS couldn't authorize notifications. Check System Settings > Notifications > Motet.".to_string()) });
+                let _ = tx.send(if error.is_null() { Ok(granted.as_bool()) } else { Err("macOS couldn't authorize notifications. Check System Settings > Notifications > Motetto.".to_string()) });
             });
             let _: () = msg_send![center, requestAuthorizationWithOptions: 6_usize, completionHandler: &*callback];
         } else {
@@ -79,8 +79,8 @@ pub fn notifications(request: bool) -> Result<bool, String> {
     }
     let result = rx
         .recv_timeout(Duration::from_secs(if request { 60 } else { 3 }))
-        .map_err(|_| "Notification permission check timed out. Retry in Motet.".to_string())?;
-    // An ad-hoc signed bundle can fail the request even when System Settings allows Motet,
+        .map_err(|_| "Notification permission check timed out. Retry in Motetto.".to_string())?;
+    // An ad-hoc signed bundle can fail the request even when System Settings allows Motetto,
     // so trust the current setting before reporting the error.
     match result {
         Err(error) if request => match notifications(false) {

@@ -7,7 +7,7 @@ async (page) => {
     await ref.route('https://**/*', r => r.abort());
     await ref.emulateMedia({colorScheme: theme, reducedMotion: 'reduce'});
     await ref.setViewportSize({width: 1400, height: 1000});
-    await ref.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+    await ref.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
     await ref.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme);
     await ref.getByRole('button', {name: 'macOS', exact: true}).click();
     await ref.getByRole('button', {name: 'New recording', exact: true}).click();
@@ -26,9 +26,9 @@ async (page) => {
       window.calls = [];
       window.fixtureTranscript = '[00:07] Me: As you already know, FCM is Google\'s push delivery service.\n[00:28] Them: So Beams adds device management on top of FCM?';
       const emit = (event, payload) => { const id = listeners[event]; if (id) callbacks[id]?.({event, id: 0, payload}); };
-      window.fixtureState = value => { state = {...state, ...value}; emit('motet://event', {type: 'StateChanged', ...state}); };
-      window.fixtureStart = () => { created = true; window.fixtureState({state: {type: 'Recording'}, meeting_id: 'rec1', app: 'Zoom', elapsed_ms: 74000, started_by: {type: 'App', app: 'Zoom'}}); emit('motet://library-changed', null); };
-      window.fixtureStatus = status => { rec.status = status; emit('motet://library-changed', null); };
+      window.fixtureState = value => { state = {...state, ...value}; emit('motetto://event', {type: 'StateChanged', ...state}); };
+      window.fixtureStart = () => { created = true; window.fixtureState({state: {type: 'Recording'}, meeting_id: 'rec1', app: 'Zoom', elapsed_ms: 74000, started_by: {type: 'App', app: 'Zoom'}}); emit('motetto://library-changed', null); };
+      window.fixtureStatus = status => { rec.status = status; emit('motetto://library-changed', null); };
       window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
       window.__TAURI_INTERNALS__ = {metadata: {currentWindow: {label: 'main'}, currentWebview: {windowLabel: 'main', label: 'main'}}, convertFileSrc: p => p,
         transformCallback: cb => { callbacks[++next] = cb; return next; }, unregisterCallback: id => delete callbacks[id],
@@ -141,7 +141,7 @@ async (page) => {
     const rec = {id: 'rec1', title: 'Recorded meeting', created_ms: Date.now(), status: 'Recording', marks_ms: [], duration_ms: null, notes_ms: null, spellings: []};
     let state = {state: {type: 'Idle'}, meeting_id: null, app: null, elapsed_ms: 0, started_by: null, auto_start: false, problem: null, more_problems: 0, quit_pending: false, dnd_active: false, onboarding_done: true, sharing: null, never_pending: null, companion: {visible: false, size: 'Pill', pinned: false, peeking: false, display_id: ''}};
     const emit = (event, payload) => { const id = listeners[event]; if (id) callbacks[id]?.({event, id: 0, payload}); };
-    window.fixtureStart = () => { state = {...state, state: {type: 'Recording'}, meeting_id: 'rec1', elapsed_ms: 3000}; emit('motet://event', {type: 'StateChanged', ...state}); setTimeout(() => { created = true; emit('motet://library-changed', null); }, 300); };
+    window.fixtureStart = () => { state = {...state, state: {type: 'Recording'}, meeting_id: 'rec1', elapsed_ms: 3000}; emit('motetto://event', {type: 'StateChanged', ...state}); setTimeout(() => { created = true; emit('motetto://library-changed', null); }, 300); };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
     window.__TAURI_INTERNALS__ = {metadata: {currentWindow: {label: 'main'}, currentWebview: {windowLabel: 'main', label: 'main'}}, transformCallback: cb => { callbacks[++next] = cb; return next; }, unregisterCallback: () => {}, invoke: async (c, a) => {
       if (c === 'plugin:event|listen') { listeners[a.event] = a.handler; return a.handler; }

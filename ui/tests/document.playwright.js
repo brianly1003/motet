@@ -3,7 +3,7 @@ async (page) => {
   const reference=await page.context().newPage();
   await reference.route('https://**/*',route=>route.abort());
   await reference.setViewportSize({width:1200,height:900});
-  await reference.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await reference.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await reference.getByRole('button',{name:'macOS',exact:true}).click();
   await reference.getByRole('button',{name:'After the call',exact:true}).click();
   const results=[];
@@ -37,7 +37,7 @@ async (page) => {
         if(command==='list_meetings')return [summary,{...summary,id:'124',title:'Earlier meeting',created_ms:0}];
         if(command==='deleted_meetings')return [];
         if(command==='get_meeting')return meeting;
-        if(command==='meeting_media')return {tracks,duration_ms:87000,folder:'~/Documents/Motet/imports/123'};
+        if(command==='meeting_media')return {tracks,duration_ms:87000,folder:'~/Documents/Motetto/imports/123'};
         if(command==='set_action_item_done'){
           if(args.expected!==meeting.notes_md)throw Error('Stale notes');
           const lines=meeting.notes_md.split('\n');lines[args.line]=lines[args.line].replace(/\[[ x]\]/,args.done?'[x]':'[ ]');meeting.notes_md=lines.join('\n');return meeting.notes_md;

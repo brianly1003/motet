@@ -503,7 +503,7 @@ fn app_mode_action_saves_the_mode_through_the_host() {
     assert_eq!(e.session.app.state, SessionState::Idle);
 }
 #[test]
-fn a_blocked_detected_call_notifies_quietly_and_a_blocked_start_still_shows_motet() {
+fn a_blocked_detected_call_notifies_quietly_and_a_blocked_start_still_shows_motetto() {
     let mut e = engine();
     e.host.allowed.store(false, Ordering::SeqCst);
     zoom_call(&mut e, 0);

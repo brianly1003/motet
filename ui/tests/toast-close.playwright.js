@@ -46,7 +46,7 @@ async (page) => {
     await p.close();results.push(theme+' PASS');
   }
   const mock=await page.context().newPage();await mock.route('https://**/*',r=>r.abort());
-  await mock.goto('http://127.0.0.1:3001/motet-app-mockup.html');
+  await mock.goto('http://127.0.0.1:3001/motetto-app-mockup.html');
   await mock.getByRole('button',{name:'After the call',exact:true}).click();
   await mock.getByText('Action items',{exact:true}).first().click();
   await mock.getByRole('button',{name:'Recover',exact:true}).click();

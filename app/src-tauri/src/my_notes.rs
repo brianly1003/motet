@@ -143,7 +143,7 @@ pub fn save_my_notes(
     let merged = merge(&current.text, &base.text, &text)?;
     let result = write(&store.root, &meeting_id, &merged)?;
     remember(&mut history, &result);
-    app.emit("motet://my-notes", &result)
+    app.emit("motetto://my-notes", &result)
         .map_err(|e| e.to_string())?;
     Ok(result)
 }
@@ -175,7 +175,7 @@ pub fn add_jot(app: tauri::AppHandle, text: String) -> Result<MyNotes, String> {
         .join("\n");
     let result = write(&store.root, &id, &format!("{}\n{}", current.text, addition))?;
     remember(&mut history, &result);
-    app.emit("motet://my-notes", &result)
+    app.emit("motetto://my-notes", &result)
         .map_err(|e| e.to_string())?;
     Ok(result)
 }
@@ -193,7 +193,7 @@ mod tests {
     }
     #[test]
     fn notes_are_atomic_and_stale_temporary_files_do_not_block_saves() {
-        let root = std::env::temp_dir().join(format!("motet-notes-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-notes-{}", std::process::id()));
         fs::create_dir_all(root.join("123")).unwrap();
         fs::write(root.join("123/.my-notes.tmp"), "stale").unwrap();
         let saved = write(&root, "123", "[00:12] [] Follow up").unwrap();

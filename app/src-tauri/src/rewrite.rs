@@ -1,7 +1,7 @@
 //! Writing a meeting again from what it kept: Transcribe again (the saved audio) and Write the
 //! notes again (the transcript). Both run one at a time under `busy` and report `Stage`s.
 use crate::library;
-use motet_core::events::Stage;
+use motetto_core::events::Stage;
 use std::{fs, path::Path};
 
 /// A fresh `.regenerating` folder. One left behind means a run was cut off (the app quit or
@@ -70,17 +70,17 @@ pub(crate) fn retranscribe(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Resu
     if parts.is_empty() {
         return Err("This meeting has no saved audio to transcribe".into());
     }
-    motet_core::tools::reset();
+    motetto_core::tools::reset();
     stage(Stage::Transcribing);
     let transcript =
-        motet_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
+        motetto_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
     if transcript.trim().is_empty() {
         return Err("No speech was heard in the saved audio. The transcript is unchanged.".into());
     }
-    let fixed = match motet_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
-        Some(model) => {
-            Some(motet_core::correct::transcript(&model, &transcript).map_err(|e| e.to_string())?)
-        }
+    let fixed = match motetto_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
+        Some(model) => Some(
+            motetto_core::correct::transcript(&model, &transcript).map_err(|e| e.to_string())?,
+        ),
         None => None,
     };
     stage(Stage::Saving);
@@ -111,10 +111,10 @@ pub(crate) fn regenerate(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Result
     // parts it saved, as recording.rs would have done.
     if meeting.transcript.trim().is_empty() && folder.join("parts.json").exists() {
         let parts = saved_audio(&folder)?;
-        motet_core::tools::reset();
+        motetto_core::tools::reset();
         stage(Stage::Transcribing);
         let transcript =
-            motet_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
+            motetto_core::transcribe::transcript_parts(&parts, true).map_err(|e| e.to_string())?;
         fs::write(folder.join("transcript.txt"), &transcript).map_err(|e| e.to_string())?;
         meeting.transcript = transcript;
     }
@@ -129,7 +129,7 @@ pub(crate) fn regenerate(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Result
     if meeting.transcript.trim().is_empty() {
         return Err("This meeting has no transcript to summarize".into());
     }
-    motet_core::tools::reset(); // Cancel is for imports only
+    motetto_core::tools::reset(); // Cancel is for imports only
     let staging = staging(&folder)?;
     let result = (|| -> Result<(), String> {
         let started = std::time::Instant::now();
@@ -140,7 +140,7 @@ pub(crate) fn regenerate(root: &Path, id: &str, stage: &dyn Fn(Stage)) -> Result
             String::new()
         };
         stage(Stage::Summarizing { part: 1, of: 1 });
-        let title = motet_core::summarize::notes(
+        let title = motetto_core::summarize::notes(
             &staging.join("notes").to_string_lossy(),
             &transcript,
             &notes,
@@ -181,7 +181,8 @@ mod tests {
     use super::*;
     #[test]
     fn regeneration_without_transcript_preserves_notes() {
-        let root = std::env::temp_dir().join(format!("motet-no-transcript-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("motetto-no-transcript-{}", std::process::id()));
         fs::create_dir_all(root.join("123")).unwrap();
         fs::write(
             root.join("123/meeting.json"),
@@ -203,7 +204,7 @@ mod tests {
     }
     #[test]
     fn saved_audio_finds_parts_by_name_and_an_import_source() {
-        let root = std::env::temp_dir().join(format!("motet-saved-audio-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-saved-audio-{}", std::process::id()));
         // A recording whose stored paths point at a folder that has since moved; one track missing.
         fs::create_dir_all(root.join("rec")).unwrap();
         fs::write(root.join("rec/part-0000.mic.wav"), b"x").unwrap();
@@ -260,7 +261,7 @@ mod tests {
     }
     #[test]
     fn staging_replaces_a_folder_left_by_a_cut_off_run() {
-        let root = std::env::temp_dir().join(format!("motet-staging-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-staging-{}", std::process::id()));
         fs::create_dir_all(root.join(".regenerating")).unwrap();
         fs::write(root.join(".regenerating/notes.md"), "half written").unwrap();
         fs::write(root.join("notes.md"), "Keep these notes").unwrap();

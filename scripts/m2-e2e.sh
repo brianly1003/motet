@@ -9,7 +9,7 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
-export MOTET_TEST_MEDIA="$WORK"
+export MOTETTO_TEST_MEDIA="$WORK"
 export OLLAMA_HOST=http://127.0.0.1:11434
 MODEL="${WHISPER_MODEL:-$HOME/.cache/whisper/ggml-base.bin}"
 [[ -f "$MODEL" ]] || { echo "missing model: $MODEL"; exit 2; }
@@ -25,21 +25,21 @@ printf '#!/bin/sh\necho ffmpeg-must-not-run >&2\nexit 99\n' > "$WORK/bin/ffmpeg"
 chmod +x "$WORK/bin/ffmpeg"
 export PATH="$WORK/bin:$PATH"
 cd "$ROOT"
-cargo test -q -p motet-core imported_formats_decode_without_ffmpeg -- --ignored
+cargo test -q -p motetto-core imported_formats_decode_without_ffmpeg -- --ignored
 printf 'PASS  WAV, AIFF, MP3, M4A, MP4 and FLAC imports without ffmpeg\n'
-export MOTET_TEST_WHISPER_PORT
-MOTET_TEST_WHISPER_PORT=$(python3 - <<'PY'
+export MOTETTO_TEST_WHISPER_PORT
+MOTETTO_TEST_WHISPER_PORT=$(python3 - <<'PY'
 import socket
 with socket.socket() as sock:
     sock.bind(('127.0.0.1', 0))
     print(sock.getsockname()[1])
 PY
 )
-whisper-server -m "$MODEL" --host 127.0.0.1 --port "$MOTET_TEST_WHISPER_PORT" -bs 1 -bo 1 > "$WORK/server.log" 2>&1 &
+whisper-server -m "$MODEL" --host 127.0.0.1 --port "$MOTETTO_TEST_WHISPER_PORT" -bs 1 -bo 1 > "$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 python3 - <<'PY'
 import os, time, urllib.request
-url = 'http://127.0.0.1:' + os.environ['MOTET_TEST_WHISPER_PORT'] + '/'
+url = 'http://127.0.0.1:' + os.environ['MOTETTO_TEST_WHISPER_PORT'] + '/'
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 for _ in range(100):
     try:
@@ -50,11 +50,11 @@ for _ in range(100):
 else:
     raise SystemExit('local whisper-server did not become ready')
 PY
-cargo test -q -p motet-core real_sidecar_transcribes_synthetic_speech -- --ignored || { cat "$WORK/server.log"; exit 1; }
+cargo test -q -p motetto-core real_sidecar_transcribes_synthetic_speech -- --ignored || { cat "$WORK/server.log"; exit 1; }
 printf 'PASS  local whisper-server speech and absolute timestamps\n'
 cargo build --release -q
 printf 'WHISPER_MODEL=%s\nWHISPER_VAD_MODEL=\nOLLAMA_MODEL=%s\nFIX_MODEL=\n' "$MODEL" "${OLLAMA_MODEL:-qwen3:8b}" > "$WORK/.env"
-(cd "$WORK" && "$ROOT/target/release/motet" run --file speech.mp4 > run.log 2>&1) || { cat "$WORK/run.log"; exit 1; }
+(cd "$WORK" && "$ROOT/target/release/motetto" run --file speech.mp4 > run.log 2>&1) || { cat "$WORK/run.log"; exit 1; }
 grep -qi friday "$WORK/speech.txt"
 test -s "$WORK/speech.md"
 printf 'PASS  MP4 CLI import produces transcript and notes without ffmpeg\n'

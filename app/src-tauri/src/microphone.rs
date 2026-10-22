@@ -1,9 +1,9 @@
-//! The microphone picker (owner 2026-10-23, DESIGN 4.15): what Motet records from, switching it
+//! The microphone picker (owner 2026-10-23, DESIGN 4.15): what Motetto records from, switching it
 //! (mid-call too: the next part records from the new mic), its input volume, the system's Sound
 //! settings, and whether the mic has been too loud lately.
 
 use crate::controller::{Action, Controller};
-use motet_core::mics::{self, MicReport};
+use motetto_core::mics::{self, MicReport};
 use std::sync::{Mutex, atomic::Ordering};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
@@ -56,7 +56,7 @@ pub fn for_capture(app: &tauri::AppHandle) -> Option<String> {
         .unwrap_or(false);
     if !connected {
         let _ = app.emit(
-            "motet://notice",
+            "motetto://notice",
             "Your chosen microphone isn't connected. Recording from the system default.",
         );
     }
@@ -83,7 +83,7 @@ pub async fn set_microphone(
             clipping.0.clear();
         }
         app.state::<Controller>().action(Action::SwitchMic)?;
-        let _ = app.emit("motet://mic-changed", ());
+        let _ = app.emit("motetto://mic-changed", ());
         report(&app)
     })
     .await
@@ -102,7 +102,7 @@ pub async fn set_mic_volume(
         if let Ok(mut clipping) = app.state::<Clipping>().0.lock() {
             clipping.0.clear();
         }
-        let _ = app.emit("motet://mic-changed", ());
+        let _ = app.emit("motetto://mic-changed", ());
         report(&app)
     })
     .await

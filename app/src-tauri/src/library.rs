@@ -420,14 +420,14 @@ pub fn import(
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         let copied = dir.join(format!("source.{extension}"));
         fs::copy(source, &copied)?;
-        let transcript = motet_core::transcribe::transcript_parts(
+        let transcript = motetto_core::transcribe::transcript_parts(
             &[(vec![copied.to_string_lossy().into_owned()], 0)],
             true,
         )?;
         fs::write(dir.join("transcript.txt"), &transcript)?;
-        let notes_input = match motet_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
+        let notes_input = match motetto_core::config::var("FIX_MODEL").filter(|v| !v.is_empty()) {
             Some(model) => {
-                let fixed = motet_core::correct::transcript(&model, &transcript)?;
+                let fixed = motetto_core::correct::transcript(&model, &transcript)?;
                 fs::write(dir.join("transcript.fixed.txt"), &fixed)?;
                 fixed
             }
@@ -436,13 +436,13 @@ pub fn import(
         let started = std::time::Instant::now();
         let spellings = used_spellings();
         let title =
-            motet_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input, "")?;
+            motetto_core::summarize::notes(&dir.join("notes").to_string_lossy(), &notes_input, "")?;
         summary.titled(title);
         summary.notes_ms = Some(started.elapsed().as_millis() as u64);
         summary.spellings = spellings;
         Ok(())
     })();
-    if result.is_err() && motet_core::tools::cancelled() {
+    if result.is_err() && motetto_core::tools::cancelled() {
         fs::remove_dir_all(&dir)
             .map_err(|e| format!("Import stopped, but its folder couldn't be removed: {e}"))?;
         return Ok(None);
@@ -472,7 +472,7 @@ pub fn import(
 }
 
 pub(crate) fn used_spellings() -> Vec<String> {
-    motet_core::config::terms()
+    motetto_core::config::terms()
         .map(|terms| terms.split(", ").map(str::to_owned).collect())
         .unwrap_or_default()
 }
@@ -585,13 +585,13 @@ mod tests {
         }
     }
 
-    // Cancel is one process-wide flag (motet_core::tools), so imports run one at a time here too.
+    // Cancel is one process-wide flag (motetto_core::tools), so imports run one at a time here too.
     static IMPORTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     fn temp_root() -> PathBuf {
         // Parallel tests can read the same clock tick; the counter keeps folders apart.
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let root = std::env::temp_dir().join(format!(
-            "motet-library-{}-{}",
+            "motetto-library-{}-{}",
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -725,9 +725,9 @@ mod tests {
         let root = temp_root();
         let source = root.join("call.m4a");
         fs::write(&source, b"not really audio").unwrap();
-        motet_core::tools::cancel();
+        motetto_core::tools::cancel();
         let result = import(&root, &source, |_| {});
-        motet_core::tools::reset();
+        motetto_core::tools::reset();
         assert!(matches!(result, Ok(None)), "{result:?}");
         assert!(list(&root).unwrap().is_empty());
         assert_eq!(fs::read(&source).unwrap(), b"not really audio");
@@ -737,7 +737,7 @@ mod tests {
     #[ignore = "requires synthetic speech and installed local models"]
     fn real_import_preserves_source_and_writes_notes() {
         let _imports = IMPORTS.lock().unwrap_or_else(|e| e.into_inner());
-        let source = PathBuf::from(std::env::var("MOTET_TEST_IMPORT").unwrap());
+        let source = PathBuf::from(std::env::var("MOTETTO_TEST_IMPORT").unwrap());
         let before = fs::read(&source).unwrap();
         let root = temp_root();
         let imported = import(&root, &source, |_| {}).unwrap().unwrap();
@@ -754,6 +754,6 @@ mod tests {
         let config = ts_rs::Config::default().with_out_dir("../../ui/lib/bindings");
         Meeting::export_all(&config).unwrap();
         SearchHit::export_all(&config).unwrap();
-        motet_core::events::Event::export_all(&config).unwrap();
+        motetto_core::events::Event::export_all(&config).unwrap();
     }
 }

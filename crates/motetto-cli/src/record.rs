@@ -1,6 +1,6 @@
 //! CLI stop source: Enter requests cancellation without putting stdin in the core.
 
-use motet_core::{capture, events::Stop};
+use motetto_core::{capture, events::Stop};
 use std::error::Error;
 use std::sync::{atomic::Ordering, mpsc};
 

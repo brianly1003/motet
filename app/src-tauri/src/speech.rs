@@ -1,5 +1,5 @@
 //! Own the local speech process; dropping a preview session also reaps its child.
-use motet_core::{config, whisper};
+use motetto_core::{config, whisper};
 use std::{
     io::{BufRead, BufReader},
     net::{TcpListener, TcpStream},
@@ -29,12 +29,12 @@ pub fn shutdown() {
     }
 }
 impl Server {
-    pub fn start(stop: &motet_core::events::Stop) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn start(stop: &motetto_core::events::Stop) -> Result<Self, Box<dyn std::error::Error>> {
         let model = config::var("WHISPER_MODEL").ok_or("The speech model is not configured")?;
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         let port = listener.local_addr()?.port();
         drop(listener);
-        let mut command = motet_core::tools::command("whisper-server");
+        let mut command = motetto_core::tools::command("whisper-server");
         command.args([
             "--host",
             "127.0.0.1",
@@ -45,7 +45,7 @@ impl Server {
             "-l",
             config::call_language().as_deref().unwrap_or("auto"),
             // Per-slice language detection stays on; -nlp drops the server's second detection
-            // pass (language_probabilities), which Motet never reads: ~4.8 s -> ~3.0 s per slice.
+            // pass (language_probabilities), which Motetto never reads: ~4.8 s -> ~3.0 s per slice.
             "-nlp",
         ]);
         if let Some(vad) = config::var("WHISPER_VAD_MODEL").filter(|v| !v.is_empty()) {
@@ -109,7 +109,7 @@ impl Server {
         audio: &[f32],
         offset: u64,
         prompt: Option<&str>,
-        stop: &motet_core::events::Stop,
+        stop: &motetto_core::events::Stop,
     ) -> Result<Vec<whisper::Segment>, Box<dyn std::error::Error>> {
         self.empty_vad.store(false, Ordering::SeqCst);
         let result =
@@ -161,9 +161,9 @@ impl Drop for Server {
 mod tests {
     use super::*;
     #[test]
-    #[ignore = "requires whisper-server, an installed local model and MOTET_TEST_SPEECH WAV"]
+    #[ignore = "requires whisper-server, an installed local model and MOTETTO_TEST_SPEECH WAV"]
     fn managed_server_transcribes_synthetic_speech_and_reaps_child() {
-        let source = std::env::var("MOTET_TEST_SPEECH").unwrap();
+        let source = std::env::var("MOTETTO_TEST_SPEECH").unwrap();
         let samples = hound::WavReader::open(source)
             .unwrap()
             .samples::<f32>()

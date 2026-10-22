@@ -3,7 +3,7 @@ use crate::{
     controller::{Job, Message},
     library,
 };
-use motet_core::{
+use motetto_core::{
     config, correct,
     events::{Event, Stage},
     summarize, transcribe,
@@ -28,7 +28,7 @@ pub fn spawn(
 ) -> Result<mpsc::Sender<Job>, String> {
     let (sender, receiver) = mpsc::channel();
     std::thread::Builder::new()
-        .name("motet-recording".into())
+        .name("motetto-recording".into())
         .spawn(move || {
             let mut recording: Option<Recording> = None;
             for job in receiver {
@@ -52,9 +52,9 @@ pub fn spawn(
                             // The meeting exists from its first second: list it before capture, and
                             // open it in the library (owner 2026-10-20: Record now from the tray
                             // left the old meeting selected). Resume parts don't pull the view.
-                            let _ = app.emit("motet://library-changed", ());
+                            let _ = app.emit("motetto://library-changed", ());
                             if offset_ms == 0 {
-                                let _ = app.emit("motet://open-meeting", id.clone());
+                                let _ = app.emit("motetto://open-meeting", id.clone());
                             }
                             crate::live::start(
                                 app.clone(),
@@ -67,7 +67,7 @@ pub fn spawn(
                             // Windows records the default mic; its picker needs WASAPI ids.
                             #[cfg(target_os = "macos")]
                             let mic = crate::microphone::for_capture(&app);
-                            let result = motet_core::capture::record_with_levels(
+                            let result = motetto_core::capture::record_with_levels(
                                 base,
                                 stop.clone(),
                                 Some(app.state::<crate::live::State>().meters.clone()),
@@ -75,7 +75,7 @@ pub fn spawn(
                             )
                             .map_err(|e| e.to_string());
                             #[cfg(target_os = "windows")]
-                            let result = motet_core::capture::record(base, stop.clone())
+                            let result = motetto_core::capture::record(base, stop.clone())
                                 .map_err(|e| e.to_string());
                             let ended = stop.swap(true, Ordering::SeqCst);
                             crate::speech::shutdown();
@@ -99,7 +99,7 @@ pub fn spawn(
                         let mut result = match recording.as_ref().filter(|r| r.id == id) {
                             Some(record) => finish(&root, record, |stage| {
                                 let _ = app.emit(
-                                    "motet://event",
+                                    "motetto://event",
                                     Event::Stage {
                                         meeting_id: id.clone(),
                                         stage,
@@ -127,7 +127,7 @@ pub fn spawn(
                                 Ok(()) => {}
                                 Err(error) => {
                                     let _ = app.emit(
-                                        "motet://notice",
+                                        "motetto://notice",
                                         format!(
                                             "Notes are ready, but audio retention failed: {error}"
                                         ),
@@ -135,7 +135,7 @@ pub fn spawn(
                                 }
                             }
                         }
-                        let _ = app.emit("motet://library-changed", ());
+                        let _ = app.emit("motetto://library-changed", ());
                         let _ = results.send(Message::Finished { id, result });
                         recording = None;
                     }
@@ -150,7 +150,7 @@ pub fn spawn(
                                 if notes.exists() && !library::text(&notes)?.trim().is_empty() {
                                     status(&root, &id, "NeedsAttention")?;
                                     let _ = app.emit(
-                                        "motet://notice",
+                                        "motetto://notice",
                                         "The short recording was kept with your notes.",
                                     );
                                     Ok(())
@@ -160,13 +160,13 @@ pub fn spawn(
                             });
                             if let Err(e) = result {
                                 let _ = app.emit(
-                                    "motet://notice",
+                                    "motetto://notice",
                                     format!("Couldn't discard the short recording: {e}"),
                                 );
                             }
                         }
                         recording = None;
-                        let _ = app.emit("motet://library-changed", ());
+                        let _ = app.emit("motetto://library-changed", ());
                     }
                     Job::Trash { id } => {
                         // Recoverable: Recently deleted keeps the audio and parts.json, and Write the
@@ -175,12 +175,12 @@ pub fn spawn(
                             .and_then(|_| crate::meeting_actions::move_meeting(&root, &id, false));
                         if let Err(e) = result {
                             let _ = app.emit(
-                                "motet://notice",
+                                "motetto://notice",
                                 format!("Couldn't discard the recording: {e}"),
                             );
                         }
                         recording = None;
-                        let _ = app.emit("motet://library-changed", ());
+                        let _ = app.emit("motetto://library-changed", ());
                     }
                     Job::Exit => {
                         allow_exit.store(true, Ordering::SeqCst);
@@ -202,8 +202,8 @@ fn capture_part(
     root: &Path,
     record: &mut Recording,
     offset_ms: u64,
-    stop: motet_core::events::Stop,
-    capture: impl FnOnce(&str, motet_core::events::Stop) -> Result<Vec<String>, String>,
+    stop: motetto_core::events::Stop,
+    capture: impl FnOnce(&str, motetto_core::events::Stop) -> Result<Vec<String>, String>,
 ) -> Result<(), String> {
     if let Some(e) = &record.failure {
         return Err(e.clone());
@@ -292,7 +292,7 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
     }
     status(root, &record.id, "Finishing")?;
     // Cancel is for imports only; a late one must not stop these notes.
-    motet_core::tools::reset();
+    motetto_core::tools::reset();
     let dir = library::folder(root, &record.id)?;
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
         stage(Stage::Transcribing);
@@ -338,11 +338,11 @@ fn finish(root: &Path, record: &Recording, stage: impl Fn(Stage)) -> Result<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use motet_core::events::Stop;
+    use motetto_core::events::Stop;
     fn root() -> PathBuf {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "motet-worker-{}-{}-{}",
+            "motetto-worker-{}-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed),
             std::time::SystemTime::now()
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     #[ignore = "requires synthetic audio and installed local models"]
     fn real_resumed_recording_writes_notes_with_offsets() {
-        let source = PathBuf::from(std::env::var("MOTET_TEST_RECORDING").unwrap());
+        let source = PathBuf::from(std::env::var("MOTETTO_TEST_RECORDING").unwrap());
         let root = root();
         let dir = create(&root, "123").unwrap();
         let mut record = Recording {

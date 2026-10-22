@@ -1,3 +1,3 @@
 "use client";
 import { useEffect } from "react";
-export default function Home(){useEffect(()=>{window.location.replace("/main/");},[]);return <p>Opening Motet…</p>;}
+export default function Home(){useEffect(()=>{window.location.replace("/main/");},[]);return <p>Opening Motetto…</p>;}

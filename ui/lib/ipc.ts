@@ -34,11 +34,11 @@ export const quitRecording = (stopAndSave: boolean) => invoke<void>("quit", { st
 export const dismissProblem = (id: number) => invoke<void>("dismiss_problem", { id });
 export async function onSessionEvent(callback: (event: SessionEvent) => void) {
   const { listen } = await import("@tauri-apps/api/event");
-  return listen<SessionEvent>("motet://event", event => callback(event.payload));
+  return listen<SessionEvent>("motetto://event", event => callback(event.payload));
 }
 export async function onNotice(callback: (notice: string) => void) {
   const { listen } = await import("@tauri-apps/api/event");
-  return listen<string>("motet://notice", event => callback(event.payload));
+  return listen<string>("motetto://notice", event => callback(event.payload));
 }
 
 export const setCompanionSize = (size: "Pill" | "Dot" | "Sidecar" | "Tucked") => invoke<void>("set_companion_size", { size });
@@ -55,7 +55,7 @@ export async function onFileDrag(callback: (over: boolean) => void) {
 
 export async function onOpenMeeting(callback: (id: string) => void) {
   const { listen } = await import("@tauri-apps/api/event");
-  return listen<string>("motet://open-meeting", event => callback(event.payload));
+  return listen<string>("motetto://open-meeting", event => callback(event.payload));
 }
 
 export const answerAsk = (callId: string, record: boolean) => invoke<void>("answer_ask", { callId, record });
@@ -72,7 +72,7 @@ export const addJot = (text: string) => invoke<MyNotes>("add_jot", { text });
 // `extra`: px the page needs under its controls (a menu, the Ask card's mic line); Rust sizes the window.
 export const companionMenu = (open: boolean, extra?: number) => invoke<void>("companion_menu", { open, extra: extra ?? null });
 
-// The microphone picker (DESIGN 4.15): what Motet records from, and its one problem.
+// The microphone picker (DESIGN 4.15): what Motetto records from, and its one problem.
 import type { MicReport } from "./bindings/MicReport";
 export const microphones = () => invoke<MicReport>("microphones");
 export const setMicrophone = (id: string | null) => invoke<MicReport>("set_microphone", { id });
@@ -94,7 +94,7 @@ export async function onCompanionFocus(callback: (focused: boolean) => void) {
 }
 export async function onOpenNotes(callback: (mode: string) => void) {
   const { listen } = await import("@tauri-apps/api/event");
-  return listen<string>("motet://open-notes", event => callback(event.payload));
+  return listen<string>("motetto://open-notes", event => callback(event.payload));
 }
 
 export const pinCompanion = (pinned: boolean) => invoke<void>("pin_companion", { pinned });
@@ -139,5 +139,5 @@ export const moveNotesFolder=()=>invoke<string|null>('move_notes_folder');
 export const about=()=>invoke<{version:string;licences:string;platform:string}>('about');
 export const openLogsFolder=()=>invoke<void>('open_logs_folder');
 export async function onSettingsTab(callback:(tab:string)=>void){
-  const {listen}=await import('@tauri-apps/api/event');return listen<string>('motet://settings-tab',event=>callback(event.payload));
+  const {listen}=await import('@tauri-apps/api/event');return listen<string>('motetto://settings-tab',event=>callback(event.payload));
 }

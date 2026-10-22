@@ -117,7 +117,7 @@ pub async fn delete_all_meetings(app: tauri::AppHandle, confirm: bool) -> Result
         }
         let result = wipe(&state.root);
         state.busy.store(false, Ordering::SeqCst);
-        let _ = app.emit("motet://library-changed", ());
+        let _ = app.emit("motetto://library-changed", ());
         result
     })
     .await
@@ -196,7 +196,7 @@ pub async fn move_notes_folder(app: tauri::AppHandle) -> Result<Option<String>, 
                     "Choose an empty folder so existing files are never overwritten.".into(),
                 );
             }
-            let staging = target.join(".motet-move");
+            let staging = target.join(".motetto-move");
             if let Err(e) = copy_verified(&source, &staging) {
                 let _ = fs::remove_dir_all(&staging);
                 return Err(e);
@@ -262,7 +262,7 @@ mod tests {
     use super::*;
     #[test]
     fn retention_keeps_documents_and_unfinished_audio() {
-        let root = std::env::temp_dir().join(format!("motet-retain-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("motetto-retain-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         for (id, status) in [("1", "Ready"), ("2", "Finishing"), ("3", "NeedsAttention")] {
             fs::create_dir_all(root.join(id)).unwrap();
@@ -293,7 +293,7 @@ mod tests {
         StorageSummary::export_all(&ts_rs::Config::default().with_out_dir("../../ui/lib/bindings"))
             .unwrap();
         let root =
-            std::env::temp_dir().join(format!("motet-settings-storage-{}", std::process::id()));
+            std::env::temp_dir().join(format!("motetto-settings-storage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("old/123")).unwrap();
         fs::write(root.join("old/123/notes.md"), "notes").unwrap();
