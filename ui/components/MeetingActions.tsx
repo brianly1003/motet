@@ -23,10 +23,13 @@ export function notesText(notes_md: string, kind: "items" | "markdown" | "plain"
 /** A meeting still recording or writing its notes can't be deleted yet. */
 export const deletable = (status: string) => status !== "Recording" && status !== "Finishing";
 
-export default function MeetingActions({ meeting, onChanged, onError, onRename, onDelete, onLock }: { meeting: Meeting; onChanged: (deleted: boolean) => Promise<void>; onError: (message: string) => void; onRename: () => void; onDelete: () => void; onLock: (locked: boolean) => void }) {
+export default function MeetingActions({ meeting, hasAudio, onChanged, onError, onToast, onRename, onDelete, onLock }: { meeting: Meeting; hasAudio: boolean; onChanged: (deleted: boolean) => Promise<void>; onError: (message: string) => void; onToast?: (text: string) => void; onRename: () => void; onDelete: () => void; onLock: (locked: boolean) => void }) {
   const locked = meeting.summary.locked;
   const [menu, setMenu] = useState<"copy" | "more" | null>(null);
-  const [confirm, setConfirm] = useState<"regenerate" | null>(null);
+  const [confirm, setConfirm] = useState<"regenerate" | "retranscribe" | null>(null);
+  // Corrections Transcribe again would replace: lines that differ from what was heard.
+  const heard = meeting.transcript_heard ? meeting.transcript_heard.split("\n") : [];
+  const corrections = heard.length ? meeting.transcript.split("\n").filter((line, i) => line !== heard[i]).length : 0;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const root = useRef<HTMLDivElement>(null);
@@ -44,11 +47,13 @@ export default function MeetingActions({ meeting, onChanged, onError, onRename, 
     try { await navigator.clipboard.writeText(notesText(meeting.notes_md, kind)); setMessage(s.copied); setMenu(null); }
     catch (error) { onError(String(error)); }
   }
-  async function run(action: "reveal" | "regenerate") {
+  async function run(action: "reveal" | "regenerate" | "retranscribe") {
     setBusy(true); setMenu(null);
-    try { await meetingAction(meeting.summary.id, action); setConfirm(null); if (action !== "reveal") await onChanged(false); }
+    // The question is answered either way; a failure shows in the page's alert, not under it.
+    // The menu is hidden while the job runs, so the parent shows what finished.
+    try { await meetingAction(meeting.summary.id, action); if (action !== "reveal") await onChanged(false); if (action === "retranscribe") onToast?.(s.retranscribed); }
     catch (error) { onError(String(error)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setConfirm(null); }
   }
   return <div className="headacts" ref={root} onKeyDown={event => {
     if (event.key === "Escape") { setMenu(null); root.current?.querySelector<HTMLButtonElement>(`[data-menu="${menu}"]`)?.focus(); }
@@ -67,13 +72,14 @@ export default function MeetingActions({ meeting, onChanged, onError, onRename, 
       {/* Locked notes are read-only for review (SPEC 7.11): no rename, no new notes over them. */}
       <MenuItem icon="rename" label={s.rename} disabled={locked} title={locked ? s.lockedHint : undefined} onClick={() => { setMenu(null); onRename(); }}/>
       <MenuItem icon="again" label={s.regenerate} disabled={locked} title={locked ? s.lockedHint : undefined} onClick={() => { setConfirm("regenerate"); setMenu(null); }}/>
+      <MenuItem icon="wave" label={s.retranscribe} disabled={locked || !hasAudio} title={locked ? s.lockedHint : !hasAudio ? s.noAudio : undefined} onClick={() => { setConfirm("retranscribe"); setMenu(null); }}/>
       <MenuItem icon="folder" label={s.reveal} onClick={() => run("reveal")}/>
       <div className="sep"/>
       <MenuSwitch icon="lock" label={s.lockNotes} checked={locked} onChange={onLock}/>
       <div className="sep"/>
       <MenuItem icon="trash" label={s.deleteMeeting} danger disabled={!deletable(meeting.summary.status)} title={deletable(meeting.summary.status) ? undefined : s.deleteBusy} onClick={() => { setMenu(null); onDelete(); }}/>
     </div>}
-    {confirm && <Alert variant="warning" className="doc-confirm" role="alertdialog" title={s.regenerate} actions={<><button className="doc-action" disabled={busy} onClick={() => run(confirm)}>{busy ? s.processing : s.confirm}</button><button className="doc-action ghost" disabled={busy} onClick={() => setConfirm(null)}>{s.cancel}</button></>}>{s.regenerateConfirm}</Alert>}
+    {confirm && <Alert variant="warning" className="doc-confirm" role="alertdialog" title={confirm === "retranscribe" ? s.retranscribe : s.regenerate} actions={<><button className="doc-action" disabled={busy} onClick={() => run(confirm)}>{busy ? s.processing : s.confirm}</button><button className="doc-action ghost" disabled={busy} onClick={() => setConfirm(null)}>{s.cancel}</button></>}>{confirm === "retranscribe" ? corrections ? s.retranscribeEdited.replace("{n}", String(corrections)) : s.retranscribeConfirm : s.regenerateConfirm}</Alert>}
     <span className="sr-only" role="status">{message}</span>
   </div>;
 }

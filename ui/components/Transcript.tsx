@@ -18,8 +18,18 @@ export default function Transcript({id, text, heard, marks, locked = false, onSe
   const playing = position === undefined ? -1 : lines.findLastIndex(line => line.ms !== null && line.ms <= position);
   const box = useRef<HTMLDivElement>(null);
   const history = useRef<{index: number; text: string}[]>([]);
-  // Playback never pulls the view or the highlight onto the line being edited.
-  useEffect(() => { if (playing >= 0 && focused < 0) box.current?.children[playing]?.scrollIntoView({block: "nearest"}); }, [playing, focused]);
+  // Playback never pulls the view or the highlight onto the line being edited. Opening at a cited
+  // time, or a playing line leaving the view, puts the line at the top so what plays next shows
+  // below it (owner 2026-10-21); a line already in view stays put.
+  const opened = useRef(false);
+  useEffect(() => {
+    const row = playing >= 0 && focused < 0 ? box.current?.children[playing] : undefined;
+    if (!row) return;
+    const view = row.closest(".docbody")?.getBoundingClientRect(), r = row.getBoundingClientRect();
+    const under = parseFloat(getComputedStyle(row).scrollMarginBottom) || 0;
+    if (!opened.current || !view || r.top < view.top || r.bottom > view.bottom - under) row.scrollIntoView({block: "start"});
+    opened.current = true;
+  }, [playing, focused]);
 
   async function save(index: number, value: string, undoable = true) {
     const before = lines[index]?.text ?? "";

@@ -11,7 +11,7 @@ export const libraryBytes = () => invoke<number>("library_bytes");
 export const getMeeting = (id: string) => invoke<Meeting>("get_meeting", { id });
 export const importAudio = () => invoke<MeetingSummary | null>("import_audio");
 // The meeting an import or Write the notes again is writing (id null while the file picker is open).
-export type Job = { id: string | null; import: boolean };
+export type Job = { id: string | null; import: boolean; transcribe: boolean };
 export const importing = () => invoke<Job | null>("importing");
 export const cancelImport = () => invoke<void>("cancel_import");
 export async function subscribe(name: string, callback: () => void) {
@@ -88,7 +88,7 @@ export const sharingMode = (active: boolean) => invoke<void>("sharing_mode", { a
 export const openActionItems = () => invoke<[MeetingSummary, string][]>("open_action_items");
 export const searchMeetings = (query: string) => invoke<MeetingSummary[]>("search_meetings", { query });
 
-export const meetingAction = (id: string, action: "reveal" | "regenerate" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
+export const meetingAction = (id: string, action: "reveal" | "regenerate" | "retranscribe" | "delete" | "restore" | "purge") => invoke<void>("meeting_action", { id, action });
 export const deletedMeetings = () => invoke<MeetingSummary[]>("deleted_meetings");
 export const renameMeeting = (id: string, title: string) => invoke<MeetingSummary>("rename_meeting", { id, title });
 export const setLocked = (id: string, locked: boolean) => invoke<MeetingSummary>("set_locked", { id, locked });

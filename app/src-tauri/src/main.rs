@@ -15,6 +15,7 @@ mod note_items;
 mod notifications;
 mod permissions;
 mod recording;
+mod rewrite;
 mod settings;
 mod settings_models;
 mod settings_storage;

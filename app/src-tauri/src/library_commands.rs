@@ -28,6 +28,8 @@ pub(crate) struct Job {
     pub(crate) id: Option<String>,
     /// An import can be cancelled; Write the notes again can't.
     pub(crate) import: bool,
+    /// Transcribe again rather than Write the notes again; the page shows its own steps.
+    pub(crate) transcribe: bool,
 }
 
 impl Library {
@@ -131,6 +133,7 @@ pub(crate) async fn import_file(
     state.set_job(Some(Job {
         id: None,
         import: true,
+        transcribe: false,
     }));
     refresh_tray(&app);
     let _ = app.emit("motet://library-changed", ());
@@ -156,6 +159,7 @@ pub(crate) async fn import_file(
             library.set_job(Some(Job {
                 id: Some(id.into()),
                 import: true,
+                transcribe: false,
             }));
             let _ = worker.emit("motet://library-changed", ());
         })

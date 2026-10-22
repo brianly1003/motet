@@ -155,6 +155,9 @@ svg.duet path.them { stroke: var(--voice-them); } svg.duet circle.them { fill: v
 /* Transcript rows and bookmark flags share the mockup type scale. */
 .tline { display: grid; grid-template-columns: 50px 44px minmax(0,1fr); gap: 10px; font: 400 14px/22px var(--font-ui); color: var(--ink); padding: 6px 8px; border-radius: 7px; position: relative; transition: background-color .12s; --voice: var(--voice-them); }
 .tline.me { --voice: var(--voice-me); }
+/* Scrolling a line into view (a cited time, playback, arrows) keeps one line showing above it, so
+   it is plain there is more to scroll back to, and stops above the floating player. */
+.tline { scroll-margin: 46px 0 76px; }
 .tline.playing { background: var(--hl); }
 .tline .ts { color: var(--ink-3); font: 400 12px/22px var(--font-data); font-feature-settings: "tnum"; }
 .who { font: 500 11px/1.8 var(--font-data); font-feature-settings: "tnum"; }

@@ -16,6 +16,7 @@ import * as ipc from "@/lib/ipc";
 import { strings as s } from "@/lib/strings";
 import type { Meeting } from "@/lib/bindings/Meeting";
 import type { MeetingSummary } from "@/lib/bindings/MeetingSummary";
+import type { Stage } from "@/lib/bindings/Stage";
 
 const GROUPS=["Today","This week","Earlier"];
 
@@ -34,6 +35,16 @@ export default function Main(){
   // in the list and on its own page; only Record and a second Import wait (owner, 2026-10-20).
   const [job,setJob]=useState<ipc.Job|null>(null);
   const jobRef=useRef<ipc.Job|null>(null);
+  // Write the notes again reports its step for its meeting's page (owner 2026-10-21).
+  const [jobStage,setJobStage]=useState<Stage|null>(null);
+  const rewritingId=job&&!job.import?job.id:null;
+  useEffect(()=>{
+    setJobStage(null);
+    if(!rewritingId||!ipc.desktopAvailable())return;
+    let active=true,off:(()=>void)|undefined;
+    void ipc.onSessionEvent(event=>{if(active&&event.type==="Stage"&&event.meeting_id===rewritingId)setJobStage(event.stage);}).then(stop=>{if(active)off=stop;else stop();});
+    return ()=>{active=false;off?.();};
+  },[rewritingId]);
   // Cancel import: the tool stops in Rust, then the import resolves with nothing and the toast says so.
   const [stopping,setStopping]=useState(false);
   const stoppingRef=useRef(false);
@@ -174,7 +185,7 @@ export default function Main(){
       <nav className="meeting-list" aria-label={s.meetings}>
         {GROUPS.map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=>{const current=!trashOpen&&selected?.summary.id===meeting.id;return <div key={meeting.id} className={`mrow${rowMenu?.id===meeting.id?" open":""}`}>
           <button className={`meeting-row ${current?"selected":""}`} aria-current={current?"page":undefined} onClick={()=>select(meeting.id)}><strong title={meetingTitle(meeting)}>{meetingTitle(meeting)}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${durationLabel(meeting.duration_ms)}`:""}{(()=>{const type=live?.meeting_id===meeting.id?live.state.type:null;
-            const [cls,label]=type==="Recording"?["rec",s.chipRecording]:type==="Paused"?["plain",s.paused]:type==="Stopped"?["plain",s.chipStopped]:meeting.status==="Ready"?["ready",s.ready]:meeting.status==="Finishing"||type==="Finishing"?["attention",s.finishing]:["attention",s.failed];
+            const [cls,label]=type==="Recording"?["rec",s.chipRecording]:type==="Paused"?["plain",s.paused]:type==="Stopped"?["plain",s.chipStopped]:job?.id===meeting.id?["attention",job.transcribe?s.chipTranscribing:s.finishing]:meeting.status==="Ready"?["ready",s.ready]:meeting.status==="Finishing"||type==="Finishing"?["attention",s.finishing]:["attention",s.failed];
             return <i className={cls}>{label}</i>;})()}</span></button>
           <button className="rowmore" aria-label={`${s.rowActions} ${meetingTitle(meeting)}`} aria-haspopup="menu" aria-expanded={rowMenu?.id===meeting.id} onClick={event=>{
             if(rowMenu?.id===meeting.id){setRowMenu(null);return;}
@@ -191,9 +202,9 @@ export default function Main(){
       {quitPending&&<Alert title="Saving before quitting">{s.quitPending}</Alert>}
       {loading?<div className="empty" role="status"><p>{s.loading}</p></div>
         :trashOpen?<RecentlyDeleted deleted={deleted} refresh={refresh} notify={notify} onError={setError}/>
-        :selected&&job?.id===selected.summary.id?<div className="home"><h1>{meetingTitle(selected.summary)}</h1><div className={`empty processing${stopping?" stopping":""}`} role="status"><Duet/><h2>{s.processing}</h2><p>{s.processingBody}</p><div className="progress"/>
+        :selected&&job?.import&&job.id===selected.summary.id?<div className="home"><h1>{meetingTitle(selected.summary)}</h1><div className={`empty processing${stopping?" stopping":""}`} role="status"><Duet/><h2>{s.processing}</h2><p>{s.processingBody}</p><div className="progress"/>
           {job.import&&<div className="proc-cancel"><button className="btn" onClick={cancelImport} disabled={stopping||!desktop}>{stopping?s.importStopping:s.importCancel}</button><span className="hint">{s.importCancelHint}</span></div>}</div></div>
-        :selected?<MeetingDocument key={selected.summary.id} session={session} meeting={selected} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
+        :selected?<MeetingDocument key={selected.summary.id} session={session} meeting={selected} rewriting={rewritingId===selected.summary.id?{stage:jobStage,transcribe:!!job?.transcribe}:undefined} onToast={text=>notify(text)} onChange={setSelected} onError={setError} renameRequest={rename?.id===selected.summary.id?rename.n:0} onRename={title=>renameMeeting(selected.summary.id,title)} onDelete={()=>void deleteMeeting(selected.summary.id)} onChanged={async removed=>{await refresh();if(removed){selection.current++;setSelected(null);}else await select(selected.summary.id);}}/>
         :meetings.length?<LibraryHome version={version} onOpen={id=>void select(id)} onImport={importRecording} onError={setError} onCount={setOpenCount} disabled={!desktop||!!importBlocked} disabledReason={importBlocked} onDone={undo=>notify(s.itemDone,undo)} interrupted={meetings.filter(meeting=>meeting.status==="Interrupted"&&meeting.id!==job?.id)} onRecover={ids=>void recover(ids)} onDiscard={ids=>void discardRecovery(ids)}/>
         :<div className="home"><h1>{s.meetings}</h1><div className="empty"><Duet className="mark lg"/><b>{meetings.length?s.libraryTitle:s.emptyTitle}</b><span>{meetings.length?s.libraryBody:s.emptyBody}</span>
           <div className="field">{!meetings.length&&<button className="btn" onClick={()=>void recordNow()} disabled={!desktop||live?.state.type!=="Idle"}>{s.recordNow}</button>}<button className="btn ghost" onClick={importRecording} disabled={!desktop||!!importBlocked} title={importBlocked||undefined}>{s.import}</button></div>{!desktop&&<span className="hint">{s.browser}</span>}</div></div>}

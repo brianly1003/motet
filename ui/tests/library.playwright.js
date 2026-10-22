@@ -59,7 +59,7 @@ async (page) => {
     const item = async (page, selector) => page.locator(selector).first().evaluate((e, keys) => Object.fromEntries(keys.map(k => [k, getComputedStyle(e)[k]])), itemKeys);
     const [actualItem, expectedItem] = [await item(p, '.doc-dropdown [role="menuitem"]'), await item(reference, '.headacts .dropdown [role="menuitem"]')];
     for (const key of itemKeys) if(actualItem[key] !== expectedItem[key]) throw Error(`Menu item ${key}: ${actualItem[key]} != ${expectedItem[key]}`);
-    if ((await p.locator('.doc-dropdown [role="menuitem"]').allInnerTexts()).join('|') !== 'Rename|Write the notes again|Show in Finder|Delete meeting') throw Error('Header menu items differ from the mockup');
+    if ((await p.locator('.doc-dropdown [role="menuitem"]').allInnerTexts()).join('|') !== 'Rename|Write the notes again|Transcribe again|Show in Finder|Delete meeting') throw Error('Header menu items differ from the mockup');
     await reference.mouse.click(5, 5);
     await p.screenshot({path: `.playwright-out/parity-document-menu-${theme}.png`});
     await p.getByRole('menuitem', {name: 'Show in Finder', exact: true}).click();

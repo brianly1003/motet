@@ -82,14 +82,35 @@ export function RecordingPage({ session: { state, gaps, pending, act } }: { sess
   </>;
 }
 
-// After Stop: honest steps while the local models write the notes (mockup procHtml).
+// The steps page (mockup procHtml): each step is [label, detail]; `at` is the one being done,
+// `bar` the progress width (%) for each step.
+function StepsPage({ title, steps, at, bar, tip }: { title: string; steps: [string, string][]; at: number; bar: number[]; tip: string }) {
+  return <div className="writing" role="status">
+    <h4>{title}</h4>
+    <div className="steps">{steps.map(([label, detail], i) => <div key={i} className={`step${i < at ? " done" : i === at ? " now" : ""}`}><span className="b"/><span>{label}</span><small>{detail}</small></div>)}</div>
+    <div className="procbar"><i style={{ width: `${bar[at]}%` }}/></div>
+    <p className="tip">{tip}</p>
+  </div>;
+}
+
+// After Stop: honest steps while the local models write the notes.
 export function ProcessingPage({ stage, durationMs }: { stage: Stage | null; durationMs: number }) {
   const at = stage?.type === "Saving" ? 3 : stage?.type === "Summarizing" || stage?.type === "Merging" ? 2 : 1;
-  const steps: [string, string][] = [["Recorded both sides", durationMs ? elapsedLabel(durationMs) : ""], ["Transcribed", ""], [stage?.type === "Summarizing" && stage.of > 1 ? `Summarizing part ${stage.part} of ${stage.of}` : "Summarizing", ""], ["Saving", ""]];
-  return <div className="writing">
-    <h4>Writing the notes</h4>
-    <div className="steps">{steps.map(([label, detail], i) => <div key={label} className={`step${i < at ? " done" : i === at ? " now" : ""}`}><span className="b"/><span>{label}</span><small>{detail}</small></div>)}</div>
-    <div className="procbar"><i style={{ width: `${[0, 35, 65, 90][at]}%` }}/></div>
-    <p className="tip">You can close this window. A notification arrives when the notes are ready.</p>
-  </div>;
+  return <StepsPage title="Writing the notes" at={at} bar={[0, 35, 65, 90]} tip="You can close this window. A notification arrives when the notes are ready."
+    steps={[["Recorded both sides", durationMs ? elapsedLabel(durationMs) : ""], ["Transcribed", ""], [stage?.type === "Summarizing" && stage.of > 1 ? `Summarizing part ${stage.part} of ${stage.of}` : "Summarizing", ""], ["Saving", ""]]}/>;
+}
+
+// Write the notes again (owner 2026-10-21): only the steps a rewrite does. A meeting with a
+// transcript starts at Summarizing; one without (Recover) transcribes first.
+export function RewritingPage({ stage, lines }: { stage: Stage | null; lines: number }) {
+  const at = stage?.type === "Saving" ? 2 : stage?.type === "Summarizing" || stage?.type === "Merging" || (lines && !stage) ? 1 : 0;
+  const first = lines ? "Transcript ready" : stage?.type === "Transcribing" ? "Transcribing the saved audio" : "Transcribed";
+  return <StepsPage title={s.rewriting} at={at} bar={[20, 55, 90]} tip={s.rewritingTip}
+    steps={[[first, lines ? `${lines} ${lines === 1 ? "line" : "lines"}` : ""], ["Summarizing", ""], ["Saving", ""]]}/>;
+}
+
+// Transcribe again (owner 2026-10-21): whisper reads the saved audio, then the transcript is saved.
+export function RetranscribingPage({ stage }: { stage: Stage | null }) {
+  return <StepsPage title={s.retranscribing} at={stage?.type === "Saving" ? 1 : 0} bar={[35, 90]} tip={s.retranscribingTip}
+    steps={[["Transcribing the saved audio", ""], ["Saving", ""]]}/>;
 }
