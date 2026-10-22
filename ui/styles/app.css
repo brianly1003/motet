@@ -274,7 +274,7 @@ input.ownerin { font: inherit; font-weight: 500; font-size: 12.5px; line-height:
 .locked-mark:hover { background: var(--surface-2); color: var(--ink-1); }
 .owner { display: inline-block; padding: 0 7px; border-radius: 6px; background: var(--them-soft); color: var(--voice-them); font-weight: 500; font-size: 12.5px; margin-right: 4px; border: 0; }
 .owner.me { background: var(--me-soft); color: var(--voice-me); }
-.src { border: 0; background: var(--surface-3); color: var(--ink-2); border-radius: 5px; padding: 0 5px; font: 11px/1.6 var(--font-data); margin-left: 6px; vertical-align: 1px; font-feature-settings: "tnum"; }
+.src { border: 0; background: var(--surface-3); color: var(--ink-2); border-radius: 5px; padding: 0 5px; font: 11px/1.6 var(--font-data); margin-left: 2px; vertical-align: 1px; font-feature-settings: "tnum"; }
 .src:hover { background: var(--line); color: var(--ink); }
 .meeting-aside { display: grid; gap: 12px; position: sticky; top: 0; }
 .panel { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; background: var(--surface); }

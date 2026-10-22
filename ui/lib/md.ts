@@ -22,6 +22,18 @@ md.renderer.rules.text = (tokens, index, _options, env) => {
     return match && ms >= 0 ? timeChip(match[1], match[2], ms) : md.utils.escapeHtml(part);
   }).join('');
 };
+// "[02:05] Point" -> "Point [02:05]": models sometimes lead with the time; the chip goes at the end.
+md.core.ruler.push("motetto_time_last", state => {
+  for (const token of state.tokens) {
+    const kids = token.children;
+    const lead = kids?.[0]?.type === "text" ? /^\[\d+:\d{2}\]\s*/.exec(kids[0].content) : null;
+    if (!kids || !lead || kids[0].content.length === lead[0].length && kids.length === 1) continue;
+    kids[0].content = kids[0].content.slice(lead[0].length);
+    const tail = new state.Token("text", "", 0);
+    tail.content = ` ${lead[0].trim()}`;
+    kids.push(tail);
+  }
+});
 // Editable notes: each block carries the notes.md line range it came from ("start,end", end
 // exclusive) so an edit replaces exactly those lines.
 md.core.ruler.push("motetto_lines", state => {

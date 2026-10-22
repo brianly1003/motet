@@ -243,17 +243,25 @@ fn is_times(t: &str) -> bool {
 }
 
 /// "Point [01:44], [01:50, 01:52]." -> "Point [01:44].": the model cites every line a point
-/// comes from, and each time becomes its own chip on screen. Keeps the first time of each line.
+/// comes from, and each time becomes its own chip on screen. Keeps the first time of each line,
+/// and moves one the model put first ("- [02:05] Point") to the end, where the prompt asks for it.
 fn one_time(notes: &str) -> String {
     let one_line = |line: &str| {
-        let (mut out, mut rest, mut kept) = (String::new(), line, false);
+        let (mut out, mut rest, mut kept, mut last) = (String::new(), line, false, None);
         while let Some((before, after)) = rest.split_once('[') {
             match after.split_once(']').filter(|(t, _)| is_times(t)) {
                 Some((times, tail)) => {
+                    let first = times.split([',', '-']).next().unwrap_or(times).trim();
+                    let lead = matches!(format!("{out}{before}").trim(), "" | "-" | "*" | "- [ ]");
                     if kept {
                         out.push_str(before.trim_end_matches([',', ';', ' ']));
+                    } else if lead && !tail.trim().is_empty() {
+                        out.push_str(before);
+                        last = Some(first.to_string());
+                        kept = true;
+                        rest = tail.trim_start();
+                        continue;
                     } else {
-                        let first = times.split([',', '-']).next().unwrap_or(times).trim();
                         out.push_str(&format!("{before}[{first}]"));
                         kept = true;
                     }
@@ -266,7 +274,10 @@ fn one_time(notes: &str) -> String {
                 }
             }
         }
-        out + rest
+        match last {
+            Some(time) => format!("{} [{time}]", (out + rest).trim_end()),
+            None => out + rest,
+        }
     };
     notes.lines().map(one_line).collect::<Vec<_>>().join("\n")
 }
@@ -706,6 +717,13 @@ mod tests {
             ),
             "- Wished \"Happy New Year\" [01:44].\n- Both [00:53]\n\
              - Range [00:01]\n- [ ] You: Send [link](u) [00:01]\n- Plain"
+        );
+        // A time the model put first goes to the end; a line that is only a time stays.
+        assert_eq!(
+            one_time(
+                "- [02:05] The **dashboard** is done.\n- [ ] [01:20] You: Ship [01:30]\n[00:10]"
+            ),
+            "- The **dashboard** is done. [02:05]\n- [ ] You: Ship [01:20]\n[00:10]"
         );
     }
 

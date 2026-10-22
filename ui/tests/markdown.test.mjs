@@ -34,3 +34,9 @@ test('editable blocks carry their notes.md line range', () => {
   assert.match(html,/<p data-lines="13,15">Para line/);
   assert.ok(!renderNotes('- one').includes('data-lines'));
 });
+test('a leading time chip moves to the end of the line', () => {
+  const html=renderNotes('- [02:05] The **dashboard** is done.',300000);
+  assert.match(html,/done\. <button type="button" class="src" data-ms="125000"/);
+  assert.ok(!html.includes('<li><button'));
+  assert.match(renderNotes('[02:05]',300000),/<p><button/,'a lone time stays put');
+});
