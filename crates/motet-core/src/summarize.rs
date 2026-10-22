@@ -43,6 +43,11 @@ swearing.\n\
 one person talking with no reply), say that in one Overview bullet and write no topic sections. An \
 automated voice repeating the user's words is a playback, not a reply.\n";
 
+// A single-file import has no labels; without this the model still makes the user own every task.
+const UNLABELED: &str = "This transcript has no speaker labels, so you cannot tell which lines are the \
+user's: never write \"You\" or \"Me\". Name a task owner only where the transcript names who does it; \
+otherwise leave out \"<Owner>: \".\n";
+
 // The user's own notes, typed during the call. Tasks ("[] ") are copied in by `with_my_tasks`,
 // so the model only weighs the rest; the block is data, like the spellings.
 const MY_NOTES: &str = "The user typed the notes below during the call; each line starts with the \
@@ -109,7 +114,9 @@ pub fn notes(
     let language = config::notes_language()
         .map(|code| format!("Write the notes in {code}.\n"))
         .unwrap_or_default();
-    let prompt = |text: &str| format!("{PROMPT}{language}{terms}{mine}\nTRANSCRIPT:\n{text}");
+    let labeled = labeled(transcript);
+    let who = if labeled { "" } else { UNLABELED };
+    let prompt = |text: &str| format!("{PROMPT}{who}{language}{terms}{mine}\nTRANSCRIPT:\n{text}");
     let parts = split_lines(transcript, max_chars);
     let summary = if parts.len() <= 1 {
         println!("Summarizing with {llm}...");
@@ -129,7 +136,11 @@ pub fn notes(
         )?
     };
     let (title, summary) = split_title(&tidy_headings(&summary));
-    let summary = tidy_tasks(&grounded(&summary, transcript));
+    let mut summary = tidy_tasks(&grounded(&summary, transcript));
+    if !labeled {
+        // Nothing in the transcript says which voice is the user's, so "You" is a guess.
+        summary = summary.replace("\n- [ ] You: ", "\n- [ ] ");
+    }
     let summary = with_my_tasks(&summary, &my_notes);
     let (summary, transcript) = (defang(&summary), defang(transcript));
     let notes = format!(
@@ -141,6 +152,15 @@ pub fn notes(
         println!("Title: {title}");
     }
     Ok(title)
+}
+
+/// True when any line carries a track or diarizer label (`[mm:ss] Me: `, `Them: `, `Speaker N: `).
+fn labeled(transcript: &str) -> bool {
+    transcript.lines().any(|line| {
+        line.split_once("] ").is_some_and(|(_, rest)| {
+            rest.starts_with("Me: ") || rest.starts_with("Them: ") || rest.starts_with("Speaker ")
+        })
+    })
 }
 
 /// Drops every note line that cites a [mm:ss] no transcript line starts with: given little to go
@@ -669,5 +689,14 @@ mod tests {
             clean_summary("## TL;DR\nShip Friday."),
             "## TL;DR\nShip Friday."
         );
+    }
+    #[test]
+    fn labeled_needs_a_track_or_speaker_label() {
+        assert!(labeled("[00:01] Me: hi\n"));
+        assert!(labeled("[00:01] Speaker 2: hi\n"));
+        assert!(!labeled(
+            "[04:06] How about 7:30 am?\n[04:15] Thanks, Alex.\n"
+        ));
+        assert!(!labeled(""));
     }
 }

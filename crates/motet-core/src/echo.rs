@@ -1,18 +1,40 @@
-//! Suppress duplicated microphone text from speaker playback (SPEC 6.2).
+//! Suppress duplicated microphone text from speaker playback (SPEC 6.2), and whisper's loops.
 use std::collections::HashSet;
+
+fn words(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+}
+
+/// Row mask for one whisper run: a row is a loop when it is faster than anyone speaks (over 8
+/// words a second) and at least 80 % of its words were already said in the previous 2 minutes.
+/// A loop replays an earlier sentence squeezed into rows of 100 ms to 1 s; real repeats take real
+/// time, so they stay.
+/// CJK text has no spaces, so a sentence counts as one word and is never dropped.
+pub fn loops(rows: &[(u64, u64, String)]) -> Vec<bool> {
+    let mut dropped: Vec<bool> = Vec::with_capacity(rows.len());
+    for (i, (start, end, text)) in rows.iter().enumerate() {
+        let row: HashSet<String> = words(text).collect();
+        let fast = words(text).count() as u64 * 125 > end.saturating_sub(*start);
+        let looped = fast && !row.is_empty() && {
+            // Words of the rows kept in the 2 minutes before this one.
+            let heard: HashSet<String> = rows[..i]
+                .iter()
+                .zip(&dropped)
+                .filter(|((s, _, _), gone)| !**gone && s.saturating_add(120_000) >= *start)
+                .flat_map(|((_, _, t), _)| words(t))
+                .collect();
+            row.iter().filter(|w| heard.contains(*w)).count() * 5 >= row.len() * 4
+        };
+        dropped.push(looped);
+    }
+    dropped
+}
 
 /// Segment index mask: only microphone rows matching system audio within 1.5 s are removed.
 pub fn duplicates(rows: &[(u64, u64, &str, bool)]) -> Vec<bool> {
-    let tokens: Vec<HashSet<String>> = rows
-        .iter()
-        .map(|row| {
-            row.2
-                .split(|c: char| !c.is_alphanumeric())
-                .filter(|word| !word.is_empty())
-                .map(str::to_lowercase)
-                .collect()
-        })
-        .collect();
+    let tokens: Vec<HashSet<String>> = rows.iter().map(|row| words(row.2).collect()).collect();
     let mut system: Vec<_> = rows
         .iter()
         .enumerate()
@@ -77,5 +99,24 @@ mod tests {
             duplicates(&[(0, 1000, "same words", true), (0, 1000, "same words", true)]),
             [false, false]
         );
+    }
+    #[test]
+    fn drops_whisper_loops_but_keeps_real_repeats() {
+        let row = |s: u64, e: u64, t: &str| (s, e, t.to_string());
+        let said = "Oh, that sounds amazing. But wait. Where would we go? We don't have much time \
+                    to plan if we're leaving this Friday.";
+        let looped = format!("Hmm. {said}");
+        let rows = [
+            row(18_980, 32_390, "Hey, Alex. How about you?"),
+            row(64_900, 77_040, said),
+            row(97_010, 97_110, &looped),
+            row(97_010, 97_110, "How about you?"),
+            row(100_470, 100_830, &looped),
+            row(100_830, 104_000, "How about you?"),
+            row(105_000, 105_100, "Brand new words entirely here now"),
+            row(300_000, 300_100, said),
+        ];
+        let got = loops(&rows);
+        assert_eq!(got, [false, false, true, true, true, false, false, false]);
     }
 }
