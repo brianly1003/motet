@@ -18,7 +18,7 @@ export function MenuIcon({ name }: { name: IconName }) {
 }
 
 export function Dots() {
-  return <svg viewBox="0 0 20 20" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="5.5" cy="10" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="14.5" cy="10" r="1.25"/></svg>;
+  return <svg viewBox="0 0 20 20" fill="currentColor" stroke="none" aria-hidden="true"><circle cx="10" cy="5.5" r="1.25"/><circle cx="10" cy="10" r="1.25"/><circle cx="10" cy="14.5" r="1.25"/></svg>;
 }
 
 // A setting in a menu (Lock notes): the label, then an on/off switch; the menu stays open.

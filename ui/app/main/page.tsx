@@ -106,11 +106,13 @@ export default function Main(){
     const close=(event:PointerEvent)=>{if(!(event.target as Element|null)?.closest?.(".rowmenu, .rowmore"))setRowMenu(null);};
     document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close);
   },[rowMenu]);
-  // Beside the row, top edges aligned; moved up if it would leave the window.
+  // Beside the row, top edges aligned (a right-click opens it at the pointer); kept inside the window.
   useLayoutEffect(()=>{
     const menu=menuRef.current;if(!menu||!rowMenu)return;
     const top=Math.max(8,Math.min(rowMenu.top,innerHeight-8-menu.offsetHeight));
     if(top!==rowMenu.top)menu.style.top=`${top}px`;
+    const left=Math.max(8,Math.min(rowMenu.left,innerWidth-8-menu.offsetWidth));
+    if(left!==rowMenu.left)menu.style.left=`${left}px`;
     menu.querySelector<HTMLButtonElement>("button")?.focus();
   },[rowMenu]);
   function notify(text:string,undo?:()=>Promise<void>){
@@ -198,7 +200,7 @@ export default function Main(){
           <strong title={meetingTitle(meeting)}><Marked text={meetingTitle(meeting)} query={query}/></strong>
           {snippet&&<em className="snip"><Marked text={snippet.text} query={query}/></em>}
           <span><span>{meetingDate(meeting.created_ms)}</span>{snippet&&<b className="where">{s.matchedIn[snippet.source]}{snippet.at_ms!=null&&<> · {timeLabel(snippet.at_ms)}</>}</b>}</span></button>;})}</div>
-        :GROUPS.map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=>{const current=!trashOpen&&selected?.summary.id===meeting.id;return <div key={meeting.id} className={`mrow${rowMenu?.id===meeting.id?" open":""}`}>
+        :GROUPS.map(group=>{const items=shown.filter(meeting=>meetingGroup(meeting.created_ms)===group);return items.length?<div key={group}><div className="list-heading">{group}<span>{items.length}</span></div>{items.map(meeting=>{const current=!trashOpen&&selected?.summary.id===meeting.id;return <div key={meeting.id} className={`mrow${rowMenu?.id===meeting.id?" open":""}`} onContextMenu={event=>{event.preventDefault();setRowMenu({id:meeting.id,left:event.clientX,top:event.clientY});}}>
           <button className={`meeting-row ${current?"selected":""}`} aria-current={current?"page":undefined} onClick={()=>select(meeting.id)}><strong title={meetingTitle(meeting)}>{meetingTitle(meeting)}</strong><span>{meetingDate(meeting.created_ms)}{meeting.duration_ms!=null?` · ${durationLabel(meeting.duration_ms)}`:""}{(()=>{const type=live?.meeting_id===meeting.id?live.state.type:null;
             const [cls,label]=type==="Recording"?["rec",s.chipRecording]:type==="Paused"?["plain",s.paused]:type==="Stopped"?["plain",s.chipStopped]:job?.id===meeting.id?["attention",job.transcribe?s.chipTranscribing:s.finishing]:meeting.status==="Ready"?["ready",s.ready]:meeting.status==="Finishing"||type==="Finishing"?["attention",s.finishing]:["attention",s.failed];
             return <i className={cls}>{label}</i>;})()}</span></button>

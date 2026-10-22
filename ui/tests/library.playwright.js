@@ -114,6 +114,15 @@ async (page) => {
     if (Math.round(menuBox.x - rowBox.x - rowBox.width) !== 14 || Math.round(menuBox.y) !== Math.round(rowBox.y) || Math.round(menuBox.width) !== 256) throw Error(`Row menu placement ${JSON.stringify({rowBox, menuBox})}`);
     if ((await menu.getByRole('menuitem').allInnerTexts()).join('|') !== 'Open|Rename|Copy action items|Show in Finder|Delete meeting') throw Error('Row menu items differ from the mockup');
     await p.screenshot({path: `.playwright-out/parity-row-menu-${theme}.png`});
+    if (new Set(await row.locator('.rowmore circle').evaluateAll(cs => cs.map(c => c.getAttribute('cx')))).size !== 1) throw Error('Row dots are not vertical');
+    // Right-click opens the same menu at the pointer (owner 2026-10-22), without the browser's own menu.
+    await p.keyboard.press('Escape');
+    await menu.waitFor({state: 'hidden'});
+    await row.click({button: 'right', position: {x: 40, y: 10}});
+    const [clickRow, rightBox] = [await row.boundingBox(), await menu.boundingBox()];
+    if (Math.abs(rightBox.x - clickRow.x - 40) > 1 || Math.abs(rightBox.y - clickRow.y - 10) > 1) throw Error(`Right-click menu placement ${JSON.stringify({clickRow, rightBox})}`);
+    if ((await menu.getByRole('menuitem').allInnerTexts()).join('|') !== 'Open|Rename|Copy action items|Show in Finder|Delete meeting') throw Error('Right-click menu items differ');
+    await p.screenshot({path: `.playwright-out/parity-row-contextmenu-${theme}.png`});
     await menu.getByRole('menuitem', {name: 'Delete meeting', exact: true}).click();
     await p.getByRole('button', {name: /^Recently deleted/}).click();
     await p.getByRole('heading', {name: 'Recently deleted'}).waitFor();
